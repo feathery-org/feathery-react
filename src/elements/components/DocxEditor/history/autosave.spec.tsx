@@ -1452,6 +1452,24 @@ describe('useDocxHistorySession', () => {
     expect(view.result.current.savedAt).not.toBe(documentSavedAt);
   });
 
+  it('checkpoints from the autosave’s own serialize', async () => {
+    jest.useFakeTimers();
+    let doc = SFDT;
+    const serialize = jest.fn(() => doc);
+    const { view, host } = setup({}, { serialize });
+    await flush();
+
+    doc = EDITED_SFDT;
+    act(() => view.result.current.onEdit({ assistant: false }));
+    const before = serialize.mock.calls.length;
+    await act(async () => {
+      jest.advanceTimersByTime(AUTOSAVE_IDLE_MS);
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+    });
+    expect(host.closeVersion).toHaveBeenCalledTimes(1);
+    expect(serialize.mock.calls.length - before).toBe(1);
+  });
+
   it('attributes Robin’s first op to Robin via the pre-turn snapshot', async () => {
     // At the user→Robin boundary the document already holds Robin's first op,
     // so the slice must come from the turn-start snapshot.

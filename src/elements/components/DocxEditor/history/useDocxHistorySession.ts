@@ -625,7 +625,8 @@ export function useDocxHistorySession(
         const epoch = documentEpochRef.current;
         const checkpointRequest = requestedCheckpoint;
         const checkpoint = prepareCheckpoint(
-          checkpointRequest > savedCheckpoint
+          checkpointRequest > savedCheckpoint,
+          current
         );
         const exported = exportRef.current();
         exported.catch(() => undefined);
@@ -703,7 +704,10 @@ export function useDocxHistorySession(
     // only uploads artifacts; the backend row stays open).
     let lastCheckpointAt = 0;
     let lastCheckpointDiffed = false;
-    const prepareCheckpoint = (force = false): (() => void) | undefined => {
+    const prepareCheckpoint = (
+      force: boolean,
+      serialized: string | null
+    ): (() => void) | undefined => {
       // Mid-turn, upload the document without its diff so the session diff
       // stays off the main thread between Robin's writes. It still replaces an
       // older checkpoint, which the viewer would otherwise show over the saved
@@ -718,12 +722,8 @@ export function useDocxHistorySession(
         return;
       const meta = tracker.currentMeta();
       if (!meta || !s0Ref.current) return;
-      let fStr: string | null = null;
-      try {
-        fStr = editorRef.current?.serialize() ?? null;
-      } catch {
-        fStr = null;
-      }
+      // The save's own serialize, so a long proposal is not serialized twice.
+      const fStr = serialized;
       if (!fStr) return;
       const snap: CloseSnapshot = {
         host: hostRef.current,
