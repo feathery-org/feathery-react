@@ -15,11 +15,13 @@ import {
   Fact,
   HostTarget,
   PROTOCOL_VERSION,
+  ROOT_ID,
   SELECTION_TEXT_MAX,
   Selection,
   Verb,
   VerbResult,
   WriteInput,
+  addressedIds,
   makeRefusal,
   dispatchFailure,
   parseBridgePayload,
@@ -37,6 +39,7 @@ import { logDebug, logError, logWarn, truncatedDetail } from './log';
 import { equivalentNative } from './proof';
 import { reconcile } from './reconciler';
 import { Clock, defaultClock, TraceBuilder } from './trace';
+import { baseOf, shapeOf } from './tree';
 import type { NormalForm } from './tree';
 import { problem } from './verifier';
 import { conflictMessage } from './verifier/base';
@@ -484,6 +487,7 @@ export class DocumentSession {
       cardId: outcome.plan.landed === 'card' ? changeSetId : null,
       landed: outcome.plan.landed,
       outlineHash: (this.current as DocumentState).outlineHash,
+      fingerprints: this.fingerprints(write, prepared.mapping),
       ...common,
       // with what the live editor reported of the commit (a contents table rebuilt, or not)
       facts: [...prepared.facts, ...outcome.facts],
@@ -582,6 +586,31 @@ export class DocumentSession {
     this.refresh();
     this.replaced('person');
     return true;
+  }
+
+  /** Fresh fingerprints of what a committed write named or created, and of their parents */
+  private fingerprints(
+    write: WriteInput,
+    mapping: Record<string, string>
+  ): Record<string, { base: string; shape: string }> {
+    const { view } = this.current as DocumentState;
+    const ids = new Set<string>();
+    const named = [
+      ...write.changes.flatMap(addressedIds),
+      ...Object.keys(mapping)
+    ];
+    for (const id of named.map((n) => mapping[n] ?? n)) {
+      ids.add(id);
+      const parent = view.placement(id)?.parent;
+      if (parent) ids.add(parent.id);
+    }
+    const out: Record<string, { base: string; shape: string }> = {};
+    for (const id of ids) {
+      const node = id === ROOT_ID ? view.nf.root : view.get(id);
+      if (node)
+        out[id] = { base: baseOf(node), shape: shapeOf(node, this.pack.tree) };
+    }
+    return out;
   }
 
   /** A refresh after a resolution that failed: reported, never fatal to the resolution. */

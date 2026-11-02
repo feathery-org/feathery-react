@@ -78,11 +78,36 @@ export function groupTag(
   });
 }
 
+// The editor joins revisions by author and kind, so each card writes as Robin plus an invisible suffix
+const SUFFIX_ZERO = '\u2060';
+const SUFFIX_ONE = '\u2061';
+
+export function cardAuthor(changeSetId: string, name = 'Robin'): string {
+  let hash = 2166136261;
+  for (let i = 0; i < changeSetId.length; i += 1) {
+    hash ^= changeSetId.charCodeAt(i);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  let suffix = '';
+  for (let bit = 0; bit < 24; bit += 1)
+    suffix += (hash >>> bit) & 1 ? SUFFIX_ONE : SUFFIX_ZERO;
+  return `${name}${suffix}`;
+}
+
+/** The author as a reader sees it, the change set suffix removed */
+export function displayAuthor<T extends string | null | undefined>(
+  author: T
+): T {
+  return (
+    typeof author === 'string' ? author.replace(/[\u2060\u2061]/g, '') : author
+  ) as T;
+}
+
 export function viewOf(r: NativeRevision | undefined): PendingRevision {
   const { group, move } = tagOf(r?.customData);
   return {
     kind: r?.revisionType ?? 'Unknown',
-    author: r?.author ?? null,
+    author: displayAuthor(r?.author) ?? null,
     ...(group ? { group } : {}),
     ...(group && move ? { move } : {})
   };
@@ -147,7 +172,7 @@ export class RevisionMinter {
       if (!id) continue;
       const key = RevisionMinter.keyOf({
         kind: String(rev.revisionType),
-        author: (rev.author as string | null) ?? null,
+        author: displayAuthor(rev.author as string | null) ?? null,
         ...tagOf(rev.customData)
       });
       this.existingById.set(id, key);
@@ -174,7 +199,9 @@ export class RevisionMinter {
       hashOf(key)
     ).toString(36)}`;
     this.minted.push({
-      author: r.author ?? 'Robin',
+      author: r.group
+        ? cardAuthor(r.group, r.author ?? 'Robin')
+        : r.author ?? 'Robin',
       date: this.date,
       revisionType: r.kind,
       revisionId: id,
