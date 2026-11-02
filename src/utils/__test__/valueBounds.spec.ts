@@ -1,4 +1,7 @@
-import { getValueBoundReferences } from '../valueBounds';
+import { renderHook } from '@testing-library/react';
+import useOffset from '@rc-component/slider/lib/hooks/useOffset';
+import { fieldValues } from '../init';
+import { alignToSlider, getValueBoundReferences } from '../valueBounds';
 
 const field = (type: string, metadata?: any) => ({
   servar: { type, metadata }
@@ -25,5 +28,55 @@ describe('getValueBoundReferences', () => {
   it('returns an empty set without a step', () => {
     expect(getValueBoundReferences(undefined).size).toBe(0);
     expect(getValueBoundReferences({}).size).toBe(0);
+  });
+});
+
+describe('alignToSlider', () => {
+  const slider = (stepSize: any, metadata = {}) => ({
+    min_length: 0,
+    max_length: 100,
+    metadata: {
+      step_size: stepSize,
+      min_value_field_key: 'floor',
+      max_value_field_key: 'limit',
+      ...metadata
+    }
+  });
+
+  it('snaps to the step counted from a linked min, as the handle does', () => {
+    Object.assign(fieldValues, { floor: 2, limit: 100 });
+    expect(alignToSlider(10, slider(5))).toBe(12);
+    // The max is a stop even off-step, and wins a tie with the step below it
+    Object.assign(fieldValues, { floor: 2, limit: 13 });
+    expect(alignToSlider(13, slider(5))).toBe(13);
+    Object.assign(fieldValues, { floor: 0, limit: 10 });
+    expect(alignToSlider(9, slider(4))).toBe(10);
+    // A missing or non-positive step renders as 1
+    expect(alignToSlider(3.4, slider(undefined))).toBe(3);
+    expect(alignToSlider(3.4, slider(-5))).toBe(3);
+  });
+
+  it('leaves a slider without a linked bound alone', () => {
+    Object.assign(fieldValues, { floor: '', limit: '' });
+    expect(alignToSlider(7, slider(5))).toBe(7);
+  });
+
+  // The rendered handle is rc-slider's formatValue, so match it exactly
+  it("matches rc-slider's own snapping", () => {
+    const steps = [1, 3, 5, 0.1, 0.25, 7];
+    const fixedMaxes = [100, 10.5, 33];
+    const floors = [-7, 0, 2, 13];
+    for (const step of steps)
+      for (const max of fixedMaxes)
+        for (const floor of floors) {
+          Object.assign(fieldValues, { floor, limit: '' });
+          const servar = { ...slider(step), max_length: max };
+          const { result } = renderHook(() =>
+            useOffset(floor, Math.max(floor, max), step, [], false, false)
+          );
+          const [formatValue] = result.current;
+          for (let value = floor - 5; value <= max + 5; value += 0.7)
+            expect(alignToSlider(value, servar)).toBe(formatValue(value));
+        }
   });
 });

@@ -324,10 +324,11 @@ describe('SliderField - DOM naming', () => {
 });
 
 describe('SliderField - linked range', () => {
-  const linkedSlider = () => {
+  const linkedSlider = (stepSize = 1) => {
     const element = createSliderElement('slider', {
       min_value: 0,
-      max_value: 100
+      max_value: 100,
+      step_size: stepSize
     });
     element.servar.metadata = {
       ...element.servar.metadata,
@@ -361,5 +362,19 @@ describe('SliderField - linked range', () => {
 
     expectSliderToHaveValue(50);
     expect(document.querySelector('.current-value')?.textContent).toBe('50');
+  });
+
+  // Steps count from the min, so moving a linked min moves the handle off 10
+  it('shows the step the handle snaps to when the linked min moves', () => {
+    Object.assign(fieldValues, { floor: 2, limit: 100 });
+    render(
+      <SliderField {...createSliderProps(linkedSlider(5), { fieldVal: 10 })} />
+    );
+
+    expectSliderToHaveValue(12);
+    expect(document.querySelector('.current-value')?.textContent).toBe('12');
+    expect(
+      document.querySelector<HTMLInputElement>('input[type="hidden"]')?.value
+    ).toBe('12');
   });
 });

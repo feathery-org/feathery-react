@@ -4,7 +4,11 @@ import { hoverStylesGuard } from '../../../utils/browser';
 
 import SliderStyles from './styles';
 import HiddenValueInput from '../../components/HiddenValueInput';
-import { clampToSliderRange, getSliderRange } from '../../../utils/valueBounds';
+import {
+  alignToSlider,
+  getSliderRange,
+  getSliderStep
+} from '../../../utils/valueBounds';
 
 export default function SliderField({
   element,
@@ -26,15 +30,15 @@ export default function SliderField({
 
   const servar = element.servar;
   const { min: minVal, max: maxVal } = getSliderRange(servar);
-  // A linked range can move past the value; rc-slider keeps the handle in range,
-  // so show the label and input the same way, as submit will store it
+  // A linked range can move under the value and rc-slider snaps the handle into
+  // it, so show the label and input the same way, as submit will store it
   const shownValue =
     typeof internalValue === 'number'
-      ? clampToSliderRange(internalValue, servar)
+      ? alignToSlider(internalValue, servar)
       : internalValue;
   const minLabel = servar.metadata.min_val_label || minVal;
   const maxLabel = servar.metadata.max_val_label || maxVal;
-  const stepSize = servar.metadata.step_size || 1;
+  const stepSize = getSliderStep(servar);
 
   return (
     <div
