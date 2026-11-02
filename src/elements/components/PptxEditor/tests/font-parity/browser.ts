@@ -3,7 +3,7 @@ import { importDeck } from '../../core/model/import';
 import { exportDeckBytes } from '../../core/model/export';
 import { renderSlideSvg, reconcileSlideSvg } from '../../core/render/svg';
 import { ensureDeckFontsLoaded, cssFamilyList } from '../../core/render/fonts';
-import { releaseEmbeddedFonts } from '../../core/render/embeddedFonts';
+import { releaseEmbeddedFonts } from '../../core/render/embeddedFontRegistry';
 import type { Deck } from '../../core/model/types';
 
 let deck: Deck;

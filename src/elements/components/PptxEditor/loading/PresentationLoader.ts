@@ -1,6 +1,6 @@
 import type { Deck } from '../core/model/types';
 import { releaseObjectUrls } from '../core/opc/objectUrls';
-import { releaseEmbeddedFonts } from '../core/render/embeddedFonts';
+import { releaseEmbeddedFonts } from '../core/render/embeddedFontRegistry';
 import { releaseThumbnails, cacheThumbnail } from './thumbnailCache';
 import { schedulePreview } from './previewScheduler';
 import { abortError } from './abortError';
