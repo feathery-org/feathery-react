@@ -34,7 +34,14 @@ import { ENGINE_HISTORY_LIMIT, EngineHistory, HistoryOutcome } from './history';
 import { IdTable } from './ids';
 import { WriteJournal, journalKey } from './loop';
 import { renderOutline } from './outline';
-import type { CommitStep, EditorHost, Pack, Residue, SeamReport } from './pack';
+import type {
+  CommitStep,
+  EditorHost,
+  Pack,
+  LaidOutPage,
+  Residue,
+  SeamReport
+} from './pack';
 import { logDebug, logError, logWarn, truncatedDetail } from './log';
 import { equivalentNative } from './proof';
 import { reconcile } from './reconciler';
@@ -194,6 +201,7 @@ export class DocumentSession {
     const state = this.state;
     const outline = outlineVerb(state, {});
     const selection = this.selection(state);
+    const pages = this.pages(state);
     return {
       protocolVersion: PROTOCOL_VERSION,
       editorId: this.editorId,
@@ -202,8 +210,21 @@ export class DocumentSession {
       readOnly: this.host.readOnly(),
       outlineHash: state.outlineHash,
       outline: outline.ok ? outline.lines : '',
-      ...(selection ? { selection } : {})
+      ...(selection ? { selection } : {}),
+      ...(pages ? { pageCount: pages.length } : {})
     };
+  }
+
+  /** Where each laid-out page starts, as the pack maps the editor's pages, never throws */
+  private pages(state: DocumentState): LaidOutPage[] | null {
+    try {
+      const native = this.host.pages?.();
+      if (native == null || !this.pack.pages) return null;
+      return this.pack.pages(state.view, native);
+    } catch {
+      // Pages the editor cannot report are no pages, never a failed outline
+      return null;
+    }
   }
 
   /** The editor's selection as the pack maps it, its text capped (section 9); never throws. */
@@ -278,7 +299,8 @@ export class DocumentSession {
     if (verb === 'outline')
       return outlineVerb(
         state,
-        parsed.value as Parameters<typeof outlineVerb>[1]
+        parsed.value as Parameters<typeof outlineVerb>[1],
+        () => this.pages(state)
       );
     if (verb === 'read')
       return readVerb(state, parsed.value as Parameters<typeof readVerb>[1]);
