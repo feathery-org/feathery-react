@@ -803,6 +803,7 @@ export default function DocumentEditorContainer({
         registerBeforeReplace={registerBeforeReplace}
         onBusy={setPacketBusy}
         onError={setOperationError}
+        onReviewAction={fireReviewAction}
       />,
       editorWrap
     );
