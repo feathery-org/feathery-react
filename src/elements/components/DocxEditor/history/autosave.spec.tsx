@@ -1197,18 +1197,20 @@ describe('useDocxHistorySession', () => {
     await idle();
     expect(host.closeVersion).toHaveBeenCalledTimes(1);
 
-    // Robin writes and autosaves well inside the checkpoint throttle.
+    // Robin writes and autosaves twice, well inside the checkpoint throttle.
     act(() => setRobinTurnActive(editor, true));
-    act(() =>
-      whileRobinWrites(editor, () => {
-        doc = sfdt('hello world robin');
-        view.result.current.onEdit({ assistant: true });
-      })
-    );
-    await idle();
-    expect(save).toHaveBeenCalledTimes(2);
-    expect(host.closeVersion).toHaveBeenCalledTimes(2);
-    const midTurn = host.closeVersion.mock.calls[1][1];
+    for (const text of ['hello world robin', 'hello world robin again']) {
+      act(() =>
+        whileRobinWrites(editor, () => {
+          doc = sfdt(text);
+          view.result.current.onEdit({ assistant: true });
+        })
+      );
+      await idle();
+    }
+    expect(save).toHaveBeenCalledTimes(3);
+    expect(host.closeVersion).toHaveBeenCalledTimes(3);
+    const midTurn = host.closeVersion.mock.calls[2][1];
     expect(midTurn.changesJson).toBeUndefined();
 
     // The tab is lost before the turn ends. The backend drops the earlier
@@ -1227,7 +1229,7 @@ describe('useDocxHistorySession', () => {
     );
     const current = {
       id: 'v1',
-      session_id: host.closeVersion.mock.calls[1][0],
+      session_id: host.closeVersion.mock.calls[2][0],
       is_current: true,
       final_sfdt: 'final',
       changes: 'changes',
@@ -1236,7 +1238,7 @@ describe('useDocxHistorySession', () => {
     } as DocxVersion;
     const viewer = renderHook(() => useVersionDocument(reloaded, current));
     await waitFor(() => expect(viewer.result.current.loading).toBe(false));
-    expect(viewer.result.current.sfdt).toContain('hello world robin');
+    expect(viewer.result.current.sfdt).toContain('hello world robin again');
     act(() => setRobinTurnActive(editor, false));
   });
 

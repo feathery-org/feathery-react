@@ -709,20 +709,19 @@ export function useDocxHistorySession(
     // Upload the open session's highlights without closing it (closeSession
     // only uploads artifacts; the backend row stays open).
     let lastCheckpointAt = 0;
-    let lastCheckpointDiffed = false;
     const prepareCheckpoint = (
       force: boolean,
       serialized: string | null
     ): (() => void) | undefined => {
       // Mid-turn, upload the document without its diff so the session diff
-      // stays off the main thread between Robin's writes. It still replaces an
-      // older checkpoint, which the viewer would otherwise show over the saved
-      // DOCX, so the first one skips the throttle. The turn's highlights upload
+      // stays off the main thread between Robin's writes. Every mid-turn save
+      // sends one, unthrottled: the viewer shows the stored checkpoint over the
+      // saved DOCX, so it must match each save. The turn's highlights upload
       // when it ends.
       const midTurn = !force && isRobinEditing(editorRef.current);
       if (
         !force &&
-        !(midTurn && lastCheckpointDiffed) &&
+        !midTurn &&
         Date.now() - lastCheckpointAt < CHECKPOINT_MIN_INTERVAL_MS
       )
         return;
@@ -742,7 +741,6 @@ export function useDocxHistorySession(
         acceptance: midTurn ? null : acceptanceRef.current
       };
       lastCheckpointAt = Date.now();
-      lastCheckpointDiffed = !midTurn;
       ownedSessions.current.add(meta.sessionId);
       // Refresh the history list after the checkpoint files are uploaded. A
       // refresh on the DOCX autosave alone can read the pre-checkpoint row and
