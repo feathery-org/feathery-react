@@ -9,6 +9,7 @@ import { realignFilePathMap, rerenderAllForms } from '../formHelperFunctions';
 import {
   FieldStyles,
   getDefaultFormFieldValue,
+  isRepeatedFileField,
   OptionType
 } from '../fieldHelperFunctions';
 import {
@@ -57,9 +58,17 @@ export default class Field {
 
   _runFieldUpdate() {
     debouncedFormRerender();
-    return defaultClient.submitCustom({
-      [this._fieldKey]: fieldValues[this._fieldKey]
-    });
+    const source = internalState[this._formUuid]?.steps
+      ? this._getSourceField()
+      : null;
+    return defaultClient.submitCustom(
+      { [this._fieldKey]: fieldValues[this._fieldKey] },
+      {
+        repeatedFileKeys: isRepeatedFileField(source?.servar)
+          ? [this._fieldKey]
+          : []
+      }
+    );
   }
 
   clear() {
