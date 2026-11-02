@@ -1,4 +1,4 @@
-import { releaseEmbeddedFonts } from '../core/render/embeddedFonts';
+import { releaseEmbeddedFonts } from '../core/render/embeddedFontRegistry';
 import { ungroupShape } from '../core/model/groups';
 import { applySlideJSON } from '../core/model/applyJson';
 import { deepClone } from '../core/opc/deepClone';

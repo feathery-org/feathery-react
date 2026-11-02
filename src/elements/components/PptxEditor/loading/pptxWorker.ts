@@ -8,6 +8,9 @@ scope.onmessage = ({ data: { id, bytes } }) => {
   try {
     scope.postMessage({ id, result: preparePackage(bytes) });
   } catch (error) {
-    scope.postMessage({ id, error: String(error) });
+    scope.postMessage({
+      id,
+      error: error instanceof Error ? error.message : String(error)
+    });
   }
 };

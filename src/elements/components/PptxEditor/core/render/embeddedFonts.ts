@@ -1,15 +1,8 @@
 import { featheryDoc, featheryWindow } from '../../../../../utils/browser';
 import { child, children, getAttr, root } from '../opc/xml';
 import type { Deck } from '../model/types';
+import { packages, type EmbeddedFonts } from './embeddedFontRegistry';
 
-interface EmbeddedFonts {
-  aliases: Map<string, string>;
-  faces: FontFace[];
-  ready: Promise<void>;
-  released: boolean;
-}
-
-const packages = new WeakMap<object, EmbeddedFonts>();
 let nextFontSet = 0;
 
 export function embeddedFontFamily(
@@ -120,12 +113,4 @@ export function loadEmbeddedFonts(
     if (!state.released) onLoaded();
   });
   return state.ready;
-}
-
-export function releaseEmbeddedFonts(owner: object): void {
-  const state = packages.get(owner);
-  if (!state) return;
-  state.released = true;
-  packages.delete(owner);
-  for (const face of state.faces) featheryDoc().fonts.delete(face);
 }

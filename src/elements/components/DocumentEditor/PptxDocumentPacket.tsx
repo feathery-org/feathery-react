@@ -224,16 +224,32 @@ export default function PptxDocumentPacket({
     if (activeId)
       setVisited((ids) => (ids.includes(activeId) ? ids : [...ids, activeId]));
   }, [activeId]);
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const visitedRef = useRef(visited);
+  visitedRef.current = visited;
+  // Depend on stable identities (ids + ready/visited keys), not the tabs/ready
+  // object identities that change on every save, so saving doesn't tear down
+  // and restart in-flight background prefetching.
+  const activePrefetchReady = !!activeId && ready.has(activeId);
+  const tabIdKey = tabs.map((tab) => tab.id).join('|');
+  const visitedKey = visited.join('|');
   useEffect(() => {
-    if (!activeId || !ready.has(activeId)) return;
+    if (!activeId || !activePrefetchReady) return;
     const controller = new AbortController();
     const preparedIdByTab = new Map<string, string>();
     // Let the active slide paint before preparing at most two likely next tabs.
     const timer = setTimeout(async () => {
-      const start = tabs.findIndex((tab) => tab.id === activeId);
-      const candidates = [...tabs.slice(start + 1), ...tabs.slice(0, start)]
+      const currentTabsList = tabsRef.current;
+      const visitedNow = visitedRef.current;
+      const start = currentTabsList.findIndex((tab) => tab.id === activeId);
+      const candidates = [
+        ...currentTabsList.slice(start + 1),
+        ...currentTabsList.slice(0, start)
+      ]
         .filter(
-          (tab) => (tab.envelope || tab.documentId) && !visited.includes(tab.id)
+          (tab) =>
+            (tab.envelope || tab.documentId) && !visitedNow.includes(tab.id)
         )
         .slice(0, 2);
       for (const tab of candidates) {
@@ -259,7 +275,14 @@ export default function PptxDocumentPacket({
       loader.prioritize(preparedIdByTab.get(selectedId.current ?? ''));
       controller.abort();
     };
-  }, [activeId, ready, tabs, visited, loader, resolveTabEnvelope]);
+  }, [
+    activeId,
+    activePrefetchReady,
+    tabIdKey,
+    visitedKey,
+    loader,
+    resolveTabEnvelope
+  ]);
   const currentTabs = useRef(tabs);
   currentTabs.current = tabs;
   const flushBeforeReplace = useCallback(async () => {
