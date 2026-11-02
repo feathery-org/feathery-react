@@ -73,6 +73,7 @@ import {
   getTextVariableReferences,
   getVisiblePositions
 } from '../utils/hideAndRepeats';
+import { getValueBoundReferences } from '../utils/valueBounds';
 import {
   ensurePhoneValidator,
   isFieldValueEmpty,
@@ -962,6 +963,13 @@ function Form({
     return new Set<string>();
   }, [activeStep?.id]);
 
+  // A slider's range reads its linked min/max fields while rendering, so editing
+  // one of them has to repaint the slider too
+  const valueBoundFieldReferences = useMemo(
+    () => getValueBoundReferences(activeStep),
+    [activeStep?.id]
+  );
+
   // Servar per field key. updateFieldValues runs on every keystroke, so this
   // avoids both the linear scan in getServarByFieldKey and the Field entity,
   // whose type getter warns when the field is not on the active form. The whole
@@ -1198,6 +1206,10 @@ function Form({
       ([key, val]) =>
         fieldValues[key] !== val && textVariableFieldReferences.has(key)
     );
+    const valueBoundDependenciesChanged = entries.some(
+      ([key, val]) =>
+        fieldValues[key] !== val && valueBoundFieldReferences.has(key)
+    );
 
     const fields = internalState[_internalId]?.fields;
 
@@ -1225,9 +1237,11 @@ function Form({
     if (rerender || empty) setRender((render) => ({ ...render }));
     else {
       // Not exclusive: a key can drive both a hideIf rule and a text variable,
-      // and the text variable needs the faster repaint either way.
+      // and the text variable needs the faster repaint either way. A slider's
+      // range likewise only repaints a mounted field, so it shares that repaint.
       if (hideIfDependenciesChanged) debouncedRerender();
-      if (textVariableDependenciesChanged) debouncedTextVariableRerender();
+      if (textVariableDependenciesChanged || valueBoundDependenciesChanged)
+        debouncedTextVariableRerender();
     }
 
     // Only validate on each field change if auto validate is enabled due to prev submit attempt

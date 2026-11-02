@@ -4,7 +4,7 @@ import { hoverStylesGuard } from '../../../utils/browser';
 
 import SliderStyles from './styles';
 import HiddenValueInput from '../../components/HiddenValueInput';
-import { getSliderRange } from '../../../utils/valueBounds';
+import { clampToSliderRange, getSliderRange } from '../../../utils/valueBounds';
 
 export default function SliderField({
   element,
@@ -30,7 +30,7 @@ export default function SliderField({
   // so show the label and input the same way, as submit will store it
   const shownValue =
     typeof internalValue === 'number'
-      ? Math.min(Math.max(internalValue, minVal), maxVal)
+      ? clampToSliderRange(internalValue, servar)
       : internalValue;
   const minLabel = servar.metadata.min_val_label || minVal;
   const maxLabel = servar.metadata.max_val_label || maxVal;

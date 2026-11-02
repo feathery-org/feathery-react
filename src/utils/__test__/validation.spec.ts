@@ -7,6 +7,7 @@ import {
   phoneLibPromise
 } from '../validation';
 import { fieldValues } from '../init';
+import { getSliderRange } from '../valueBounds';
 import { featheryDoc } from '../browser';
 
 jest.mock('../init', () => ({
@@ -183,6 +184,167 @@ describe('validation', () => {
     });
   });
 
+  describe('validateElements slider linked bounds', () => {
+    const slider = (key: string, metadata: any, overrides = {}) => ({
+      servar: {
+        key,
+        type: 'slider',
+        required: false,
+        repeated: false,
+        metadata,
+        ...overrides
+      },
+      validations: []
+    });
+    const numberField = (key: string, metadata: any) => ({
+      servar: {
+        key,
+        type: 'integer_field',
+        required: false,
+        repeated: false,
+        metadata
+      },
+      validations: []
+    });
+    const run = (fields: any[]) =>
+      validateElements({
+        step: {
+          servar_fields: fields.map((field, i) => ({
+            ...field,
+            position: [i]
+          })),
+          buttons: [],
+          subgrids: []
+        },
+        visiblePositions: Object.fromEntries(
+          fields.map((_, i) => [String(i), [true]])
+        ),
+        triggerErrors: false,
+        errorType: 'inline',
+        formRef: { current: null } as any,
+        setInlineErrors: jest.fn()
+      });
+
+    // The slider can't show a value past its range, so submit stores what it shows
+    it.each([
+      ['below the min', 5, 10],
+      ['above the max', 150, 100],
+      ['inside the bounds', 50, 50]
+    ])(
+      'stores a value %s within the range',
+      (_: string, value: number, stored: number) => {
+        Object.assign(fieldValues, { floor: 10, limit: 100, amount: value });
+        const { invalid } = run([
+          slider('amount', {
+            min_value_field_key: 'floor',
+            max_value_field_key: 'limit'
+          })
+        ]);
+        expect(invalid).toBe(false);
+        expect(fieldValues.amount).toEqual(stored);
+      }
+    );
+
+    it('clamps each row of a repeated slider', () => {
+      Object.assign(fieldValues, { floor: 10, limit: 100, amount: [5, 150] });
+      const field = {
+        ...slider(
+          'amount',
+          { min_value_field_key: 'floor', max_value_field_key: 'limit' },
+          { repeated: true }
+        ),
+        position: [0, 1]
+      };
+      validateElements({
+        step: {
+          servar_fields: [field],
+          buttons: [],
+          subgrids: [{ position: [0], repeated: true, id: 'sg' }]
+        },
+        visiblePositions: { '0,1': [true, true] },
+        triggerErrors: false,
+        errorType: 'inline',
+        formRef: { current: null } as any,
+        setInlineErrors: jest.fn()
+      });
+      expect(fieldValues.amount).toEqual([10, 100]);
+    });
+
+    it('keeps a min above the max as the value', () => {
+      Object.assign(fieldValues, { floor: 60, limit: 40, amount: 70 });
+      run([
+        slider('amount', {
+          min_value_field_key: 'floor',
+          max_value_field_key: 'limit'
+        })
+      ]);
+      expect(fieldValues.amount).toEqual(60);
+    });
+
+    it('leaves fixed bounds alone', () => {
+      Object.assign(fieldValues, { amount: 500 });
+      run([slider('amount', {}, { max_length: 100 })]);
+      expect(fieldValues.amount).toEqual(500);
+    });
+
+    it('passes an unlinked fixed range through unchanged', () => {
+      const servar = { metadata: {}, min_length: 50, max_length: 20 };
+      expect(getSliderRange(servar)).toEqual({ min: 50, max: 20 });
+    });
+
+    it('leaves a value alone while its linked fields are empty', () => {
+      Object.assign(fieldValues, { floor: '', limit: undefined, amount: 500 });
+      run([
+        slider(
+          'amount',
+          { min_value_field_key: 'floor', max_value_field_key: 'limit' },
+          { max_length: 100 }
+        )
+      ]);
+      expect(fieldValues.amount).toEqual(500);
+    });
+
+    // The range collapses to the fixed min, as the slider renders it
+    it('keeps a fixed min above a linked max as the value', () => {
+      Object.assign(fieldValues, { limit: 10, amount: 15 });
+      run([
+        slider('amount', { max_value_field_key: 'limit' }, { min_length: 20 })
+      ]);
+      expect(fieldValues.amount).toEqual(20);
+    });
+
+    // amount=80 is bounded by ceiling, a slider showing 100 but capped at 50
+    it.each([
+      ['before', true],
+      ['after', false]
+    ])(
+      'validates a field against a slider listed %s it at its clamped value',
+      (_: string, numberFirst: boolean) => {
+        Object.assign(fieldValues, { cap: 50, ceiling: 100, amount: 80 });
+        const amount = numberField('amount', {
+          max_value_field_key: 'ceiling'
+        });
+        const ceiling = slider('ceiling', { max_value_field_key: 'cap' });
+        const { invalid, errors } = run(
+          numberFirst ? [amount, ceiling] : [ceiling, amount]
+        );
+        expect(fieldValues.ceiling).toEqual(50);
+        expect(invalid).toBe(true);
+        expect(errors.amount).toEqual('Your entry must be at most 50');
+      }
+    );
+
+    it('settles a slider bounded by another slider listed after it', () => {
+      Object.assign(fieldValues, { cap: 50, ceiling: 100, amount: 80 });
+      run([
+        slider('amount', { max_value_field_key: 'ceiling' }),
+        slider('ceiling', { max_value_field_key: 'cap' })
+      ]);
+      expect(fieldValues.ceiling).toEqual(50);
+      expect(fieldValues.amount).toEqual(50);
+    });
+  });
+
   describe('getStandardFieldError', () => {
     it('gets the error for an empty required value', () => {
       // Arrange
@@ -340,55 +502,6 @@ describe('validation', () => {
         expect(
           getStandardFieldError(1e9, servar({ metadata: undefined }), null)
         ).toEqual('');
-      });
-    });
-
-    describe('slider linked bounds', () => {
-      const servar = (overrides = {}) => ({
-        key: 'amount',
-        required: false,
-        type: 'slider',
-        metadata: {
-          min_value_field_key: 'floor',
-          max_value_field_key: 'limit'
-        },
-        ...overrides
-      });
-
-      // The slider can't show a value past its range, so submit stores what it shows
-      it.each([
-        ['below the min', 5, 10],
-        ['above the max', 150, 100],
-        ['inside the bounds', 50, 50]
-      ])(
-        'stores a value %s within the range',
-        (_: string, value: number, stored: number) => {
-          Object.assign(fieldValues, { floor: 10, limit: 100, amount: value });
-          expect(getStandardFieldError(value, servar(), null)).toEqual('');
-          expect(fieldValues.amount).toEqual(stored);
-        }
-      );
-
-      it('clamps only the submitted row of a repeated slider', () => {
-        Object.assign(fieldValues, { floor: 10, limit: 100, amount: [5, 150] });
-        getStandardFieldError(150, servar({ repeated: true }), 1);
-        expect(fieldValues.amount).toEqual([5, 100]);
-      });
-
-      it('keeps a min above the max as the value', () => {
-        Object.assign(fieldValues, { floor: 60, limit: 40, amount: 70 });
-        getStandardFieldError(70, servar(), null);
-        expect(fieldValues.amount).toEqual(60);
-      });
-
-      it('leaves fixed bounds alone', () => {
-        Object.assign(fieldValues, { amount: 500 });
-        getStandardFieldError(
-          500,
-          servar({ metadata: {}, max_length: 100 }),
-          null
-        );
-        expect(fieldValues.amount).toEqual(500);
       });
     });
 
