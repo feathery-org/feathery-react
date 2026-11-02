@@ -567,6 +567,10 @@ export function useDocxHistorySession(
         };
         const result = await documentWrites.submit(async () => {
           const blob = await exported;
+          // The backend finalizes a closed row with its first upload. Let any
+          // checkpoint still uploading land first, or it would take the place
+          // of this close's highlights.
+          await closeQueue;
           const result = await saveInSession(
             saveSnapshot,
             blob,
@@ -633,7 +637,7 @@ export function useDocxHistorySession(
         const sent = { current: meta as DocxSaveMeta };
         await documentWrites.submit(async () => {
           const blob = await exported;
-          return saveInSession(
+          const result = await saveInSession(
             saveDocument,
             blob,
             sent,
@@ -642,17 +646,19 @@ export function useDocxHistorySession(
               tracker.currentMeta() ??
               freshSession(stale)
           );
+          // The PATCH stores only the docx; checkpoint so a session abandoned
+          // before close still keeps its highlights. Queue it before the next
+          // write starts, so a closing save drains it first.
+          if (
+            epoch === documentEpochRef.current &&
+            sent.current.sessionId === meta.sessionId
+          ) {
+            checkpoint?.();
+            savedCheckpoint = checkpointRequest;
+          }
+          return result;
         });
         if (!failedArtifacts.size) setSaveError(null);
-        // The PATCH stores only the docx; checkpoint so a session abandoned
-        // before close still keeps its highlights.
-        if (
-          epoch === documentEpochRef.current &&
-          sent.current.sessionId === meta.sessionId
-        ) {
-          checkpoint?.();
-          savedCheckpoint = checkpointRequest;
-        }
       },
       canSave: () => {
         if (!canAutosave()) return false;

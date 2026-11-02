@@ -1452,6 +1452,42 @@ describe('useDocxHistorySession', () => {
     expect(view.result.current.savedAt).not.toBe(documentSavedAt);
   });
 
+  it('holds a closing save until an earlier checkpoint finishes uploading', async () => {
+    const { view, editor, save, host } = setup();
+    let finishUpload: () => void = () => undefined;
+    host.closeVersion.mockImplementationOnce(
+      () =>
+        new Promise<any>((resolve) => {
+          finishUpload = () => resolve(null);
+        })
+    );
+
+    act(() => setRobinTurnActive(editor, true));
+    act(() => view.result.current.onEdit({ assistant: true }));
+    act(() => setRobinTurnActive(editor, false));
+    await flush();
+    expect(host.closeVersion).toHaveBeenCalledTimes(1);
+
+    // Closing now would let the checkpoint land on the closed row and finalize
+    // it in place of the close's own upload.
+    let closed = false;
+    const closing = view.result.current.save().then(() => {
+      closed = true;
+    });
+    await flush();
+    expect(save.mock.calls.some((c) => c[1]?.closeSession === true)).toBe(
+      false
+    );
+
+    await act(async () => {
+      finishUpload();
+      await closing;
+    });
+    expect(closed).toBe(true);
+    expect(save.mock.calls.at(-1)?.[1].closeSession).toBe(true);
+    expect(host.closeVersion).toHaveBeenCalledTimes(2);
+  });
+
   it('checkpoints from the autosave’s own serialize', async () => {
     jest.useFakeTimers();
     let doc = SFDT;
