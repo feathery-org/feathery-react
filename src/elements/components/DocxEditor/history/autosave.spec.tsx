@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 
 import { setRobinTurnActive, whileRobinWrites } from '../robinActivity';
 import { AUTOSAVE_IDLE_MS } from './autosaveScheduler';
@@ -10,8 +10,12 @@ import {
   useDocxHistorySession,
   UseDocxHistorySessionOptions
 } from './useDocxHistorySession';
-import { DocxHistoryHost, VersionAuthor } from './types';
-import { localVersionArtifactsFor } from './useVersionDocument';
+import { DocxHistoryHost, DocxVersion, VersionAuthor } from './types';
+import {
+  __clearVersionDocumentCache,
+  localVersionArtifactsFor,
+  useVersionDocument
+} from './useVersionDocument';
 
 const must = <T,>(value: T | null | undefined): T => {
   if (value == null) throw new Error('Expected a value');
@@ -1160,13 +1164,80 @@ describe('useDocxHistorySession', () => {
     expect(save).toHaveBeenCalledTimes(1);
     expect(save.mock.calls[0][1].closeSession).toBeUndefined();
     expect(view.result.current.isSessionOpen()).toBe(true);
-    // The session diff waits for the turn to end.
-    expect(host.closeVersion).not.toHaveBeenCalled();
+    // The checkpoint carries the document; the session diff waits for the
+    // turn to end.
+    expect(host.closeVersion).toHaveBeenCalledTimes(1);
+    expect(host.closeVersion.mock.calls[0][1].changesJson).toBeUndefined();
     act(() => setRobinTurnActive(editor, false));
     await act(async () => {
       for (let i = 0; i < 8; i++) await Promise.resolve();
     });
+    expect(host.closeVersion).toHaveBeenCalledTimes(2);
+    expect(host.closeVersion.mock.calls[1][1].changesJson).toBeDefined();
+  });
+
+  it('shows a mid-turn save in Current version after reload, not the older checkpoint', async () => {
+    jest.useFakeTimers();
+    (globalThis as any).CompressionStream = undefined;
+    const sfdt = (text: string) =>
+      JSON.stringify({ sections: [{ blocks: [{ inlines: [{ text }] }] }] });
+    let doc = sfdt('hello');
+    const editor: any = { serialize: () => doc };
+    const { view, save, host } = setup({}, editor);
+    const idle = async () => {
+      await act(async () => {
+        jest.advanceTimersByTime(AUTOSAVE_IDLE_MS);
+        for (let i = 0; i < 8; i++) await Promise.resolve();
+      });
+    };
+
+    // The person's autosave checkpoints the session with its highlights.
+    doc = sfdt('hello world');
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await idle();
     expect(host.closeVersion).toHaveBeenCalledTimes(1);
+
+    // Robin writes and autosaves well inside the checkpoint throttle.
+    act(() => setRobinTurnActive(editor, true));
+    act(() =>
+      whileRobinWrites(editor, () => {
+        doc = sfdt('hello world robin');
+        view.result.current.onEdit({ assistant: true });
+      })
+    );
+    await idle();
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(host.closeVersion).toHaveBeenCalledTimes(2);
+    const midTurn = host.closeVersion.mock.calls[1][1];
+    expect(midTurn.changesJson).toBeUndefined();
+
+    // The tab is lost before the turn ends. The backend drops the earlier
+    // change list with the new upload; even if it kept it next to the mid-turn
+    // final SFDT, Current must show the saved document.
+    const files: Record<string, string> = {
+      final: await blobText(midTurn.finalSfdtGz),
+      changes: await blobText(host.closeVersion.mock.calls[0][1].changesJson)
+    };
+    view.unmount();
+    __clearVersionDocumentCache();
+    jest.useRealTimers();
+    const reloaded = makeHost();
+    reloaded.fetchVersionFile.mockImplementation(
+      async (url: string) => new TextEncoder().encode(files[url]).buffer
+    );
+    const current = {
+      id: 'v1',
+      session_id: host.closeVersion.mock.calls[1][0],
+      is_current: true,
+      final_sfdt: 'final',
+      changes: 'changes',
+      change_count: 1,
+      final_sha256: midTurn.finalSha256
+    } as DocxVersion;
+    const viewer = renderHook(() => useVersionDocument(reloaded, current));
+    await waitFor(() => expect(viewer.result.current.loading).toBe(false));
+    expect(viewer.result.current.sfdt).toContain('hello world robin');
+    act(() => setRobinTurnActive(editor, false));
   });
 
   it('saves a Robin turn in progress when the tab is hidden', async () => {

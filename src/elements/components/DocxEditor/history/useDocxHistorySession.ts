@@ -702,13 +702,20 @@ export function useDocxHistorySession(
     // Upload the open session's highlights without closing it (closeSession
     // only uploads artifacts; the backend row stays open).
     let lastCheckpointAt = 0;
+    let lastCheckpointDiffed = false;
     const prepareCheckpoint = (force = false): (() => void) | undefined => {
-      if (!force && Date.now() - lastCheckpointAt < CHECKPOINT_MIN_INTERVAL_MS)
+      // Mid-turn, upload the document without its diff so the session diff
+      // stays off the main thread between Robin's writes. It still replaces an
+      // older checkpoint, which the viewer would otherwise show over the saved
+      // DOCX, so the first one skips the throttle. The turn's highlights upload
+      // when it ends.
+      const midTurn = !force && isRobinEditing(editorRef.current);
+      if (
+        !force &&
+        !(midTurn && lastCheckpointDiffed) &&
+        Date.now() - lastCheckpointAt < CHECKPOINT_MIN_INTERVAL_MS
+      )
         return;
-      // A mid-turn autosave only needs the DOCX to survive a lost tab. The
-      // turn's highlights upload when it ends, so the session diff stays off
-      // the main thread between Robin's writes.
-      if (!force && isRobinEditing(editorRef.current)) return;
       const meta = tracker.currentMeta();
       if (!meta || !s0Ref.current) return;
       let fStr: string | null = null;
@@ -722,13 +729,14 @@ export function useDocxHistorySession(
         host: hostRef.current,
         fStr,
         fAuthor: currentAuthorRef.current,
-        s0: s0Ref.current,
-        slices: slices.all(),
+        s0: midTurn ? null : s0Ref.current,
+        slices: midTurn ? [] : slices.all(),
         slicesComplete: slices.isComplete(),
-        robinRuns: [...robinRunsRef.current],
-        acceptance: acceptanceRef.current
+        robinRuns: midTurn ? [] : [...robinRunsRef.current],
+        acceptance: midTurn ? null : acceptanceRef.current
       };
       lastCheckpointAt = Date.now();
+      lastCheckpointDiffed = !midTurn;
       ownedSessions.current.add(meta.sessionId);
       // Refresh the history list after the checkpoint files are uploaded. A
       // refresh on the DOCX autosave alone can read the pre-checkpoint row and
