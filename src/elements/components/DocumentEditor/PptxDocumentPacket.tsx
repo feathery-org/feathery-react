@@ -81,7 +81,7 @@ function PresentationSession({
       if (containerId)
         clearDocxEditorDirty(formId, `${containerId}:${initial.id}`);
     };
-  }, [initial.id, register, containerId, formId, tab.label]);
+  }, [initial.id, register, containerId, formId]);
   const save = useCallback(
     async (blob: Blob) => {
       const result = await client.saveEnvelopeFile(
@@ -272,7 +272,21 @@ export default function PptxDocumentPacket({
             action?.editor_toolbar_actions?.includes('save') &&
             action?.save_document_field_key
           ) {
-            const latest = allResolved ? envelopes : await resolveEnvelopes();
+            let latest = envelopes;
+            if (!allResolved) {
+              // A single-deck Save still writes the whole ordered field, so
+              // resolve siblings best-effort. A sibling with no generated file
+              // yet keeps the saved field unchanged rather than failing a deck
+              // save that already landed.
+              let unavailable = false;
+              latest = await resolveEnvelopes(() => {
+                unavailable = true;
+              });
+              if (unavailable) {
+                onError(null);
+                return;
+              }
+            }
             const files = latest.map(
               (env) =>
                 (

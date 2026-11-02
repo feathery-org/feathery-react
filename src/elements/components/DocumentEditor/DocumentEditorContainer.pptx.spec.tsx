@@ -445,6 +445,25 @@ describe('presentation document tabs', () => {
     });
   });
 
+  it('keeps the saved field unchanged when a single Save has an unresolved sibling', async () => {
+    initState.sdkKey = 'test-key';
+    const localSchema = JSON.parse(JSON.stringify(schema));
+    const action = localSchema.steps[0].buttons[0].properties.actions[0];
+    action.editor_toolbar_actions = ['save', 'download'];
+    action.save_document_field_key = 'packet-files';
+    initState.formSchemas = { 'form-key': localSchema };
+    (featheryWindow() as any)[PENDING_DRAFTS_KEY][CONTAINER].envelopes[1].file =
+      null;
+    render(<DocumentEditorContainer containerId={CONTAINER} />);
+    await screen.findByTestId('pptx-editor:https://example.com/deck.pptx');
+    mockSubmitCustom.mockClear();
+    await act(async () => fireEvent.click(screen.getByTestId('pptx-save')));
+    // The deck's own save already landed; a sibling without a generated file
+    // leaves the field as-is instead of writing a partial list or erroring.
+    expect(mockSubmitCustom).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('saves PPTX edits before leaving for DOCX and keeps the tabs available', async () => {
     const packet = (featheryWindow() as any)[PENDING_DRAFTS_KEY][CONTAINER];
     Object.assign(packet.envelopes[1], {
