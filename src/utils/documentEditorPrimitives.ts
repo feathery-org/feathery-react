@@ -897,12 +897,17 @@ const EXPORT_CONTENT_CONTROL_RECOVERY_INSTALLED =
 // controls, so one unmatched start empties every later save
 export function installExportContentControlRecovery(editor: LiveEditor): void {
   const module: any = (editor as any).sfdtExportModule;
+  if (!module) return;
   if (
-    !module ||
     typeof module.write !== 'function' ||
-    typeof module.writeParagraph !== 'function'
-  )
+    typeof module.writeParagraph !== 'function' ||
+    typeof module.AddInlineToBlock !== 'function' ||
+    typeof module.contentControlProperty !== 'function' ||
+    !Array.isArray(module.inlineContentControls)
+  ) {
+    console.warn('Skipped docx export content control recovery');
     return;
+  }
   if (module[EXPORT_CONTENT_CONTROL_RECOVERY_INSTALLED]) return;
   module[EXPORT_CONTENT_CONTROL_RECOVERY_INSTALLED] = true;
   const write = module.write.bind(module);
@@ -918,10 +923,10 @@ export function installExportContentControlRecovery(editor: LiveEditor): void {
   ): any => {
     const depth = module.inlineContentControls.length;
     const next = writeParagraph(widget, paragraph, ...rest);
-    const optimized = module.keywordIndex === 1;
-    const inlines = paragraph[optimized ? 'i' : 'inlines'];
     // Close what this paragraph opened, as the SDK does for a selection export
     while (module.inlineContentControls.length > depth) {
+      const optimized = module.keywordIndex === 1;
+      const inlines = paragraph[optimized ? 'i' : 'inlines'];
       const open = module.inlineContentControls.pop();
       module.AddInlineToBlock(inlines, {
         [optimized ? 'i' : 'inlines']: open.inlines,
