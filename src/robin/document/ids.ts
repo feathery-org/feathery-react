@@ -85,7 +85,13 @@ export class IdTable {
     const used = new Set<string>([ROOT_ID]);
     renamed.set(nf.root.id, ROOT_ID);
     const previousRoots = previous.map((p) => p.root);
-    this.alignChildren(nf.root, previousRoots, shape, used, renamed);
+    // After a write, a deleted copy cannot continue a node the write kept
+    const kept = new Set<string>();
+    if (previous.length > 1)
+      walk(previous[0].root, shape, ({ node }) => {
+        if (!shape.goneOnAccept?.(node)) kept.add(node.id);
+      });
+    this.alignChildren(nf.root, previousRoots, shape, used, renamed, kept);
     walk(nf.root, shape, ({ node }) => {
       node.id = renamed.get(node.id) ?? node.id;
     });
@@ -128,6 +134,7 @@ export class IdTable {
     shape: PackTree,
     used: Set<string>,
     renamed: Map<string, string>,
+    kept: Set<string>,
     guessed = false
   ): void {
     for (const key of shape.childLists(node)) {
@@ -162,7 +169,8 @@ export class IdTable {
         candidates,
         shape,
         used,
-        primary
+        primary,
+        kept
       );
       kids.forEach((kid, i) => {
         const prev = match[i];
@@ -176,7 +184,7 @@ export class IdTable {
               .map((p) => findChild(p, shape, prev.id))
               .filter((c): c is NfNode => !!c)
           : [];
-        this.alignChildren(kid, continued, shape, used, renamed, unsure);
+        this.alignChildren(kid, continued, shape, used, renamed, kept, unsure);
       });
     }
   }
@@ -205,12 +213,16 @@ function alignList(
   candidates: NfNode[],
   shape: PackTree,
   used: Set<string>,
-  primary: NfNode[]
+  primary: NfNode[],
+  kept: Set<string>
 ): { match: Array<NfNode | undefined>; ambiguous: Set<number> } {
   const out: Array<NfNode | undefined> = kids.map(() => undefined);
   const ambiguous = new Set<number>();
   const taken = new Set<number>();
   const available = (j: number) => !taken.has(j) && !used.has(candidates[j].id);
+  const gone = (n: NfNode) => shape.goneOnAccept?.(n) ?? false;
+  const fits = (i: number, j: number) =>
+    available(j) && !(gone(kids[i]) && kept.has(candidates[j].id));
   const take = (i: number, j: number) => {
     out[i] = candidates[j];
     taken.add(j);
@@ -227,7 +239,7 @@ function alignList(
     kids.forEach((kid, i) => {
       const identity = shape.identity?.(kid);
       const j = identity
-        ? (byIdentity.get(identity) ?? []).find(available)
+        ? (byIdentity.get(identity) ?? []).find((j) => fits(i, j))
         : undefined;
       if (j !== undefined) take(i, j);
     });
@@ -275,9 +287,9 @@ function alignList(
     }
     const key = keyOf(kid);
     let j = keys.findIndex(
-      (k, idx) => idx > cursor && k === key && available(idx)
+      (k, idx) => idx > cursor && k === key && fits(i, idx)
     );
-    if (j < 0) j = keys.findIndex((k, idx) => k === key && available(idx));
+    if (j < 0) j = keys.findIndex((k, idx) => k === key && fits(i, idx));
     if (j >= 0) {
       take(i, j);
       cursor = j;
@@ -301,7 +313,6 @@ function alignList(
         break;
       }
     // a deleted copy still on the page continues only a node that was deleted too
-    const gone = (n: NfNode) => shape.goneOnAccept?.(n) ?? false;
     for (let j = lo + 1; j < hi; j += 1)
       if (
         available(j) &&

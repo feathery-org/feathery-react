@@ -1142,6 +1142,27 @@ describe('document session: the four verbs end to end', () => {
     );
   });
 
+  it('fingerprints cover every ancestor and the nodes a finalizer changed (react#2001)', () => {
+    const { call } = mount();
+    const box = nodeOf(call('read', { ids: ['n2'] }), 'n2');
+    const result = call('write', {
+      intent: 'Add a Liability line.',
+      scope: { ids: ['n2'] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: 'n4',
+          container: box.shape,
+          node: { text: 'Liability', style: 'f2' }
+        }
+      ]
+    }) as { ok: boolean; fingerprints?: Record<string, { base: string }> };
+    expect(result.ok).toBe(true);
+    const fresh = call('read', { ids: ['root', 'n5'] }) as ReadResult;
+    for (const id of ['root', 'n5'])
+      expect(result.fingerprints?.[id]?.base).toBe(nodeOf(fresh, id).base);
+  });
+
   it('an unambiguous user edit leaves ids writable without a fresh read', () => {
     const { host, call, nextTurn } = mount();
     const first = nodeOf(call('read', { ids: ['n1'] }), 'n1');

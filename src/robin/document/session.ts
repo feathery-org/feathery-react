@@ -487,7 +487,11 @@ export class DocumentSession {
       cardId: outcome.plan.landed === 'card' ? changeSetId : null,
       landed: outcome.plan.landed,
       outlineHash: (this.current as DocumentState).outlineHash,
-      fingerprints: this.fingerprints(write, prepared.mapping),
+      fingerprints: this.fingerprints(
+        write,
+        prepared.mapping,
+        prepared.finalizerScope.flatMap((f) => f.ids)
+      ),
       ...common,
       // with what the live editor reported of the commit (a contents table rebuilt, or not)
       facts: [...prepared.facts, ...outcome.facts],
@@ -588,10 +592,11 @@ export class DocumentSession {
     return true;
   }
 
-  /** Fresh fingerprints of what a committed write named or created, and of their parents */
+  /** Fresh fingerprints of what a committed write named or created, what finalizers changed, and their ancestors */
   private fingerprints(
     write: WriteInput,
-    mapping: Record<string, string>
+    mapping: Record<string, string>,
+    finalized: string[]
   ): Record<string, { base: string; shape: string }> {
     const { view } = this.current as DocumentState;
     const ids = new Set<string>();
@@ -599,10 +604,13 @@ export class DocumentSession {
       ...write.changes.flatMap(addressedIds),
       ...Object.keys(mapping)
     ];
-    for (const id of named.map((n) => mapping[n] ?? n)) {
+    for (const id of [...named.map((n) => mapping[n] ?? n), ...finalized]) {
       ids.add(id);
-      const parent = view.placement(id)?.parent;
-      if (parent) ids.add(parent.id);
+      let parent = view.placement(id)?.parent;
+      while (parent && !ids.has(parent.id)) {
+        ids.add(parent.id);
+        parent = view.placement(parent.id)?.parent;
+      }
     }
     const out: Record<string, { base: string; shape: string }> = {};
     for (const id of ids) {
