@@ -7,7 +7,7 @@ import React from 'react';
 import { stateFieldHasNoOptions } from './addressState';
 import { fieldValues, initInfo } from './init';
 import { getVisibleElements } from './hideAndRepeats';
-import { clampToSliderRange, getLinkedValue } from './valueBounds';
+import { alignToSlider, getLinkedValue } from './valueBounds';
 import { Trigger } from '../types/Form';
 // @ts-ignore
 import isUrl from 'is-url';
@@ -61,15 +61,12 @@ function validateElements({
     ['servar_fields', 'buttons'],
     true
   );
-  clampSliderValues(visibleElements);
+  alignSliderValues(visibleElements);
   const errors = visibleElements.reduce(
     (errors: any, { element, repeat, last, type: elementType }) => {
       let key, type;
       if (elementType === 'servar_fields') {
-        if (element.servar.repeat_trigger === 'set_value' && last && repeat) {
-          // Skip validation on last repeat since it might be default value
-          return errors;
-        }
+        if (isTrailingSetValueRow(element, repeat, last)) return errors;
         // A state field disabled for want of states can never be filled in
         if (stateFieldHasNoOptions(element, step, fieldValues, repeat)) {
           return errors;
@@ -151,29 +148,50 @@ function validateElements({
   return { errors, inlineErrors, invalid };
 }
 
-// A slider submits the value it shows within its range. Sliders can bound
-// other fields, so this runs before any field is validated, and repeats so a
-// slider bounded by another slider sees that slider's settled value
-function clampSliderValues(elements: { element: any; repeat: any }[]) {
-  const sliders = elements.filter(
-    ({ element }) => element.servar?.type === 'slider'
+// A set_value repeat adds a trailing row holding the default value, which isn't
+// an answer until the user sets it, so it's neither validated nor aligned
+function isTrailingSetValueRow(element: any, repeat: any, last?: boolean) {
+  return Boolean(
+    element.servar.repeat_trigger === 'set_value' && last && repeat
   );
-  for (let pass = 0; pass <= sliders.length; pass++) {
-    let moved = false;
-    sliders.forEach(({ element: { servar }, repeat }) => {
-      const stored: any = fieldValues[servar.key];
-      const value = servar.repeated ? stored?.[repeat] : stored;
-      if (isFieldValueEmpty(value, servar)) return;
-      const num = Number(value);
-      if (!Number.isFinite(num)) return;
-      const clamped = clampToSliderRange(num, servar);
-      if (clamped === num) return;
-      if (servar.repeated) stored[repeat] = clamped;
-      else fieldValues[servar.key] = clamped;
-      moved = true;
+}
+
+// A slider submits the value it shows within its range. Sliders can bound
+// other fields, so this runs before any field is validated. Each pass aligns the
+// original answers against the previous pass's results, so a slider bounded by
+// another slider sees its settled value whatever order the fields are in
+function alignSliderValues(
+  elements: { element: any; repeat: any; last?: boolean }[]
+) {
+  const answers = elements.flatMap(({ element, repeat, last }) => {
+    const { servar } = element;
+    if (servar?.type !== 'slider') return [];
+    if (isTrailingSetValueRow(element, repeat, last)) return [];
+    const stored: any = fieldValues[servar.key];
+    const value = servar.repeated ? stored?.[repeat] : stored;
+    if (isFieldValueEmpty(value, servar)) return [];
+    const num = Number(value);
+    return Number.isFinite(num) ? [{ servar, repeat, num }] : [];
+  });
+  let aligned = answers.map(({ num }) => num);
+  for (let pass = 0; pass <= answers.length; pass++) {
+    // Repeated fields can't bound others, so only single sliders are sources
+    const values: Record<string, any> = { ...fieldValues };
+    answers.forEach(({ servar }, i) => {
+      if (!servar.repeated) values[servar.key] = aligned[i];
     });
-    if (!moved) return;
+    const next = answers.map(({ servar, num }) =>
+      alignToSlider(num, servar, values)
+    );
+    const settled = next.every((value, i) => value === aligned[i]);
+    aligned = next;
+    if (settled) break;
   }
+  answers.forEach(({ servar, repeat, num }, i) => {
+    if (aligned[i] === num) return;
+    if (servar.repeated) (fieldValues[servar.key] as any)[repeat] = aligned[i];
+    else fieldValues[servar.key] = aligned[i];
+  });
 }
 
 /**

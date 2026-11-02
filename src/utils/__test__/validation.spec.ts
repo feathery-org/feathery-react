@@ -247,6 +247,19 @@ describe('validation', () => {
       }
     );
 
+    // rc-slider snaps the handle to a step from the min, so submit stores that
+    it('stores the step the handle snaps to when a linked min moves', () => {
+      Object.assign(fieldValues, { floor: 2, amount: 10 });
+      run([
+        slider(
+          'amount',
+          { min_value_field_key: 'floor', step_size: 5 },
+          { max_length: 100 }
+        )
+      ]);
+      expect(fieldValues.amount).toEqual(12);
+    });
+
     it('clamps each row of a repeated slider', () => {
       Object.assign(fieldValues, { floor: 10, limit: 100, amount: [5, 150] });
       const field = {
@@ -270,6 +283,33 @@ describe('validation', () => {
         setInlineErrors: jest.fn()
       });
       expect(fieldValues.amount).toEqual([10, 100]);
+    });
+
+    // Clamping the auto-added default row would turn it into an answer, and the
+    // form would add another row for it
+    it("leaves a set_value repeat's trailing default row alone", () => {
+      Object.assign(fieldValues, { floor: 10, amount: [5, 0] });
+      const field = {
+        ...slider(
+          'amount',
+          { min_value_field_key: 'floor' },
+          { repeated: true, repeat_trigger: 'set_value' }
+        ),
+        position: [0, 1]
+      };
+      validateElements({
+        step: {
+          servar_fields: [field],
+          buttons: [],
+          subgrids: [{ position: [0], repeated: true, id: 'sg' }]
+        },
+        visiblePositions: { '0,1': [true, true] },
+        triggerErrors: false,
+        errorType: 'inline',
+        formRef: { current: null } as any,
+        setInlineErrors: jest.fn()
+      });
+      expect(fieldValues.amount).toEqual([10, 0]);
     });
 
     it('keeps a min above the max as the value', () => {
@@ -345,6 +385,23 @@ describe('validation', () => {
       expect(fieldValues.ceiling).toEqual(50);
       expect(fieldValues.amount).toEqual(50);
     });
+
+    // amount=80 has its min set by ceiling, a slider holding 100 but capped at 50.
+    // Clamping amount against the unsettled 100 would raise it for good
+    it.each([
+      ['before', true],
+      ['after', false]
+    ])(
+      'keeps an answer clamped against a slider listed %s it in range',
+      (_: string, amountFirst: boolean) => {
+        Object.assign(fieldValues, { cap: 50, ceiling: 100, amount: 80 });
+        const amount = slider('amount', { min_value_field_key: 'ceiling' });
+        const ceiling = slider('ceiling', { max_value_field_key: 'cap' });
+        run(amountFirst ? [amount, ceiling] : [ceiling, amount]);
+        expect(fieldValues.ceiling).toEqual(50);
+        expect(fieldValues.amount).toEqual(80);
+      }
+    );
   });
 
   describe('getStandardFieldError', () => {
