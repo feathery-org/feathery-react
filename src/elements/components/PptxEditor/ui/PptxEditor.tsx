@@ -4,7 +4,7 @@ import {
   usePptxEditorState,
   usePptxEditorStore
 } from '../state/PptxEditorContext';
-import { SvgSlide, ZOOM_MAX, ZOOM_MIN } from './SlideStage';
+import { SvgSlide, ZOOM_MAX, ZOOM_STEP_MIN } from './SlideStage';
 import { Toolbar } from './PptxToolbar';
 import DocumentSaveStatus from '../../DocumentEditor/DocumentSaveStatus';
 import InstantTooltips from './InstantTooltips';
@@ -698,8 +698,8 @@ function PptxEditorInner({
             type='button'
             css={statusButton}
             title='Zoom out'
-            disabled={zoomPct <= ZOOM_MIN}
-            onClick={() => setManualZoom(Math.max(ZOOM_MIN, zoomPct - 25))}
+            disabled={zoomPct <= ZOOM_STEP_MIN && !fitToContainer}
+            onClick={() => setManualZoom(Math.max(ZOOM_STEP_MIN, zoomPct - 25))}
           >
             <MinusIcon width={14} height={14} />
           </button>

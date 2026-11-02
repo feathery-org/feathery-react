@@ -486,8 +486,11 @@ function extractRichText(
   return paras.length ? paras : [{ runs: [] }];
 }
 
-// Fit can go below 50% in short containers; manual controls share its range.
+// fitSlideZoom may fall to ZOOM_MIN so a short container still fits the whole
+// slide; the manual minus button and ctrl-wheel stop at ZOOM_STEP_MIN so they
+// can't walk a slide down to an unusable size.
 export const ZOOM_MIN = 1;
+export const ZOOM_STEP_MIN = 25;
 export const ZOOM_MAX = 400;
 
 // At 100%, the slide frame spans the stage's content width. Leave the same
@@ -574,7 +577,7 @@ export function SvgSlide({
       // the delta keeps one notch a step and the pinch smooth.
       const delta = Math.max(-30, Math.min(30, e.deltaY));
       const next = Math.max(
-        ZOOM_MIN,
+        ZOOM_STEP_MIN,
         Math.min(ZOOM_MAX, zoomFloatRef.current * Math.exp(-delta * 0.01))
       );
       const rounded = Math.round(next);

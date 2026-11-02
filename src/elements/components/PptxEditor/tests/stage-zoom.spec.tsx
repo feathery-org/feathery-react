@@ -3,7 +3,8 @@ import {
   fitSlideZoom,
   SvgSlide,
   ZOOM_MAX,
-  ZOOM_MIN
+  ZOOM_MIN,
+  ZOOM_STEP_MIN
 } from '../ui/SlideStage';
 import { act, mountEditor, sampleBytes, type Mounted } from './harness';
 
@@ -81,22 +82,19 @@ it('clamps wheel zoom to the bounds', async () => {
   expect(zoomOf(host)).toBe(ZOOM_MAX);
   for (let i = 0; i < 120; i++)
     await wheel(stage, { deltaY: 100, ctrlKey: true });
-  expect(zoomOf(host)).toBe(ZOOM_MIN);
+  expect(zoomOf(host)).toBe(ZOOM_STEP_MIN);
 });
 
-it('zooms out from a fitted value below 50% without jumping up', async () => {
-  const fitted = fitSlideZoom(800, 180, 16, 9);
-  if (fitted === null) throw new Error('Expected a valid fit zoom');
-  const { host, stage } = await mountStage(fitted);
-  expect(fitted).toBeLessThan(50);
-  expect(fitted).toBeGreaterThan(ZOOM_MIN);
-  await wheel(stage, { deltaY: 100, ctrlKey: true });
-  expect(zoomOf(host)).toBeLessThan(fitted);
-  expect(zoomOf(host)).toBeGreaterThanOrEqual(ZOOM_MIN);
+it('stops manual wheel zoom-out at the manual floor, not a 1% slide', async () => {
+  const { host, stage } = await mountStage(ZOOM_STEP_MIN + 20);
+  for (let i = 0; i < 60; i++)
+    await wheel(stage, { deltaY: 100, ctrlKey: true });
+  expect(zoomOf(host)).toBe(ZOOM_STEP_MIN);
 });
 
-it('uses the same lower bound for fitting and manual zoom', () => {
+it('lets fitSlideZoom fall below the manual floor to ZOOM_MIN for a short container', () => {
   expect(fitSlideZoom(800, 33, 16, 9)).toBe(ZOOM_MIN);
+  expect(ZOOM_MIN).toBeLessThan(ZOOM_STEP_MIN);
 });
 
 it('fits a wide slide by both the stage width and height, including padding', () => {
