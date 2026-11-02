@@ -1211,13 +1211,6 @@ function DocxEditor({
                 }`
               : 'Keep this tab open until they are.'}
           </span>
-          <button
-            type='button'
-            css={saveBannerBtn}
-            onClick={historySession.retry}
-          >
-            Save now
-          </button>
         </div>
       )}
       {/* Reserve the toolbar's space until it mounts (it needs `editor`), so its

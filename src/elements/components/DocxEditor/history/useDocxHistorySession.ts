@@ -720,7 +720,8 @@ export function useDocxHistorySession(
       // stays off the main thread between Robin's writes. Every mid-turn save
       // sends one, unthrottled: the viewer shows the stored checkpoint over the
       // saved DOCX, so it must match each save. The turn's highlights upload
-      // when it ends.
+      // when it ends. The checkpoint replaces the stored `changes`, so a turn
+      // that never ends also drops the session's earlier highlights.
       const midTurn = !force && isRobinEditing(editorRef.current);
       if (
         !force &&
