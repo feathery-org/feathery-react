@@ -79,6 +79,7 @@ jest.mock('../../utils/validation', () => {
       invalid: state.invalid,
       inlineErrors: {}
     })),
+    storeAlignedSliderValues: jest.fn(),
     validators: { phone: () => true, email: () => true },
     _spies: state
   };

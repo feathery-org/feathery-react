@@ -59,7 +59,9 @@ function validateElements({
     ['servar_fields', 'buttons'],
     true
   );
-  alignSliderValues(visibleElements);
+  // Validate against the slider values submit will store, then put the answers
+  // back: validation also runs without submitting
+  const replaced = writeSliderValues(getAlignedSliderValues(visibleElements));
   const errors = visibleElements.reduce(
     (errors: any, { element, repeat, last, type: elementType }) => {
       let key, type;
@@ -131,6 +133,7 @@ function validateElements({
     },
     {}
   );
+  writeSliderValues(replaced);
   if (triggerErrors) {
     setFormElementError({
       formRef,
@@ -144,24 +147,28 @@ function validateElements({
 }
 
 // A set_value repeat adds a trailing row holding the default value, which isn't
-// an answer until the user sets it, so it's neither validated nor aligned
+// an answer until the user sets it, so it isn't validated
 function isTrailingSetValueRow(element: any, repeat: any, last?: boolean) {
   return Boolean(
     element.servar.repeat_trigger === 'set_value' && last && repeat
   );
 }
 
+type SliderValue = { servar: any; repeat: any; value: number };
+
 // A slider submits the value it shows within its range. Sliders can bound
 // other fields, so this runs before any field is validated. Each pass aligns the
 // original answers against the previous pass's results, so a slider bounded by
 // another slider sees its settled value whatever order the fields are in
-function alignSliderValues(
+function getAlignedSliderValues(
   elements: { element: any; repeat: any; last?: boolean }[]
-) {
+): SliderValue[] {
   const answers = elements.flatMap(({ element, repeat, last }) => {
     const { servar } = element;
     if (servar?.type !== 'slider') return [];
-    if (isTrailingSetValueRow(element, repeat, last)) return [];
+    // Unlike validation, this skips the default row even when it's the only row
+    if (servar.repeated && servar.repeat_trigger === 'set_value' && last)
+      return [];
     const stored: any = fieldValues[servar.key];
     const value = servar.repeated ? stored?.[repeat] : stored;
     if (isFieldValueEmpty(value, servar)) return [];
@@ -182,11 +189,29 @@ function alignSliderValues(
     aligned = next;
     if (settled) break;
   }
-  answers.forEach(({ servar, repeat, num }, i) => {
-    if (aligned[i] === num) return;
-    if (servar.repeated) (fieldValues[servar.key] as any)[repeat] = aligned[i];
-    else fieldValues[servar.key] = aligned[i];
+  return answers.flatMap(({ servar, repeat, num }, i) =>
+    aligned[i] === num ? [] : [{ servar, repeat, value: aligned[i] }]
+  );
+}
+
+// Writes each slider value and returns the values it replaced
+function writeSliderValues(sliderValues: SliderValue[]): SliderValue[] {
+  return sliderValues.map(({ servar, repeat, value }) => {
+    const stored: any = fieldValues[servar.key];
+    const previous = servar.repeated ? stored[repeat] : stored;
+    if (servar.repeated) stored[repeat] = value;
+    else fieldValues[servar.key] = value;
+    return { servar, repeat, value: previous };
   });
+}
+
+// Submit stores each visible slider's settled value once validation passes
+function storeAlignedSliderValues(step: any, visiblePositions: any) {
+  writeSliderValues(
+    getAlignedSliderValues(
+      getVisibleElements(step, visiblePositions, ['servar_fields'], true)
+    )
+  );
 }
 
 /**
@@ -440,6 +465,7 @@ function getStandardFieldError(value: any, servar: any, repeat: any) {
 export {
   validateElement,
   validateElements,
+  storeAlignedSliderValues,
   getStandardFieldError,
   isFieldValueEmpty,
   emailPatternStr,
