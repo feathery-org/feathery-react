@@ -1,6 +1,7 @@
 import {
   validateElement,
   validateElements,
+  storeAlignedSliderValues,
   ResolvedCustomValidation,
   getStandardFieldError,
   loadPhoneValidator,
@@ -186,7 +187,7 @@ describe('validation', () => {
     });
   });
 
-  describe('validateElements slider linked bounds', () => {
+  describe('slider linked bounds', () => {
     const slider = (key: string, metadata: any, overrides = {}) => ({
       servar: {
         key,
@@ -208,24 +209,34 @@ describe('validation', () => {
       },
       validations: []
     });
+    const stepOf = (fields: any[]) => ({
+      servar_fields: fields.map((field, i) => ({ ...field, position: [i] })),
+      buttons: [],
+      subgrids: []
+    });
+    const visibleOf = (fields: any[]) =>
+      Object.fromEntries(fields.map((_, i) => [String(i), [true]]));
     const run = (fields: any[]) =>
       validateElements({
-        step: {
-          servar_fields: fields.map((field, i) => ({
-            ...field,
-            position: [i]
-          })),
-          buttons: [],
-          subgrids: []
-        },
-        visiblePositions: Object.fromEntries(
-          fields.map((_, i) => [String(i), [true]])
-        ),
+        step: stepOf(fields),
+        visiblePositions: visibleOf(fields),
         triggerErrors: false,
         errorType: 'inline',
         formRef: { current: null } as any,
         setInlineErrors: jest.fn()
       });
+    const store = (fields: any[]) =>
+      storeAlignedSliderValues(stepOf(fields), visibleOf(fields));
+    // One repeated slider whose container shows `rows` rows
+    const storeRows = (field: any, rows = 2) =>
+      storeAlignedSliderValues(
+        {
+          servar_fields: [{ ...field, position: [0, 1] }],
+          buttons: [],
+          subgrids: [{ position: [0], repeated: true, id: 'sg' }]
+        },
+        { '0,1': Array(rows).fill(true) }
+      );
 
     // The slider can't show a value past its range, so submit stores what it shows
     it.each([
@@ -236,13 +247,12 @@ describe('validation', () => {
       'stores a value %s within the range',
       (_: string, value: number, stored: number) => {
         Object.assign(fieldValues, { floor: 10, limit: 100, amount: value });
-        const { invalid } = run([
+        store([
           slider('amount', {
             min_value_field_key: 'floor',
             max_value_field_key: 'limit'
           })
         ]);
-        expect(invalid).toBe(false);
         expect(fieldValues.amount).toEqual(stored);
       }
     );
@@ -250,7 +260,7 @@ describe('validation', () => {
     // rc-slider snaps the handle to a step from the min, so submit stores that
     it('stores the step the handle snaps to when a linked min moves', () => {
       Object.assign(fieldValues, { floor: 2, amount: 10 });
-      run([
+      store([
         slider(
           'amount',
           { min_value_field_key: 'floor', step_size: 5 },
@@ -262,59 +272,40 @@ describe('validation', () => {
 
     it('clamps each row of a repeated slider', () => {
       Object.assign(fieldValues, { floor: 10, limit: 100, amount: [5, 150] });
-      const field = {
-        ...slider(
+      storeRows(
+        slider(
           'amount',
           { min_value_field_key: 'floor', max_value_field_key: 'limit' },
           { repeated: true }
-        ),
-        position: [0, 1]
-      };
-      validateElements({
-        step: {
-          servar_fields: [field],
-          buttons: [],
-          subgrids: [{ position: [0], repeated: true, id: 'sg' }]
-        },
-        visiblePositions: { '0,1': [true, true] },
-        triggerErrors: false,
-        errorType: 'inline',
-        formRef: { current: null } as any,
-        setInlineErrors: jest.fn()
-      });
+        )
+      );
       expect(fieldValues.amount).toEqual([10, 100]);
     });
 
     // Clamping the auto-added default row would turn it into an answer, and the
     // form would add another row for it
-    it("leaves a set_value repeat's trailing default row alone", () => {
-      Object.assign(fieldValues, { floor: 10, amount: [5, 0] });
-      const field = {
-        ...slider(
-          'amount',
-          { min_value_field_key: 'floor' },
-          { repeated: true, repeat_trigger: 'set_value' }
-        ),
-        position: [0, 1]
-      };
-      validateElements({
-        step: {
-          servar_fields: [field],
-          buttons: [],
-          subgrids: [{ position: [0], repeated: true, id: 'sg' }]
-        },
-        visiblePositions: { '0,1': [true, true] },
-        triggerErrors: false,
-        errorType: 'inline',
-        formRef: { current: null } as any,
-        setInlineErrors: jest.fn()
-      });
-      expect(fieldValues.amount).toEqual([10, 0]);
-    });
+    it.each([
+      ['after an answered row', [5, 0], [10, 0]],
+      ['as the only row', [0], [0]]
+    ])(
+      "leaves a set_value repeat's default row alone %s",
+      (_: string, value: number[], stored: number[]) => {
+        Object.assign(fieldValues, { floor: 10, amount: value });
+        storeRows(
+          slider(
+            'amount',
+            { min_value_field_key: 'floor' },
+            { repeated: true, repeat_trigger: 'set_value' }
+          ),
+          value.length
+        );
+        expect(fieldValues.amount).toEqual(stored);
+      }
+    );
 
     it('keeps a min above the max as the value', () => {
       Object.assign(fieldValues, { floor: 60, limit: 40, amount: 70 });
-      run([
+      store([
         slider('amount', {
           min_value_field_key: 'floor',
           max_value_field_key: 'limit'
@@ -325,7 +316,7 @@ describe('validation', () => {
 
     it('leaves fixed bounds alone', () => {
       Object.assign(fieldValues, { amount: 500 });
-      run([slider('amount', {}, { max_length: 100 })]);
+      store([slider('amount', {}, { max_length: 100 })]);
       expect(fieldValues.amount).toEqual(500);
     });
 
@@ -336,7 +327,7 @@ describe('validation', () => {
 
     it('leaves a value alone while its linked fields are empty', () => {
       Object.assign(fieldValues, { floor: '', limit: undefined, amount: 500 });
-      run([
+      store([
         slider(
           'amount',
           { min_value_field_key: 'floor', max_value_field_key: 'limit' },
@@ -349,7 +340,7 @@ describe('validation', () => {
     // The range collapses to the fixed min, as the slider renders it
     it('keeps a fixed min above a linked max as the value', () => {
       Object.assign(fieldValues, { limit: 10, amount: 15 });
-      run([
+      store([
         slider('amount', { max_value_field_key: 'limit' }, { min_length: 20 })
       ]);
       expect(fieldValues.amount).toEqual(20);
@@ -370,15 +361,32 @@ describe('validation', () => {
         const { invalid, errors } = run(
           numberFirst ? [amount, ceiling] : [ceiling, amount]
         );
-        expect(fieldValues.ceiling).toEqual(50);
         expect(invalid).toBe(true);
         expect(errors.amount).toEqual('Your entry must be at most 50');
+        // Validation alone doesn't store the clamped value
+        expect(fieldValues.ceiling).toEqual(100);
       }
     );
 
+    // Validation also runs without submitting, e.g. on a failed submit or from
+    // validateStep(), so it must leave slider answers alone
+    it("doesn't store slider values when only validating", () => {
+      Object.assign(fieldValues, { budget: 30, amount: 80 });
+      const fields = [
+        slider('budget', {}),
+        slider('amount', { max_value_field_key: 'budget' })
+      ];
+      run(fields);
+      expect(fieldValues.amount).toEqual(80);
+      // Once the source is raised again, submit stores the original answer
+      fieldValues.budget = 100;
+      store(fields);
+      expect(fieldValues.amount).toEqual(80);
+    });
+
     it('settles a slider bounded by another slider listed after it', () => {
       Object.assign(fieldValues, { cap: 50, ceiling: 100, amount: 80 });
-      run([
+      store([
         slider('amount', { max_value_field_key: 'ceiling' }),
         slider('ceiling', { max_value_field_key: 'cap' })
       ]);
@@ -397,7 +405,7 @@ describe('validation', () => {
         Object.assign(fieldValues, { cap: 50, ceiling: 100, amount: 80 });
         const amount = slider('amount', { min_value_field_key: 'ceiling' });
         const ceiling = slider('ceiling', { max_value_field_key: 'cap' });
-        run(amountFirst ? [amount, ceiling] : [ceiling, amount]);
+        store(amountFirst ? [amount, ceiling] : [ceiling, amount]);
         expect(fieldValues.ceiling).toEqual(50);
         expect(fieldValues.amount).toEqual(80);
       }
@@ -513,17 +521,18 @@ describe('validation', () => {
 
       it.each([
         ['inside the bounds', 50, ''],
-        ['at the min', 10, ''],
-        ['at the max', 100, ''],
-        ['below the min', 9, atLeast(10)],
-        ['above the max', 101, atMost(100)],
-        ['stored as a string', '101', atMost(100)]
+        ['at the min', 9.5, ''],
+        ['just above the min', 9.75, ''],
+        ['at the max', 100.6, ''],
+        ['below the min', 9.4, atLeast(9.5)],
+        ['above the max', 100.8, atMost(100.6)],
+        ['stored as a string', '101', atMost(100.6)]
       ])(
         'checks a value %s',
         (_: string, value: number | string, error: string) => {
-          // Linked bounds round to integers (9.5 up to 10, 100.4 down to 100), and
-          // the max arrives as a string, as text-like stored values do
-          Object.assign(fieldValues, { floor: 9.5, limit: '100.4' });
+          // Number fields hold decimals, so bounds compare as stored; the max
+          // arrives as a string, as text-like stored values do
+          Object.assign(fieldValues, { floor: 9.5, limit: '100.6' });
           expect(getStandardFieldError(value, servar(), null)).toEqual(error);
         }
       );

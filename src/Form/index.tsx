@@ -77,6 +77,7 @@ import { getValueBoundReferences } from '../utils/valueBounds';
 import {
   ensurePhoneValidator,
   isFieldValueEmpty,
+  storeAlignedSliderValues,
   validateElements,
   validators
 } from '../utils/validation';
@@ -2296,6 +2297,8 @@ function Form({
     repeat: number | undefined,
     hasNext: boolean
   ): Promise<[Promise<any>] | undefined> => {
+    // The step passed validation, so its sliders now store what they show
+    storeAlignedSliderValues(activeStep, visiblePositions);
     let formattedFields = formatStepFields(
       activeStep,
       formSettings.saveHideIfFields ? null : visiblePositions,
@@ -2389,6 +2392,7 @@ function Form({
         setAutoValidate(true);
         return;
       }
+      storeAlignedSliderValues(activeStep, latestVisiblePositions);
       formattedFields = formatStepFields(
         activeStep,
         formSettings.saveHideIfFields ? null : latestVisiblePositions,

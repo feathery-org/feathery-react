@@ -51,6 +51,10 @@ describe('alignToSlider', () => {
     expect(alignToSlider(13, slider(5))).toBe(13);
     Object.assign(fieldValues, { floor: 0, limit: 10 });
     expect(alignToSlider(9, slider(4))).toBe(10);
+    // A fractional linked min isn't rounded: steps of 0.5 from 0.3
+    Object.assign(fieldValues, { floor: 0.3, limit: 10 });
+    expect(alignToSlider(1, slider(0.5))).toBe(0.8);
+    Object.assign(fieldValues, { floor: 0, limit: 10 });
     // A missing or non-positive step renders as 1
     expect(alignToSlider(3.4, slider(undefined))).toBe(3);
     expect(alignToSlider(3.4, slider(-5))).toBe(3);
@@ -65,7 +69,7 @@ describe('alignToSlider', () => {
   it("matches rc-slider's own snapping", () => {
     const steps = [1, 3, 5, 0.1, 0.25, 7];
     const fixedMaxes = [100, 10.5, 33];
-    const floors = [-7, 0, 2, 13];
+    const floors = [-7, 0, 1.25, 2, 13];
     for (const step of steps)
       for (const max of fixedMaxes)
         for (const floor of floors) {
