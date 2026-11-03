@@ -332,6 +332,9 @@ function DateSelectorField({
           showYearDropdown
           forceShowMonthNavigation={false}
           dropdownMode='select'
+          // Always render six week rows so the popup keeps the same height
+          // across months and doesn't jump or reposition while navigating
+          fixedHeight
           // Open up calendar as a modal in mobile
           withPortal={isMobile}
           portalId={isMobile ? 'feathery-portal' : undefined}
