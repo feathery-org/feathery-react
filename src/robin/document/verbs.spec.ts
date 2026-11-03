@@ -171,6 +171,17 @@ describe('outline', () => {
       'n1 para "Title"'
     );
   });
+
+  it('refuses a page while the editor has laid out no pages, pointing at the whole outline', () => {
+    expect(outlineVerb(fresh(), { pageNumber: 1 }, () => null)).toEqual(
+      expect.objectContaining({
+        ok: false,
+        refusal: expect.objectContaining({
+          invariant: 'page-layout-unavailable'
+        })
+      })
+    );
+  });
 });
 
 describe('write: verified changes', () => {

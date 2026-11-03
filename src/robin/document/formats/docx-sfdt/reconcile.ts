@@ -42,6 +42,7 @@ import { ownText } from './outline';
 import { docxTree } from './tree';
 import type { DocxHost } from './host';
 import { inUndoGroup } from './host';
+import { editorParagraphs } from './positions';
 import { viewToc } from './toc';
 
 type Obj = Record<string, unknown>;
@@ -357,17 +358,9 @@ export function composeTracked(
 
 /** The editor's hierarchical paragraph index (`section;block;row;cell;block...`), or null. */
 export function hierOf(view: DocumentView, id: string): string | null {
-  const out: Array<string | number> = [];
-  let p = view.placement(id);
-  while (p && p.parent) {
-    const key = p.key as string;
-    if (!['sections', 'blocks', 'rows', 'cells'].includes(key)) return null;
-    // a paragraph inside a block-level control is not addressable natively (lab: not wired)
-    if (key === 'blocks' && p.parent.kind === KIND.control) return null;
-    out.unshift(p.index);
-    p = view.placement(p.parent.id);
-  }
-  return out.length ? out.join(';') : null;
+  const numbered = editorParagraphs(view).get(id);
+  // a paragraph inside a block-level control is not addressable natively (lab: not wired)
+  return numbered && !numbered.inControl ? numbered.position : null;
 }
 
 export interface TextOp {
