@@ -158,7 +158,10 @@ import {
 import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
 import { replaceTextVariables } from '../elements/components/TextNodes';
-import { getFormContext } from '../utils/formContext';
+import {
+  getFormContext,
+  waitForPendingStepSubmission
+} from '../utils/formContext';
 import { FormWebMCPTools, hasWebMCPRuntime } from '../utils/formTools/webmcp';
 import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
@@ -1780,6 +1783,7 @@ function Form({
           }
         },
         sendDocusignEnvelope: async (params: SendDocusignParams) => {
+          await waitForPendingStepSubmission(client);
           await Promise.all([
             client.flushCustomFields(),
             defaultClient.flushCustomFields()
@@ -1810,6 +1814,7 @@ function Form({
           envelopes,
           attachments
         }: FillQuikParams) => {
+          await waitForPendingStepSubmission(client);
           await Promise.all([
             client.flushCustomFields(),
             defaultClient.flushCustomFields()
