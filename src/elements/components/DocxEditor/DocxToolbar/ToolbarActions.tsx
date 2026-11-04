@@ -1,5 +1,6 @@
 import React, { forwardRef } from 'react';
 import Menu from './Menu';
+import DocumentSaveStatus from '../../DocumentEditor/DocumentSaveStatus';
 import {
   ChevronDownIcon,
   DownloadIcon,
@@ -13,12 +14,13 @@ import {
   FEATHERY_RED,
   FEATHERY_RED_HOVER,
   menuItem,
-  terminalBtn,
-  ZINC
+  terminalBtn
 } from './styles';
 
 export interface ToolbarActionsProps {
   onSave?: () => void;
+  onSaveAll?: () => void;
+  onDownloadAll?: () => void;
   onDownload?: () => void;
   /** When provided, Download becomes a DOCX / PDF menu. */
   onDownloadPdf?: () => void;
@@ -42,6 +44,51 @@ export interface ToolbarActionsProps {
   compact?: boolean;
 }
 
+function DownloadMenuItems({
+  onDownload,
+  onDownloadPdf,
+  onDownloadAll,
+  close
+}: Pick<ToolbarActionsProps, 'onDownloadPdf' | 'onDownloadAll'> & {
+  onDownload: () => void;
+  close: () => void;
+}) {
+  const options = [
+    {
+      label: onDownloadAll ? 'This document as DOCX' : 'Download as DOCX',
+      run: onDownload
+    },
+    ...(onDownloadPdf
+      ? [
+          {
+            label: onDownloadAll ? 'This document as PDF' : 'Download as PDF',
+            run: onDownloadPdf
+          }
+        ]
+      : []),
+    ...(onDownloadAll
+      ? [{ label: 'All documents (ZIP)', run: onDownloadAll }]
+      : [])
+  ];
+  return (
+    <div css={{ width: 200 }}>
+      {options.map(({ label, run }) => (
+        <button
+          key={label}
+          type='button'
+          css={menuItem()}
+          onClick={() => {
+            run();
+            close();
+          }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // Save / Download / Sign — pinned to the toolbar's right edge. The forwarded
 // ref is measured by useToolbarOverflow so the centered tool cluster gets
 // symmetric clearance on both sides.
@@ -49,6 +96,8 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
   function ToolbarActions(
     {
       onSave,
+      onSaveAll,
+      onDownloadAll,
       onDownload,
       onDownloadPdf,
       downloadBusy,
@@ -81,41 +130,13 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
           justifyContent: 'flex-end',
           gap: 8,
           background: '#fff',
-          zIndex: 1
+          zIndex: 1,
+          '@container document-editor (max-width: 560px)': {
+            '& [data-action-label]': { display: 'none' }
+          }
         }}
       >
-        {/* Always rendered, hidden while clean: this region's width feeds the
-            tool row's clearance (useToolbarOverflow), so the indicator popping
-            in and out must not change it — otherwise every first edit shoves
-            the centered tool row to the left edge, and it only recovers on an
-            explicit save. */}
-        <span
-          css={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 13,
-            color: ZINC[500],
-            whiteSpace: 'nowrap',
-            visibility: dirty ? 'visible' : 'hidden'
-          }}
-          aria-hidden={!dirty}
-          title={dirty ? 'You have unsaved changes' : undefined}
-        >
-          <span
-            css={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: FEATHERY_RED,
-              flex: '0 0 auto'
-            }}
-          />
-          {/* On narrow toolbars the dot alone carries the state (with the
-              tooltip); the label would crowd out the tool row. */}
-          {!compact && 'Unsaved changes'}
-        </span>
-        {onDownload && onDownloadPdf ? (
+        {onDownload && (onDownloadPdf || onDownloadAll) ? (
           <Menu
             align='end'
             trigger={({ toggle }) => (
@@ -124,6 +145,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                 css={{ ...downloadBtn, opacity: downloadBusy ? 0.6 : 1 }}
                 onClick={toggle}
                 disabled={downloadBusy}
+                aria-label='Download'
                 title={downloadBusy ? 'Preparing download…' : 'Download'}
               >
                 {downloadBusy ? (
@@ -131,34 +153,18 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                 ) : (
                   <DownloadIcon width={16} height={16} />
                 )}
-                Download
+                <span data-action-label>Download</span>
                 <ChevronDownIcon width={14} height={14} />
               </button>
             )}
           >
             {(close) => (
-              <div css={{ width: 200 }}>
-                <button
-                  type='button'
-                  css={menuItem()}
-                  onClick={() => {
-                    onDownload();
-                    close();
-                  }}
-                >
-                  Download as DOCX
-                </button>
-                <button
-                  type='button'
-                  css={menuItem()}
-                  onClick={() => {
-                    onDownloadPdf();
-                    close();
-                  }}
-                >
-                  Download as PDF
-                </button>
-              </div>
+              <DownloadMenuItems
+                onDownload={onDownload}
+                onDownloadPdf={onDownloadPdf}
+                onDownloadAll={onDownloadAll}
+                close={close}
+              />
             )}
           </Menu>
         ) : onDownload ? (
@@ -167,6 +173,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
             css={{ ...downloadBtn, opacity: downloadBusy ? 0.6 : 1 }}
             onClick={onDownload}
             disabled={downloadBusy}
+            aria-label='Download'
             title={downloadBusy ? 'Preparing download…' : 'Download'}
           >
             {downloadBusy ? (
@@ -174,12 +181,13 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
             ) : (
               <DownloadIcon width={16} height={16} />
             )}
-            Download
+            <span data-action-label>Download</span>
           </button>
         ) : null}
         {terminalAction &&
           onTerminalAction &&
-          (terminalAction === 'download' && onTerminalActionPdf ? (
+          (terminalAction === 'download' &&
+          (onTerminalActionPdf || onDownloadAll) ? (
             <Menu
               align='end'
               trigger={({ toggle }) => (
@@ -188,6 +196,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                   css={terminalBtn(terminalDisabled)}
                   disabled={terminalDisabled}
                   onClick={toggle}
+                  aria-label='Download'
                   title='Saves changes before downloading'
                 >
                   {terminalActionLoading ? (
@@ -195,34 +204,18 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                   ) : (
                     <DownloadIcon width={16} height={16} />
                   )}
-                  Download
+                  <span data-action-label>Download</span>
                   <ChevronDownIcon width={14} height={14} />
                 </button>
               )}
             >
               {(close) => (
-                <div css={{ width: 200 }}>
-                  <button
-                    type='button'
-                    css={menuItem()}
-                    onClick={() => {
-                      onTerminalAction();
-                      close();
-                    }}
-                  >
-                    Download as DOCX
-                  </button>
-                  <button
-                    type='button'
-                    css={menuItem()}
-                    onClick={() => {
-                      onTerminalActionPdf();
-                      close();
-                    }}
-                  >
-                    Download as PDF
-                  </button>
-                </div>
+                <DownloadMenuItems
+                  onDownload={onTerminalAction}
+                  onDownloadPdf={onTerminalActionPdf}
+                  onDownloadAll={onDownloadAll}
+                  close={close}
+                />
               )}
             </Menu>
           ) : terminalAction === 'sign' && onTerminalActionDraft ? (
@@ -236,6 +229,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                   css={terminalBtn(terminalDisabled)}
                   disabled={terminalDisabled}
                   onClick={toggle}
+                  aria-label='Sign'
                   title='Saves changes before continuing'
                 >
                   {terminalActionLoading ? (
@@ -243,7 +237,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                   ) : (
                     <SignatureIcon width={16} height={16} />
                   )}
-                  Sign
+                  <span data-action-label>Sign</span>
                   <ChevronDownIcon width={14} height={14} />
                 </button>
               )}
@@ -279,6 +273,13 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
               css={terminalBtn(terminalDisabled)}
               disabled={terminalDisabled}
               onClick={onTerminalAction}
+              aria-label={
+                terminalAction === 'download'
+                  ? 'Download'
+                  : terminalAction === 'draft'
+                  ? 'Create Draft'
+                  : 'Sign'
+              }
               title='Saves changes before continuing'
             >
               {terminalActionLoading ? (
@@ -288,46 +289,120 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
               ) : (
                 <SignatureIcon width={16} height={16} />
               )}
-              {terminalAction === 'download'
-                ? 'Download'
-                : terminalAction === 'draft'
-                ? 'Create Draft'
-                : 'Sign'}
+              <span data-action-label>
+                {terminalAction === 'download'
+                  ? 'Download'
+                  : terminalAction === 'draft'
+                  ? 'Create Draft'
+                  : 'Sign'}
+              </span>
             </button>
           ))}
-        {onSave && (
-          <button
-            type='button'
-            css={{
-              display: 'flex',
-              height: 32,
-              alignItems: 'center',
-              gap: 6,
-              borderRadius: 6,
-              border: 'none',
-              background: FEATHERY_RED,
-              padding: '0 12px',
-              fontSize: 14,
-              fontWeight: 500,
-              color: '#fff',
-              cursor: saving ? 'default' : 'pointer',
-              '&:hover': {
-                background: saving ? FEATHERY_RED : FEATHERY_RED_HOVER
-              }
-            }}
-            disabled={saving}
-            onClick={onSave}
+        <DocumentSaveStatus dirty={dirty} compact={compact} />
+        {onSave && onSaveAll ? (
+          <Menu
+            align='end'
+            trigger={({ open, toggle }) => (
+              <div css={{ display: 'flex' }}>
+                <button
+                  type='button'
+                  css={{
+                    ...terminalBtn(!!saving),
+                    borderRadius: '6px 0 0 6px'
+                  }}
+                  disabled={saving}
+                  onClick={() => {
+                    if (open) toggle();
+                    onSave();
+                  }}
+                  title='Save this document (Ctrl/Cmd+S)'
+                >
+                  {saving ? (
+                    <SpinnerIcon width={16} height={16} />
+                  ) : (
+                    <SaveIcon width={16} height={16} />
+                  )}
+                  Save
+                </button>
+                <button
+                  type='button'
+                  css={{
+                    ...terminalBtn(!!saving),
+                    borderRadius: '0 6px 6px 0',
+                    padding: '0 6px',
+                    borderLeft: '1px solid rgba(255,255,255,.35)'
+                  }}
+                  disabled={saving}
+                  onClick={toggle}
+                  aria-label='Save options'
+                  aria-expanded={open}
+                  aria-haspopup='true'
+                >
+                  <ChevronDownIcon width={14} height={14} />
+                </button>
+              </div>
+            )}
           >
-            {/* Icon slot is a fixed 16px in both states, and the label stays
+            {(close) => (
+              <div css={{ width: 200 }}>
+                <button
+                  type='button'
+                  css={menuItem()}
+                  onClick={() => {
+                    onSave();
+                    close();
+                  }}
+                >
+                  Save this document
+                </button>
+                <button
+                  type='button'
+                  css={menuItem()}
+                  onClick={() => {
+                    onSaveAll();
+                    close();
+                  }}
+                >
+                  Save All Documents
+                </button>
+              </div>
+            )}
+          </Menu>
+        ) : (
+          onSave && (
+            <button
+              type='button'
+              css={{
+                display: 'flex',
+                height: 32,
+                alignItems: 'center',
+                gap: 6,
+                borderRadius: 6,
+                border: 'none',
+                background: FEATHERY_RED,
+                padding: '0 12px',
+                fontSize: 14,
+                fontWeight: 500,
+                color: '#fff',
+                cursor: saving ? 'default' : 'pointer',
+                '&:hover': {
+                  background: saving ? FEATHERY_RED : FEATHERY_RED_HOVER
+                }
+              }}
+              disabled={saving}
+              onClick={onSave}
+            >
+              {/* Icon slot is a fixed 16px in both states, and the label stays
                 "Save", so swapping in the spinner never resizes the button
                 (no flicker on quick saves). */}
-            {saving ? (
-              <SpinnerIcon width={16} height={16} />
-            ) : (
-              <SaveIcon width={16} height={16} />
-            )}
-            Save
-          </button>
+              {saving ? (
+                <SpinnerIcon width={16} height={16} />
+              ) : (
+                <SaveIcon width={16} height={16} />
+              )}
+              Save
+            </button>
+          )
         )}
       </div>
     );

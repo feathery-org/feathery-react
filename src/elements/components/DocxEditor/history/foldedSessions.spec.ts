@@ -76,6 +76,14 @@ describe('approvedEditCount', () => {
 });
 
 describe('diffFoldedSessions', () => {
+  it('does not interpret an unnormalized compact snapshot as an empty document', () => {
+    expect(
+      diffFoldedSessions({ optimizeSfdt: true, sec: [{}] }, [
+        session('Hello', 'Hello v2', 'you')
+      ])
+    ).toBeNull();
+  });
+
   it('attributes each session to its own author', () => {
     const sessions = [
       session('Hello', 'Hello Alice', 'alice@x.io'),

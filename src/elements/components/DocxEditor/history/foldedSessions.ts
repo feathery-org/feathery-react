@@ -51,15 +51,14 @@ export function diffFoldedSessions(
   sessions: FoldedSession[],
   timeBudgetMs = 4000
 ): ChangeList | null {
-  const changes = diffSession(
-    start,
-    sessions.map((session) => ({
-      sfdt: JSON.parse(session.finalSfdt),
-      author: session.author
-    })),
-    'folded',
-    { timeBudgetMs }
-  );
+  // Unsupported/compact snapshots must never masquerade as empty documents.
+  if (!Array.isArray((start as any)?.sections)) return null;
+  const slices = sessions.map((session) => ({
+    sfdt: JSON.parse(session.finalSfdt),
+    author: session.author
+  }));
+  if (slices.some((slice) => !Array.isArray(slice.sfdt?.sections))) return null;
+  const changes = diffSession(start, slices, 'folded', { timeBudgetMs });
   if (changes.degraded?.includes('time-budget')) return null;
   changes.attribution = 'slices';
   // Robin-only sessions keep their accepted text red, as in their own view.

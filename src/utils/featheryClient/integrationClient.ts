@@ -1042,6 +1042,18 @@ export default class IntegrationClient {
     );
   }
 
+  async prepareEnvelopeVersion(envelopeId: string, versionId: string) {
+    const body = new FormData();
+    body.append('fuser_key', initInfo().userId ?? '');
+    body.append('form_key', this.formKey);
+    return parseDocxVersion(
+      await this.documentRequest(
+        `${API_URL}document/envelope/${envelopeId}/versions/${versionId}/prepare/`,
+        { method: 'POST', body }
+      )
+    );
+  }
+
   // Close a session, uploading the final SFDT (gzipped) and its anchored change
   // list. 204 → the session was eliminated as unchanged (no row). Returns the
   // version row otherwise.
@@ -1117,7 +1129,8 @@ export default class IntegrationClient {
   finalizeEnvelope(
     envelopeId: string,
     signers: Record<string, any>[] = [],
-    signMethod?: string
+    signMethod?: string,
+    signingOptions?: { individualSigning?: boolean }
   ) {
     const { userId } = initInfo();
     const url = `${API_URL}document/envelope/${envelopeId}/finalize/`;
@@ -1127,7 +1140,10 @@ export default class IntegrationClient {
       body: JSON.stringify({
         fuser_key: userId ?? '',
         signers,
-        ...(signMethod ? { sign_method: signMethod } : {})
+        ...(signMethod ? { sign_method: signMethod } : {}),
+        ...(signingOptions?.individualSigning
+          ? { individual_signing: true }
+          : {})
       }),
       keepalive: false
     };
@@ -1162,12 +1178,14 @@ export default class IntegrationClient {
   // The newest envelope for this submission + document, loaded by the in-form
   // document editor container. Returns {id, file, editor_file, type, signed}
   // or {} — the editor opens editor_file (controls intact) when present.
-  getCurrentEnvelope(documentId: string) {
+  getCurrentEnvelope(documentId: string, envelopeId?: string) {
     const { userId } = initInfo();
-    // The form key scopes the lookup to envelopes this form generated.
+    // The form key scopes the lookup to envelopes this form generated. An
+    // envelope id pins one of several envelopes sharing a document.
     const params = encodeGetParams({
       fuser_key: userId,
       document_id: documentId,
+      ...(envelopeId ? { envelope_id: envelopeId } : {}),
       ...(this.formKey ? { form_key: this.formKey } : {})
     });
     const url = `${API_URL}document/current-envelope/?${params}`;

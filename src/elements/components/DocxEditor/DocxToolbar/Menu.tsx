@@ -65,8 +65,19 @@ export default function Menu({
       setOpen(false);
       onClose?.();
     };
+    const onFocus = (e: FocusEvent) => {
+      const target = e.target as Element;
+      if (ref.current?.contains(target) || panelRef.current?.contains(target))
+        return;
+      setOpen(false);
+      onClose?.();
+    };
     doc.addEventListener('mousedown', onDown);
-    return () => doc.removeEventListener('mousedown', onDown);
+    doc.addEventListener('focusin', onFocus);
+    return () => {
+      doc.removeEventListener('mousedown', onDown);
+      doc.removeEventListener('focusin', onFocus);
+    };
   }, [open, onClose]);
 
   const toggle = () => {

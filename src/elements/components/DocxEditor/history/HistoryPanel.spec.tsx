@@ -1,7 +1,8 @@
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
 
 import HistoryPanel from './HistoryPanel';
+import { loadVersionList } from './versionList';
 import {
   DocxHistoryHost,
   DocxVersion,
@@ -72,6 +73,32 @@ beforeEach(() => {
 });
 
 describe('HistoryPanel', () => {
+  it('shows a zero-edit restore and the preceding edit as separate selectable rows', async () => {
+    const prior = v({
+      seq: 1,
+      ended_at: '2026-09-02T11:59:00',
+      change_count: 1,
+      changes: '/changes.gz'
+    });
+    const restored = v({
+      seq: 2,
+      is_current: true,
+      restored_from: 'original',
+      restored_from_at: '2026-09-02T11:58:00',
+      change_count: 0
+    });
+    const onSelect = jest.fn();
+    const { findByText, queryByRole } = renderPanel(
+      makeHost([restored, prior]),
+      onSelect
+    );
+    fireEvent.click(await findByText(/^Restored from /));
+    expect(onSelect).toHaveBeenLastCalledWith(restored);
+    expect(queryByRole('button', { name: /earlier version/ })).toBeNull();
+    fireEvent.click(await findByText('You'));
+    expect(onSelect).toHaveBeenLastCalledWith(prior);
+  });
+
   it('shows the empty state when there are no versions', async () => {
     const { findByText } = renderPanel(makeHost([]));
     expect(await findByText('No versions yet.')).toBeTruthy();
@@ -401,6 +428,33 @@ describe('HistoryPanel', () => {
     expect(onVersionsLoaded).toHaveBeenCalledWith(rows);
   });
 
+  it('refetches behind the cached rows when reopened with the same refresh key', async () => {
+    const host = makeHost([v({ name: 'Stale', seq: 1 })]);
+    const panel = (active: boolean) => (
+      <HistoryPanel
+        host={host}
+        currentUser={YOU}
+        active={active}
+        refreshKey='k'
+      />
+    );
+    const view = render(panel(true));
+    await view.findByText('Stale');
+    view.rerender(panel(false));
+    host.listVersions.mockRejectedValueOnce(new Error('offline'));
+    view.rerender(panel(true));
+    // A failed revalidation keeps the cached rows instead of the error state
+    await waitFor(() => expect(host.listVersions).toHaveBeenCalledTimes(2));
+    await act(async () => {}); // let the rejection settle
+    expect(view.getByText('Stale')).toBeTruthy();
+    expect(view.queryByText('Couldn’t load version history.')).toBeNull();
+    host.listVersions.mockResolvedValueOnce([v({ name: 'Fresh', seq: 2 })]);
+    view.rerender(panel(false));
+    view.rerender(panel(true));
+    expect(await view.findByText('Fresh')).toBeTruthy();
+    expect(view.queryByText('Stale')).toBeNull();
+  });
+
   it('shows a retry on load failure', async () => {
     const host = makeHost([]);
     host.listVersions
@@ -411,5 +465,32 @@ describe('HistoryPanel', () => {
     expect(await findByText('Couldn’t load version history.')).toBeTruthy();
     fireEvent.click(getByText('Retry'));
     expect(await findByText('Back')).toBeTruthy();
+  });
+
+  it('restores the error and Retry when a retry also fails with nothing cached', async () => {
+    const host = makeHost([]);
+    host.listVersions
+      .mockRejectedValueOnce(new Error('network'))
+      .mockRejectedValueOnce(new Error('still down'));
+    const { findByText, getByText, queryByText } = renderPanel(host);
+
+    expect(await findByText('Couldn’t load version history.')).toBeTruthy();
+    fireEvent.click(getByText('Retry'));
+    // The retry also fails and there are no rows to fall back on, so the panel
+    // must stay on the error/Retry rather than get stuck on "Loading…".
+    expect(await findByText('Couldn’t load version history.')).toBeTruthy();
+    expect(queryByText(/Loading/)).toBeNull();
+  });
+
+  it('revalidates on first open instead of serving the prefetched cache', async () => {
+    const host = makeHost([v({ name: 'Prefetched' })]);
+    // Warm the shared prefetch cache the way background preparation does.
+    loadVersionList(host, '');
+    await act(async () => {});
+    host.listVersions.mockResolvedValueOnce([v({ name: 'Fresh' })]);
+    const { findByText } = renderPanel(host);
+
+    expect(await findByText('Fresh')).toBeTruthy();
+    expect(host.listVersions).toHaveBeenCalledTimes(2);
   });
 });

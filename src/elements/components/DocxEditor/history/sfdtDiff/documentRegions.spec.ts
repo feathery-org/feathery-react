@@ -112,3 +112,34 @@ it('keeps the legacy UTF-16 fingerprint without allocating a reversed character 
     split.mockRestore();
   }
 });
+
+it('preserves body highlights when a header or footer disappears from the final snapshot', () => {
+  const before = {
+    sections: [
+      {
+        blocks: [paragraph('Body')],
+        headersFooters: {
+          evenFooter: { blocks: [paragraph('Removed footer')] }
+        }
+      }
+    ]
+  };
+  const after = { sections: [{ blocks: [paragraph('Body edited')] }] };
+  const changes = diffSession(
+    before,
+    [{ sfdt: after, author: 'you' }],
+    'removed-footer'
+  );
+  const display = applyHunks(after, changes);
+  expect(countEditGroups(display)).toBeGreaterThan(0);
+  expect(
+    display.sections[0].headersFooters.evenFooter.blocks[0].inlines[0].text
+  ).toBe('Removed footer');
+  expect(
+    display.revisions.some((r: any) => r.revisionType === 'Deletion')
+  ).toBe(true);
+  expect(
+    display.revisions.some((r: any) => r.revisionType === 'Insertion')
+  ).toBe(true);
+  expect(after.sections[0]).not.toHaveProperty('headersFooters');
+});

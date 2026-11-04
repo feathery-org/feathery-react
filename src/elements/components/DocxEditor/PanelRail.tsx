@@ -18,9 +18,9 @@ import {
 
 export type PanelKind = 'changes' | 'sections' | 'history';
 
-const PANEL_RAIL_WIDTH = 44;
+export const PANEL_RAIL_WIDTH = 44;
 
-interface Props {
+export interface PanelRailProps {
   activePanel: PanelKind | null;
   onToggle: (panel: PanelKind) => void;
   /** Show the tracked-changes button (review mode). */
@@ -106,7 +106,7 @@ export default function PanelRail({
   showChanges,
   changesCount,
   showHistory
-}: Props) {
+}: PanelRailProps) {
   return (
     <div
       css={{

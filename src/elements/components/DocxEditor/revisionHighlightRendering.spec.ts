@@ -143,6 +143,37 @@ function renderedOutline(
 }
 
 describe('revision highlight rendering', () => {
+  it.each([0.75, 1, 1.25, 1.5, 2])(
+    'paints adjacent space and text runs without a darker overlap at zoom %s',
+    (zoom) => {
+      const fillRect = jest.fn();
+      const renderer: any = {
+        pageContext: { fillRect },
+        checkRevisionType: jest.fn(),
+        getScaledValue: (value: number) => value * zoom,
+        renderTextElementBox: jest.fn(),
+        renderWidgets: jest.fn()
+      };
+      const editor = { documentHelper: { render: renderer } };
+      const revision = { author: 'You', revisionType: 'Insertion' };
+      installRevisionHighlightRendering(editor, () => '#f97316');
+      const run = (text: string, width: number) => ({
+        text,
+        width,
+        height: 60,
+        margin: { left: 0, top: 0 },
+        revisionLength: 1,
+        getRevision: () => revision
+      });
+      renderer.renderTextElementBox(run(' ', 15.25), 100.4, 50, 0);
+      renderer.renderTextElementBox(run('update', 180.6), 115.65, 50, 0);
+      const [space, word] = fillRect.mock.calls;
+      expect(space[0] + space[2]).toBe(word[0]);
+      expect(space[2]).toBeGreaterThan(0);
+      expect(word[2]).toBeGreaterThan(0);
+    }
+  );
+
   it.each(['Insertion', 'Deletion'])(
     'uses the approved edit shade for pending %s changes',
     (revisionType) => {

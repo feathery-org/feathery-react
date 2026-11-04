@@ -7,6 +7,7 @@ import replace from '@rollup/plugin-replace';
 import babel from '@rollup/plugin-babel';
 import { readFileSync } from 'fs';
 import path from 'path';
+import historyWorkerBuild from './scripts/history-worker-bundle.cjs';
 
 // Read package.json
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
@@ -41,6 +42,7 @@ export default {
     'jszip'
   ],
   plugins: [
+    historyWorkerBuild.historyWorkerPlugin(),
     del({ targets: ['dist/*', 'cjs/*'] }),
     // Ship the vendored country-flag font beside the bundle. Unlike webpack,
     // rollup leaves `new URL('./TwemojiCountryFlags.woff2', import.meta.url)`

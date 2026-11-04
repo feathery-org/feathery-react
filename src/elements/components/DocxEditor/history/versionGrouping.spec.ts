@@ -151,17 +151,61 @@ describe('groupVersions', () => {
       v(at(base, 10), { is_baseline: true })
     ];
     const [section] = groupVersions(rows, NOW);
-    // Each pinned version heads a row; plain ones fold under the one above.
+    // Plain versions can fold under named rows, but never under a restore.
     expect(section.clusters.map((c) => c.primary)).toEqual([
       rows[0],
       rows[1],
       rows[3],
+      rows[4],
       rows[5]
     ]);
     expect(section.clusters.map((c) => c.earlier)).toEqual([
       [],
       [rows[2]],
-      [rows[4]],
+      [],
+      [],
+      []
+    ]);
+  });
+
+  it.each([
+    { restored_from: 'original', change_count: 0 },
+    { restored_from_at: '2026-08-01T10:00:00', change_count: 0 },
+    { restored_from: 'original', change_count: 2 }
+  ])('keeps a restore separate from surrounding edits: %j', (restore) => {
+    const base = '2026-09-02T12:00:00';
+    const rows = [
+      v(base, { seq: 4 }),
+      v(at(base, 1), { seq: 3, ...restore }),
+      v(at(base, 2), { seq: 2 }),
+      v(at(base, 3), { seq: 1, is_baseline: true })
+    ];
+    const [section] = groupVersions(rows, NOW);
+    expect(section.clusters.map((c) => c.primary)).toEqual(rows);
+    expect(section.clusters.every((c) => c.earlier.length === 0)).toBe(true);
+    expect(foldedUnder(rows, rows[1].id, NOW)).toBeNull();
+  });
+
+  it('keeps consecutive zero-edit restores standalone even when Current', () => {
+    const base = '2026-09-02T12:00:00';
+    const rows = [
+      v(base, { seq: 5, restored_from: 'original', change_count: 0 }),
+      v(at(base, 1), { seq: 4, restored_from: 'original', change_count: 0 }),
+      v(at(base, 2), { seq: 3 }),
+      v(at(base, 3), { seq: 2 }),
+      v(at(base, 4), { seq: 1, is_baseline: true })
+    ];
+    const [section] = groupVersions(rows, NOW);
+    expect(section.clusters.map((c) => c.primary)).toEqual([
+      rows[0],
+      rows[1],
+      rows[2],
+      rows[4]
+    ]);
+    expect(section.clusters.map((c) => c.earlier)).toEqual([
+      [],
+      [],
+      [rows[3]],
       []
     ]);
   });

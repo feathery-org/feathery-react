@@ -77,6 +77,8 @@ export interface DocxHistoryHost {
   listVersions(): Promise<DocxVersion[]>;
   /** Refresh signed artifact URLs after expiry. */
   getVersion?(versionId: string): Promise<DocxVersion>;
+  /** Prepare the immutable Original snapshot without mounting an editor. */
+  prepareVersion?(versionId: string): Promise<DocxVersion>;
   closeVersion(
     sessionId: string,
     payload: CloseVersionPayload

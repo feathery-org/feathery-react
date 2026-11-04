@@ -65,12 +65,14 @@ export default function VersionBar({
   return (
     <div
       css={{
-        height: TOOLBAR_HEIGHT,
+        minHeight: TOOLBAR_HEIGHT,
+        boxSizing: 'border-box',
+        flexWrap: 'wrap',
         flex: '0 0 auto',
         display: 'flex',
         alignItems: 'center',
         gap: 10,
-        padding: '0 10px',
+        padding: '4px 10px',
         borderBottom: `1px solid ${LINE}`,
         background: PANEL_2
       }}
@@ -82,6 +84,7 @@ export default function VersionBar({
         onClick={onExit}
         css={{
           display: 'inline-flex',
+          flexShrink: 0,
           alignItems: 'center',
           border: 'none',
           background: 'transparent',
@@ -100,6 +103,7 @@ export default function VersionBar({
           fontWeight: 600,
           color: INK,
           minWidth: 0,
+          flex: '1 1 100px',
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis'
@@ -107,12 +111,21 @@ export default function VersionBar({
       >
         {version.name || formatWhen(version.ended_at)}
       </span>
-      <span css={{ flex: 1 }} />
       {showChangeControls && (
-        <div css={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div
+          css={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            flexWrap: 'wrap',
+            maxWidth: '100%',
+            '& > *': { flexShrink: 0 }
+          }}
+        >
           <button
             type='button'
             role='switch'
+            aria-label='Highlight changes'
             aria-checked={highlightsOn}
             onClick={() => onToggleHighlights?.(!highlightsOn)}
             css={{
@@ -211,30 +224,32 @@ export default function VersionBar({
               ✓ {approvedCount} approved
             </span>
           )}
-          <button
-            type='button'
-            aria-label='Previous change'
-            title='Previous change'
-            disabled={!canStep}
-            onClick={onPrevChange}
-            css={arrowCss}
-          >
-            <ChevronDownIcon
-              width={15}
-              height={15}
-              css={{ transform: 'rotate(180deg)' }}
-            />
-          </button>
-          <button
-            type='button'
-            aria-label='Next change'
-            title='Next change'
-            disabled={!canStep}
-            onClick={onNextChange}
-            css={arrowCss}
-          >
-            <ChevronDownIcon width={15} height={15} />
-          </button>
+          <span css={{ display: 'inline-flex', gap: 10 }}>
+            <button
+              type='button'
+              aria-label='Previous change'
+              title='Previous change'
+              disabled={!canStep}
+              onClick={onPrevChange}
+              css={arrowCss}
+            >
+              <ChevronDownIcon
+                width={15}
+                height={15}
+                css={{ transform: 'rotate(180deg)' }}
+              />
+            </button>
+            <button
+              type='button'
+              aria-label='Next change'
+              title='Next change'
+              disabled={!canStep}
+              onClick={onNextChange}
+              css={arrowCss}
+            >
+              <ChevronDownIcon width={15} height={15} />
+            </button>
+          </span>
         </div>
       )}
       {highlightsAvailable === false && !version.is_baseline && !isRestored && (

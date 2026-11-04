@@ -1,5 +1,5 @@
-// Converts a stored .docx to SFDT in a hidden, short-lived editor, the way the
-// live editor opens it, so a folded view can start from the real original.
+// Opens stored DOCX bytes or a prepared compact SFDT snapshot in a short-lived
+// editor, so folded history compares the same expanded format as live edits.
 import { featheryDoc } from '../../../../utils/browser';
 import { waitForDocumentLoad, waitForEj } from '../ejLoader';
 import { populateVersionBindings } from './populateVersionBindings';
@@ -8,14 +8,14 @@ const DOCX_MIME =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const CREATE_TIMEOUT_MS = 20_000;
 
-export type DocxToSfdt = (bytes: ArrayBuffer) => Promise<any>;
+export type DocxToSfdt = (source: ArrayBuffer | string) => Promise<any>;
 
-/** A converter backed by the Syncfusion Import service at `serviceUrl`. */
+/** DOCX uses the Import service; prepared SFDT is normalized entirely locally. */
 export function hiddenEditorConverter(
   serviceUrl: string,
   headers: Record<string, string>[] = []
 ): DocxToSfdt {
-  return async (bytes) => {
+  return async (source) => {
     const ej = await waitForEj();
     if (!ej?.documenteditor) throw new Error('Document editor unavailable');
     const doc = featheryDoc();
@@ -54,7 +54,11 @@ export function hiddenEditorConverter(
       );
       failed.catch(() => undefined);
       await Promise.race([
-        editor.openAsync(new Blob([bytes], { type: DOCX_MIME })),
+        editor.openAsync(
+          typeof source === 'string'
+            ? source
+            : new Blob([source], { type: DOCX_MIME })
+        ),
         failed
       ]);
       if (!(await Promise.race([loaded, failed])))
