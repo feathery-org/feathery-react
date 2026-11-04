@@ -5,6 +5,7 @@ import { cellEditorStyle } from './styles';
 import { ChoiceMenu } from './ChoiceMenu';
 import {
   acceptsNumericInput,
+  choiceLabel,
   choicesFor,
   editorKindFor,
   fromEditorValue,
@@ -109,13 +110,21 @@ export function CellEditor({
     resolvedRef.current = true;
     if (choices.includes(draft)) return;
     const prefix = draft.trim().toLowerCase();
+    // Matched on what the menu shows as well as what it stores, so typing
+    // "y" lands on "Yes" whether its value is "Yes" or "1".
+    const startsWithPrefix = (text: string) =>
+      text.toLowerCase().startsWith(prefix);
     const match = prefix
-      ? choices.find((choice) => choice.toLowerCase().startsWith(prefix))
+      ? choices.find(
+          (choice) =>
+            startsWithPrefix(choice) ||
+            startsWithPrefix(choiceLabel(rule, choice))
+        )
       : undefined;
     // No match means the menu simply opens on the stored value, as Enter
     // would have — never on an emptied cell.
     onChange(match ?? stored);
-  }, [choices, draft, onChange, seeded, stored]);
+  }, [choices, draft, onChange, rule, seeded, stored]);
 
   if (choices) {
     return (
@@ -123,6 +132,7 @@ export function CellEditor({
         choices={choices}
         value={draft}
         label={label}
+        labelFor={(choice) => choiceLabel(rule, choice)}
         onPick={(choice) => {
           onChange(choice);
           // A pick is the whole edit, so it lands as soon as it is made — and

@@ -117,8 +117,9 @@ beforeEach(() => {
 
 afterEach(() => {
   delete (internalState as any)[FORM];
-  delete (fieldValues as any).name_key;
-  delete (fieldValues as any).age_key;
+  ['name_key', 'age_key', 'active_key', 'status_key', 'doc_key'].forEach(
+    (key) => delete (fieldValues as any)[key]
+  );
   sessionStorage.clear();
 });
 
@@ -812,5 +813,128 @@ describe('the spreadsheet handle', () => {
     expect(focused).toBe(false);
     expect(cellTexts()).not.toContain('Bob');
     expect(ref.current!.getSelection()).toBeNull();
+  });
+});
+
+describe('a field-backed table with the form’s own column rules', () => {
+  // A column names only its field; the field's type comes from the form.
+  const RULED_COLUMNS = [
+    { name: 'Age', field_id: 'f2', field_type: 'servar', field_key: 'age_key' },
+    {
+      name: 'Active',
+      field_id: 'f3',
+      field_type: 'servar',
+      field_key: 'active_key'
+    },
+    {
+      name: 'Status',
+      field_id: 'f4',
+      field_type: 'servar',
+      field_key: 'status_key'
+    },
+    { name: 'Doc', field_id: 'f5', field_type: 'servar', field_key: 'doc_key' }
+  ];
+  const servar = (key: string, type: string, metadata = {}) => ({
+    servar: { key, type, metadata }
+  });
+  const renderTable = (propsOverride: Record<string, any> = {}) => {
+    const updateFieldValues = jest.fn((updates: Record<string, unknown>) =>
+      Object.assign(fieldValues, updates)
+    );
+    render(
+      <TableElement
+        element={makeElement(propsOverride)}
+        formId={FORM}
+        responsiveStyles={mockStyles()}
+        updateFieldValues={updateFieldValues}
+        submitCustom={jest.fn()}
+      />
+    );
+    return { updateFieldValues };
+  };
+
+  beforeEach(() => {
+    (internalState as any)[FORM] = {
+      steps: {
+        step1: {
+          servar_fields: [
+            servar('age_key', 'integer_field'),
+            servar('active_key', 'checkbox'),
+            servar('status_key', 'dropdown', { options: ['open', 'closed'] }),
+            servar('doc_key', 'file_upload')
+          ]
+        }
+      }
+    };
+    Object.assign(fieldValues, {
+      age_key: [30],
+      active_key: [false],
+      status_key: ['open'],
+      doc_key: [[]]
+    });
+  });
+
+  it('types each write by its column and refuses what the rule refuses', () => {
+    const { updateFieldValues } = renderTable({ columns: RULED_COLUMNS });
+
+    let outcomes: any;
+    act(() => {
+      outcomes = handlers().editCells([
+        { rowIndex: 0, fieldKey: 'age_key', value: '35' },
+        { rowIndex: 0, fieldKey: 'active_key', value: 'true' },
+        { rowIndex: 0, fieldKey: 'status_key', value: 'closed' },
+        { rowIndex: 0, fieldKey: 'age_key', value: 'abc' },
+        { rowIndex: 0, fieldKey: 'active_key', value: 'yes' },
+        { rowIndex: 0, fieldKey: 'status_key', value: 'Closed' },
+        { rowIndex: 0, fieldKey: 'doc_key', value: 'x' }
+      ]);
+    });
+
+    expect(outcomes).toEqual([
+      { ok: true, value: 35 },
+      { ok: true, value: true },
+      { ok: true, value: 'closed' },
+      {
+        ok: false,
+        reason: 'invalid_value',
+        message: expect.stringContaining('Must be a number')
+      },
+      {
+        ok: false,
+        reason: 'invalid_value',
+        message: expect.stringContaining('Must be true or false')
+      },
+      {
+        ok: false,
+        reason: 'invalid_value',
+        message: expect.stringContaining('Must be open or closed')
+      },
+      { ok: false, reason: 'read_only', message: expect.any(String) }
+    ]);
+    // Only the accepted cells reach the field values.
+    expect(updateFieldValues).toHaveBeenCalledWith({
+      age_key: [35],
+      active_key: [true],
+      status_key: ['closed']
+    });
+  });
+
+  it('a blank is a clear on any column, and the file column reads as read-only', () => {
+    renderTable({ columns: RULED_COLUMNS });
+
+    let outcomes: any;
+    act(() => {
+      outcomes = handlers().editCells([
+        { rowIndex: 0, fieldKey: 'age_key', value: '' }
+      ]);
+    });
+    expect(outcomes).toEqual([{ ok: true, value: null }]);
+
+    expect(handlers().getLiveState().columns).toEqual([
+      { name: 'Age', fieldKey: 'age_key' },
+      { name: 'Active', fieldKey: 'active_key' },
+      { name: 'Status', fieldKey: 'status_key' },
+      { name: 'Doc', fieldKey: 'doc_key', readOnly: true }
+    ]);
   });
 });
