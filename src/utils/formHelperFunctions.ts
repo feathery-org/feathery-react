@@ -88,6 +88,7 @@ export const getABVariant = (stepRes: any) => {
     stepRes.logic_rules = stepRes.variant_logic_rules;
     stepRes.shared_codes = stepRes.variant_shared_codes;
     stepRes.connector_fields = stepRes.variant_connector_fields;
+    stepRes.session_gated = stepRes.variant_session_gated;
   }
 
   delete stepRes.variant_id;
@@ -97,6 +98,7 @@ export const getABVariant = (stepRes: any) => {
   delete stepRes.variant_logic_rules;
   delete stepRes.variant_shared_codes;
   delete stepRes.variant_connector_fields;
+  delete stepRes.variant_session_gated;
   delete stepRes.ab_test_data_weight;
   delete stepRes.ab_test_id;
   delete stepRes.ab_test_variant_a_weight;
