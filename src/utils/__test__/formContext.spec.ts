@@ -159,6 +159,7 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     await completion;
 
     expect(client.setCollaboratorAsCompleted).toHaveBeenCalledWith('tpl-1');
+    expect(client.flushCustomFields).toHaveBeenCalledTimes(1);
     defaultFlush.mockRestore();
   });
 

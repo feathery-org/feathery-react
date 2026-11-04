@@ -1436,11 +1436,19 @@ function Form({
         }
       }
       // Change event can happen too frequently to flush every time
-      if (event !== 'change' && flush) await defaultClient.flushCustomFields();
+      if (event !== 'change' && flush)
+        await Promise.all([
+          client.flushCustomFields(),
+          defaultClient.flushCustomFields()
+        ]);
     }
 
     // Flush field updates to backend before form completes
-    if (event === 'form_complete') await defaultClient.flushCustomFields();
+    if (event === 'form_complete')
+      await Promise.all([
+        client.flushCustomFields(),
+        defaultClient.flushCustomFields()
+      ]);
 
     return logicRan;
   };
