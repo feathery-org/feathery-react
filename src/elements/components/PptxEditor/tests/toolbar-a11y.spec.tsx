@@ -37,14 +37,17 @@ it('every toolbar control has a tooltip/accessible name; toggles expose pressed 
   const text = slide.shapes.find((sh) => sh.text)!;
   await act(async () => store.select(text.id));
 
-  // Walk the persistent row plus both dropdown menus.
+  // Walk the fixed group, the Insert menu and the shape-settings cluster.
   await openMenu(host, 'Insert');
-  await openMenu(host, 'Slide');
-  const controls = Array.from(
-    host.querySelectorAll('button, select, input:not([type="file"])')
-  );
-  const unnamed = controls.filter((el) => !accessibleName(el));
-  expect(unnamed.map((el) => el.outerHTML.slice(0, 60))).toEqual([]);
+  const sweepUnnamed = () =>
+    Array.from(
+      host.querySelectorAll('button, select, input:not([type="file"])')
+    ).filter((el) => !accessibleName(el));
+  expect(sweepUnnamed().map((el) => el.outerHTML.slice(0, 60))).toEqual([]);
+  // Deselect to reveal the inline slide settings and check those names too.
+  await act(async () => store.select(null));
+  expect(sweepUnnamed().map((el) => el.outerHTML.slice(0, 60))).toEqual([]);
+  await act(async () => store.select(text.id));
   // Buttons carry an explicit tooltip (title) unless they are menu rows or
   // the table-size grid cells, whose aria-labels are the accessible name.
   const untitled = Array.from(host.querySelectorAll('button')).filter(

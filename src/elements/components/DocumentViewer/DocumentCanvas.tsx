@@ -19,6 +19,10 @@ interface DocumentCanvasProps {
   documents: ViewerDocument[];
   pageWidth: number;
   onDocLoad: (pdfUrl: string, pdfProxy: any) => void;
+  // Fires when the filler edits a form widget. pdf.js writes widget values on
+  // these DOM events (text and choice on `input`, checkbox and radio on
+  // `change`), never on render.
+  onUserEdit?: () => void;
   registerPageRef: (
     pdfUrl: string,
     pageIndex: number,
@@ -46,11 +50,13 @@ export default function DocumentCanvas({
   documents,
   pageWidth,
   onDocLoad,
+  onUserEdit,
   registerPageRef,
   inputLocked = false,
   readOnly = false
 }: DocumentCanvasProps) {
   const [docStates, setDocStates] = useState<Record<string, DocState>>({});
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const generationRef = useRef(0);
   const loadedRef = useRef<Set<string>>(new Set());
   // Every pdfProxy we've opened, so each one can be destroyed. A pdfProxy holds
@@ -158,8 +164,22 @@ export default function DocumentCanvas({
     // would restart in-flight loads.
   }, [docUrlsKey, loadDoc, destroyDoc]);
 
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || !onUserEdit) return undefined;
+    // User-only because pdf.js 5.4.296 dispatches no input/change while
+    // rendering (only `resetform`). Recheck on a pdf.js upgrade.
+    root.addEventListener('input', onUserEdit);
+    root.addEventListener('change', onUserEdit);
+    return () => {
+      root.removeEventListener('input', onUserEdit);
+      root.removeEventListener('change', onUserEdit);
+    };
+  }, [onUserEdit]);
+
   return (
     <div
+      ref={rootRef}
       css={{
         display: 'flex',
         flexDirection: 'column',

@@ -190,7 +190,6 @@ export default function DocumentEditorContainer({
     reloadKey,
     setReloadKey,
     selectTab,
-    filesForSave,
     updateTabEnvelope,
     resolveEnvelopes
   } = useDocumentPacket({
@@ -326,8 +325,6 @@ export default function DocumentEditorContainer({
         `document.${envelope.type || 'docx'}`,
         meta
       );
-      if (envelope.type === 'pptx' && !updated?.file)
-        throw new Error('The presentation could not be saved. Please retry.');
       const savedFileUrl = updated?.file ?? envelope.file;
       if (updated?.file) {
         setEnvelope((current) =>
@@ -346,10 +343,7 @@ export default function DocumentEditorContainer({
         targetAction?.save_document_field_key &&
         savedFileUrl
       ) {
-        newValues[targetAction.save_document_field_key] =
-          envelope.type === 'pptx'
-            ? await filesForSave({ ...envelope, file: savedFileUrl })
-            : savedFileUrl;
+        newValues[targetAction.save_document_field_key] = savedFileUrl;
       }
       // Document-level bindings write back to form fields of the same name, and
       // ONLY to fields the form already has - a binding in a template is not
@@ -819,6 +813,7 @@ export default function DocumentEditorContainer({
         registerBeforeReplace={registerBeforeReplace}
         onBusy={setPacketBusy}
         onError={setOperationError}
+        onReviewAction={fireReviewAction}
       />,
       editorWrap
     );
