@@ -117,6 +117,51 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
 
+  it('waits for pending step answers before generating documents', async () => {
+    let finishSubmission!: () => void;
+    client.submitQueue = new Promise<void>((resolve) => {
+      finishSubmission = resolve;
+    });
+    const defaultFlush = jest
+      .spyOn(defaultClient, 'flushCustomFields')
+      .mockResolvedValue(undefined);
+
+    const generation = getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1']
+    });
+    await Promise.resolve();
+    expect(client.flushCustomFields).not.toHaveBeenCalled();
+    expect(client.generateDocuments).not.toHaveBeenCalled();
+
+    finishSubmission();
+    await generation;
+
+    expect(client.flushCustomFields).toHaveBeenCalledTimes(1);
+    expect(client.generateDocuments).toHaveBeenCalledTimes(1);
+    defaultFlush.mockRestore();
+  });
+
+  it('waits for pending step answers before completing a collaborator', async () => {
+    let finishSubmission!: () => void;
+    client.submitQueue = new Promise<void>((resolve) => {
+      finishSubmission = resolve;
+    });
+    client.setCollaboratorAsCompleted = jest.fn().mockResolvedValue(undefined);
+    const defaultFlush = jest
+      .spyOn(defaultClient, 'flushCustomFields')
+      .mockResolvedValue(undefined);
+
+    const completion = getFormContext(uuid).setCollaboratorAsCompleted('tpl-1');
+    await Promise.resolve();
+    expect(client.setCollaboratorAsCompleted).not.toHaveBeenCalled();
+
+    finishSubmission();
+    await completion;
+
+    expect(client.setCollaboratorAsCompleted).toHaveBeenCalledWith('tpl-1');
+    defaultFlush.mockRestore();
+  });
+
   it.each([undefined, 'sign'] as const)(
     'creates a DocuSign draft with envelopeAction %s and preserves signer roles',
     async (envelopeAction) => {
