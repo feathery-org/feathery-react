@@ -138,9 +138,12 @@ it('refits the loaded slide when its host changes size', async () => {
   });
   try {
     mounted = await mountEditor(<FitHost />);
-    await act(async () => mounted?.store.loadFile(sampleBytes(), 'sample.pptx'));
     await act(async () =>
-      new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+      mounted?.store.loadFile(sampleBytes(), 'sample.pptx')
+    );
+    await act(
+      async () =>
+        new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
     );
     const deck = mounted.store.getState().deck;
     if (!deck) throw new Error('Presentation did not load');
@@ -149,15 +152,24 @@ it('refits the loaded slide when its host changes size', async () => {
 
     stageHeight = 700;
     await act(async () => resize([], {} as ResizeObserver));
-    await act(async () =>
-      new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    await act(
+      async () =>
+        new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
     );
     expect(zoomOf(mounted.host)).toBe(fitSlideZoom(800, 700, cx, cy));
   } finally {
     global.ResizeObserver = originalObserver;
     if (widthDescriptor)
-      Object.defineProperty(HTMLElement.prototype, 'clientWidth', widthDescriptor);
+      Object.defineProperty(
+        HTMLElement.prototype,
+        'clientWidth',
+        widthDescriptor
+      );
     if (heightDescriptor)
-      Object.defineProperty(HTMLElement.prototype, 'clientHeight', heightDescriptor);
+      Object.defineProperty(
+        HTMLElement.prototype,
+        'clientHeight',
+        heightDescriptor
+      );
   }
 });
