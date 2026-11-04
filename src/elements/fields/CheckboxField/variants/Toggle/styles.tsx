@@ -24,7 +24,7 @@ const getToggleDimensions = (
     width,
     trackHeight: overhang ? trackHeight : height,
     inset,
-    knobSize: height - inset * 2,
+    knobSize: Math.max(height - inset * 2, 0),
     // Same in both modes: the knob's inset is on both sides
     knobTravel: width - height
   };
@@ -168,7 +168,7 @@ export function applyToggleStyles(responsiveStyles: any) {
   );
   responsiveStyles.apply(
     'toggleOn',
-    ['selected_background_color', 'selected_font_color'],
+    ['selected_font_color', 'selected_background_color'],
     (background: any, checkmark: any) => {
       const colour = background || checkmark;
       return colour ? { backgroundColor: formatColour(colour) } : {};
