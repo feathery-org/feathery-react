@@ -228,8 +228,8 @@ it('does not restart background prefetch when a save replaces the tabs array', a
     await new Promise((resolve) => setTimeout(resolve, 150));
   });
   expect(prefetchSignal?.aborted).toBe(false);
-  expect(
-    requests.mock.calls.filter(([url]) => url === '/2.pptx')
-  ).toHaveLength(1);
+  expect(requests.mock.calls.filter(([url]) => url === '/2.pptx')).toHaveLength(
+    1
+  );
   expect(props.onError).not.toHaveBeenCalled();
 });
