@@ -886,6 +886,7 @@ export default class IntegrationClient {
         draft: action.draft,
         emailSubject: action.email_subject,
         emailBlurb: action.email_blurb,
+        ccRecipients: action.cc_recipients,
         customFields: action.custom_fields
       });
     }
@@ -1192,6 +1193,7 @@ export default class IntegrationClient {
     draft,
     emailSubject,
     emailBlurb,
+    ccRecipients,
     customFields
   }: {
     documentIds: GenerateDocumentRef[];
@@ -1209,6 +1211,10 @@ export default class IntegrationClient {
     // DocuSign sign only: subject and body of the envelope's signing email.
     emailSubject?: string;
     emailBlurb?: string;
+    ccRecipients?: (
+      | string
+      | { email: string; name?: string; excluded_documents?: number[] }
+    )[];
     customFields?: Record<
       string,
       string | { listItems: string[]; value?: string }
@@ -1248,6 +1254,7 @@ export default class IntegrationClient {
     if (signMethod) payload.sign_method = signMethod;
     if (emailSubject) payload.email_subject = emailSubject;
     if (emailBlurb) payload.email_blurb = emailBlurb;
+    if (ccRecipients !== undefined) payload.cc_recipients = ccRecipients;
     if (customFields !== undefined) payload.custom_fields = customFields;
     if (signers.length) payload.signers = signers;
     if (repeatable) payload.repeatable = repeatable;
@@ -1327,6 +1334,8 @@ export default class IntegrationClient {
     // DocuSign envelope until the filler presses Sign.
     if (action.email_subject) payload.email_subject = action.email_subject;
     if (action.email_blurb) payload.email_blurb = action.email_blurb;
+    if (action.cc_recipients !== undefined)
+      payload.cc_recipients = action.cc_recipients;
     if (action.custom_fields !== undefined)
       payload.custom_fields = action.custom_fields;
 
