@@ -32,6 +32,7 @@ import {
 } from '../../../robin/document/mounts';
 import { DocxHistoryHost, DocxSaveMeta } from './history/types';
 import { fetchDocumentBytes } from '../../../utils/documentPersistence';
+import { downloadBaseName } from './downloadFileName';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose editor_mode matches
@@ -918,7 +919,7 @@ export default function DocumentEditorContainer({
         readOnly={readOnly}
         reviewChanges={reviewChanges}
         openNonce={reloadKey}
-        fileName='document'
+        fileName={downloadBaseName(envelope.file)}
         terminalAction={terminalAction}
         onTerminalAction={terminalAction ? runTerminalAction : undefined}
         onTerminalActionDraft={offersDraft ? runTerminalActionDraft : undefined}
