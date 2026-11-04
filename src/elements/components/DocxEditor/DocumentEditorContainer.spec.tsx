@@ -190,10 +190,54 @@ jest.mock('./SignedEnvelopeView', () => {
   };
 });
 
+// Stands in for the pdf.js review viewer; exposes the hooks the container
+// wires into it as buttons.
+jest.mock('../DocumentViewer', () => {
+  const React = jest.requireActual('react');
+  return function MockDocumentViewer({
+    payload,
+    action,
+    embedded,
+    onFinalize,
+    onSaveEnvelopeFile,
+    onDirtyChange
+  }: any) {
+    const doc = payload.documents[0];
+    return React.createElement(
+      'div',
+      {
+        'data-testid': `pdf-viewer:${doc.pdf_url}`,
+        'data-embedded': String(!!embedded),
+        'data-read-only': String(!!action.editor_read_only)
+      },
+      ['sign', 'download', 'save'].map((envelopeAction) =>
+        React.createElement('button', {
+          key: envelopeAction,
+          'data-testid': `pdf-${envelopeAction}`,
+          onClick: () => onFinalize({ envelopeAction, draft: false })
+        })
+      ),
+      onSaveEnvelopeFile &&
+        React.createElement('button', {
+          key: 'save-file',
+          'data-testid': 'pdf-save-file',
+          onClick: () => onSaveEnvelopeFile(doc.envelope_id, new Blob(['%PDF']))
+        }),
+      onDirtyChange &&
+        React.createElement('button', {
+          key: 'dirty',
+          'data-testid': 'pdf-dirty',
+          onClick: () => onDirtyChange(true)
+        })
+    );
+  };
+});
+
 const mockFinalizeEnvelope = jest.fn();
 const mockGetCurrentEnvelope = jest.fn().mockResolvedValue({});
 const mockFinalizeEnvelopeReview = jest.fn();
 const mockSaveEnvelopeFile = jest.fn().mockResolvedValue({});
+const mockSubmitCustom = jest.fn().mockResolvedValue(undefined);
 const mockRestoreEnvelopeVersion = jest
   .fn()
   .mockResolvedValue({ id: 'e', file: 'restored.docx', editor_file: null });
@@ -208,6 +252,7 @@ jest.mock('../../../utils/featheryClient', () => ({
     this.getCurrentEnvelope = (...args: any[]) =>
       mockGetCurrentEnvelope(...args);
     this.saveEnvelopeFile = (...args: any[]) => mockSaveEnvelopeFile(...args);
+    this.submitCustom = (...args: any[]) => mockSubmitCustom(...args);
     this.restoreEnvelopeVersion = (...args: any[]) =>
       mockRestoreEnvelopeVersion(...args);
     this.downloadEnvelopePdf = jest.fn().mockResolvedValue(new Blob());
@@ -281,7 +326,10 @@ describe('DocumentEditorContainer lifecycle', () => {
 
   describe('dirty state tracking', () => {
     beforeEach(() => _clearDocxDirtyRegistry());
-    afterEach(() => _clearDocxDirtyRegistry());
+    afterEach(() => {
+      _clearDocxDirtyRegistry();
+      delete (initState as any).sdkKey;
+    });
 
     const url = 'https://example.com/document-container-a.docx';
 
@@ -1129,27 +1177,129 @@ describe('DocumentEditorContainer signing outcomes', () => {
     );
   });
 
-  it('shows a PDF it did not send without a status and without polling', async () => {
-    seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
-    delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
-    mockGetCurrentEnvelope.mockResolvedValue({
-      id: `envelope-${CONTAINER}`,
-      file: 'https://x/reopened.pdf',
-      editor_file: null,
-      type: 'pdf',
-      signed: false
-    });
-    const { getByTestId } = mount();
+  describe('an unsent PDF envelope', () => {
+    const PDF = 'https://x/reopened.pdf';
+    const seedPdf = (action: Record<string, any> = {}) => {
+      seed({
+        sign_method: 'feathery',
+        editor_toolbar_actions: ['sign'],
+        ...action
+      });
+      delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
+      mockGetCurrentEnvelope.mockResolvedValue({
+        id: `envelope-${CONTAINER}`,
+        document: `document-${CONTAINER}`,
+        file: PDF,
+        editor_file: null,
+        type: 'pdf',
+        signed: false
+      });
+    };
 
-    await waitFor(() =>
-      expect(getByTestId('signed-view:https://x/reopened.pdf')).toHaveAttribute(
-        'data-status',
-        'null'
-      )
-    );
-    mockGetCurrentEnvelope.mockClear();
-    await focus();
-    expect(mockGetCurrentEnvelope).not.toHaveBeenCalled();
+    afterEach(() => {
+      _clearDocxDirtyRegistry();
+      delete (initState as any).sdkKey;
+    });
+
+    it('opens in the embedded PDF viewer without polling', async () => {
+      seedPdf();
+      const { getByTestId, queryByTestId } = mount();
+
+      await waitFor(() =>
+        expect(getByTestId(`pdf-viewer:${PDF}`)).toHaveAttribute(
+          'data-embedded',
+          'true'
+        )
+      );
+      expect(queryByTestId(`signed-view:${PDF}`)).toBeNull();
+      mockGetCurrentEnvelope.mockClear();
+      await focus();
+      expect(mockGetCurrentEnvelope).not.toHaveBeenCalled();
+    });
+
+    it('signs by finalizing the PDF, then shows it awaiting signature', async () => {
+      mockFinalizeEnvelope.mockResolvedValue({
+        id: `envelope-${CONTAINER}`,
+        file: PDF,
+        type: 'pdf',
+        signed: false,
+        signer_id: null,
+        invited: true
+      });
+      seedPdf();
+      const { getByTestId } = mount();
+      await waitFor(() => expect(getByTestId('pdf-sign')).toBeTruthy());
+
+      await act(async () => {
+        getByTestId('pdf-sign').click();
+      });
+
+      expect(mockFinalizeEnvelope.mock.calls[0][0]).toBe(
+        `envelope-${CONTAINER}`
+      );
+      await waitFor(() =>
+        expect(getByTestId(`signed-view:${PDF}`)).toHaveAttribute(
+          'data-status',
+          'awaiting'
+        )
+      );
+    });
+
+    it('saves edits to the envelope and the saved file to the field', async () => {
+      mockSaveEnvelopeFile
+        .mockReset()
+        .mockResolvedValue({ file: 'https://x/edited.pdf' });
+      // Writing the field rerenders every form, which needs an SDK key.
+      initState.sdkKey = 'sdk-key';
+      seedPdf({
+        editor_toolbar_actions: ['save'],
+        save_document_field_key: 'saved_doc'
+      });
+      const { getByTestId } = mount();
+      await waitFor(() => expect(getByTestId('pdf-save-file')).toBeTruthy());
+
+      await act(async () => {
+        getByTestId('pdf-save-file').click();
+      });
+      await act(async () => {
+        getByTestId('pdf-save').click();
+      });
+
+      expect(mockSaveEnvelopeFile.mock.calls[0][0]).toBe(
+        `envelope-${CONTAINER}`
+      );
+      expect(mockSaveEnvelopeFile.mock.calls[0][2]).toBe('document.pdf');
+      expect(fieldValues.saved_doc).toBe('https://x/edited.pdf');
+      expect(mockSubmitCustom).toHaveBeenCalledWith({
+        saved_doc: 'https://x/edited.pdf'
+      });
+      // The save refreshes the URL but must not reload the document.
+      expect(getByTestId(`pdf-viewer:${PDF}`)).toBeTruthy();
+    });
+
+    it('registers unsaved field edits for the leave prompt', async () => {
+      seedPdf();
+      const { getByTestId } = mount();
+      await waitFor(() => expect(getByTestId('pdf-dirty')).toBeTruthy());
+
+      act(() => getByTestId('pdf-dirty').click());
+
+      expect(hasDirtyDocxEditors('form-1')).toBe(true);
+    });
+
+    it('is read-only, with nothing saved, when the action says so', async () => {
+      seedPdf({ editor_read_only: true });
+      const { getByTestId, queryByTestId } = mount();
+
+      await waitFor(() =>
+        expect(getByTestId(`pdf-viewer:${PDF}`)).toHaveAttribute(
+          'data-read-only',
+          'true'
+        )
+      );
+      expect(queryByTestId('pdf-save-file')).toBeNull();
+      expect(queryByTestId('pdf-dirty')).toBeNull();
+    });
   });
 
   describe('after a reload', () => {
