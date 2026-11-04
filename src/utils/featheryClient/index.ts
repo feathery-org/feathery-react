@@ -167,6 +167,7 @@ export default class FeatheryClient extends IntegrationClient {
    * submitCustom within the debounce window
    */
   pendingCustomFieldUpdates: { [key: string]: any };
+  pendingRepeatedFileKeys: Set<string>;
 
   /**
    * Debounced implementation of submitCustom
@@ -192,6 +193,7 @@ export default class FeatheryClient extends IntegrationClient {
     super(formKey, ignoreNetworkErrors, draft, bypassCDN);
     this.formFill = formFill;
     this.pendingCustomFieldUpdates = {};
+    this.pendingRepeatedFileKeys = new Set();
     this.customSubmitInFlight = {};
     this.debouncedSubmitCustom = debounce(
       this._debouncedSubmitCustom.bind(this),
@@ -965,15 +967,42 @@ export default class FeatheryClient extends IntegrationClient {
 
     const customKeyValues = { ...this.pendingCustomFieldUpdates };
     this.pendingCustomFieldUpdates = {}; // Clear pending updates after copying them
+    const repeatedFileKeys = this.pendingRepeatedFileKeys;
+    this.pendingRepeatedFileKeys = new Set();
 
     const { userId } = initInfo();
     const url = `${API_URL}panel/custom/submit/v3/`;
 
     const jsonKeyVals: Record<string, any> = {};
     const formData = new FormData();
+    const fileIndices: Record<string, { length: number; indices: number[] }> =
+      {};
 
     await Promise.all(
       Object.entries(customKeyValues).map(async ([key, entry]) => {
+        if (repeatedFileKeys.has(key)) {
+          const vals = Array.isArray(entry)
+            ? await Promise.all(entry)
+            : entry == null
+            ? []
+            : [await entry];
+          const indices: number[] = [];
+          vals.forEach((val, index) => {
+            if (val === null || val === undefined || val === '') return;
+            if (!(val instanceof Blob))
+              throw new Error(`${key} must contain files or empty rows`);
+            formData.append('files', val);
+            formData.append('file_keys', key);
+            indices.push(index);
+          });
+          fileIndices[key] = { length: vals.length, indices };
+          // The custom endpoint stores new uploads at new paths. It does not
+          // return those paths, so a later step submit must resolve the files
+          // again instead of sending paths from before this save.
+          filePathMap[key] = null;
+          delete fileDeduplicationCount[key];
+          return;
+        }
         if (Array.isArray(entry)) {
           // Need to resolve the promises for successful file upload.
           const vals = await Promise.all(entry);
@@ -998,6 +1027,11 @@ export default class FeatheryClient extends IntegrationClient {
     );
 
     formData.set('custom_key_values', JSON.stringify(jsonKeyVals));
+    if (Object.keys(fileIndices).length)
+      formData.set(
+        '__feathery_custom_file_indices',
+        JSON.stringify(fileIndices)
+      );
     // @ts-expect-error TS(2345): Argument of type 'boolean' is not assignable to pa... Remove this comment to see the full error message
     formData.set('override', override);
     if (this.formKey) {
@@ -1094,8 +1128,13 @@ export default class FeatheryClient extends IntegrationClient {
     // Options
     {
       override = true,
-      shouldFlush = false
-    }: { override?: boolean; shouldFlush?: boolean } = {}
+      shouldFlush = false,
+      repeatedFileKeys = []
+    }: {
+      override?: boolean;
+      shouldFlush?: boolean;
+      repeatedFileKeys?: string[];
+    } = {}
   ) {
     if (this.draft || this.getNoSave()) return;
     if (Object.keys(customKeyValues).length === 0 && !shouldFlush) return;
@@ -1107,6 +1146,7 @@ export default class FeatheryClient extends IntegrationClient {
     ).forEach(([key, value]) => {
       if (value !== undefined) this.pendingCustomFieldUpdates[key] = value;
     });
+    repeatedFileKeys.forEach((key) => this.pendingRepeatedFileKeys.add(key));
     // if we don't want to override the existing values or the caller tells us to flush, immediately flush
     if (!override || shouldFlush) {
       return this.flushCustomFields(override);
