@@ -172,6 +172,58 @@ describe('proof', () => {
     );
   });
 
+  it("keeps authorship when the editor glues another author's pending pieces it re-split (true negative)", () => {
+    const glue: Normalization = {
+      name: 'glue',
+      apply: (doc) => {
+        const blocks = doc.root.blocks as NfNode[];
+        const merged: NfNode[] = [];
+        const look = (block: NfNode) =>
+          canonicalJson({ ...block, id: null, text: null });
+        for (const block of blocks) {
+          const prev = merged[merged.length - 1];
+          if (prev && look(prev) === look(block)) {
+            merged[merged.length - 1] = {
+              ...prev,
+              text: `${prev.text}${block.text}`
+            };
+            continue;
+          }
+          merged.push(block);
+        }
+        return merged.length === blocks.length
+          ? doc
+          : { ...doc, root: { ...doc.root, blocks: merged } };
+      }
+    };
+    const gluing = makeToyPack({
+      projections: { ...pack.projections, normalizations: [glue] }
+    });
+    const piecesBefore = nf(
+      toyNative(
+        para('a', { rev: 'ins', by: 'user' }),
+        para('b', { rev: 'ins', by: 'user' }),
+        para('c')
+      )
+    );
+    const piecesIntended: NormalForm = JSON.parse(JSON.stringify(piecesBefore));
+    (piecesIntended.root.blocks as NfNode[])[2].text = 'C';
+    const glued = nf(
+      toyNative(
+        para('ab', { rev: 'ins', by: 'user' }),
+        para('c', { rev: 'del', by: 't' }),
+        para('C', { rev: 'ins', by: 't' })
+      )
+    );
+    const p = prove(gluing, {
+      before: piecesBefore,
+      intended: piecesIntended,
+      live: glued,
+      ...nothingElse
+    });
+    expect([p.passed, p.authorship]).toEqual([true, true]);
+  });
+
   it('compares format references by the entry they name, not by key', () => {
     const a = nf(toyNative(para('x', { bold: true })));
     const b: NormalForm = JSON.parse(JSON.stringify(a));

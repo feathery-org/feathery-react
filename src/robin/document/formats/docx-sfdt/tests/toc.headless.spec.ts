@@ -268,6 +268,14 @@ describe.each(SHAPES)('a table of contents is refreshed by the editor after ever
     expect(JSON.stringify(r.facts)).toContain(`table of contents refreshed: ${(await state()).toc.entries.length} entries, 1 added, 0 removed`);
   }, 120000);
 
+  it('(9) a write with no changes rebuilds the contents on its own, with every page the layout page', async () => {
+    await fresh();
+    const r = await write({ intent: 'Update the contents.', scope: { ids: [] }, changes: [] });
+    expect(r.landed).toBe('immediate');
+    expect(JSON.stringify(r.facts)).toContain(`table of contents refreshed: ${(await state()).toc.entries.length} entries`);
+    await expectCurrent();
+  }, 120000);
+
   it('(3) a page-length table after the first heading moves every later entry on by its pages', async () => {
     const { native, headings } = await fresh();
     const before = await state();

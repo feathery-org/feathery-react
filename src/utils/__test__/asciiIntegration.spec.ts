@@ -83,9 +83,10 @@ describe('ASCII value ingestion', () => {
     internalState['other-instance'] = { client: { formKey: 'other' } } as any;
     new Field('city', 'other-instance').value = 'São Paulo';
     expect(fieldValues.city).toBe('São Paulo');
-    expect(defaultClient.submitCustom).toHaveBeenLastCalledWith({
-      city: 'São Paulo'
-    });
+    expect(defaultClient.submitCustom).toHaveBeenLastCalledWith(
+      { city: 'São Paulo' },
+      { repeatedFileKeys: [] }
+    );
     updateSessionValues(
       {
         servars: ['city'],

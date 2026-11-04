@@ -19,7 +19,6 @@ export default function EditorPreview({ type }: { type: 'pptx' | 'generic' }) {
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        minHeight: 320,
         background: '#f3f4f6',
         color: '#374151',
         fontFamily: 'Arial, sans-serif',
@@ -85,6 +84,7 @@ export default function EditorPreview({ type }: { type: 'pptx' | 'generic' }) {
             css={{
               width: '100%',
               maxWidth: 900,
+              containerType: 'inline-size',
               aspectRatio: '16 / 9',
               background: '#fff',
               boxShadow: '0 2px 8px #00000012',
@@ -94,7 +94,7 @@ export default function EditorPreview({ type }: { type: 'pptx' | 'generic' }) {
               justifyContent: 'center'
             }}
           >
-            <div css={{ fontSize: 'clamp(16px, 2vw, 30px)', fontWeight: 600 }}>
+            <div css={{ fontSize: 'clamp(16px, 5cqi, 30px)', fontWeight: 600 }}>
               Presentation title
             </div>
             <div css={{ marginTop: 14, fontSize: 14, color: '#6b7280' }}>

@@ -37,14 +37,19 @@ it('never submits a wrapping form from toolbar buttons or inputs', async () => {
   });
 
   // Every rendered toolbar button must be explicitly type=button, including
-  // the buttons inside the Insert and Slide dropdown menus.
+  // the Insert menu and the inline slide settings (shown with no selection).
   await openMenu(host, 'Insert');
-  await openMenu(host, 'Slide');
   const untyped = Array.from(host.querySelectorAll('button')).filter(
     (button) => button.type !== 'button'
   );
   expect(untyped.map((b) => b.title || b.textContent)).toEqual([]);
 
+  // The Size input lives in the shape cluster; select a text shape to show it.
+  await act(async () =>
+    store.select(
+      store.getState().deck!.slides[0].shapes.find((sh) => sh.text)!.id
+    )
+  );
   // Enter inside a toolbar input must not reach the form as a submit.
   const sizeInput = host.querySelector(
     'input[title="Size"]'

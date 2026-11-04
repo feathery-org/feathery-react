@@ -90,7 +90,7 @@ function PresentationSession({
       if (containerId)
         clearDocxEditorDirty(formId, `${containerId}:${initial.id}`);
     };
-  }, [initial.id, register, containerId, formId, tab.label]);
+  }, [initial.id, register, containerId, formId]);
   const save = useCallback(
     async (blob: Blob) => {
       const result = await client.saveEnvelopeFile(
@@ -174,7 +174,8 @@ export default function PptxDocumentPacket({
   resolveEnvelopes,
   registerBeforeReplace,
   onBusy,
-  onError
+  onError,
+  onReviewAction
 }: {
   tabs: DocumentTab[];
   activeId?: string;
@@ -191,6 +192,12 @@ export default function PptxDocumentPacket({
   registerBeforeReplace: (save: (() => Promise<unknown>) | null) => void;
   onBusy: (busy: boolean) => void;
   onError: (message: string | null) => void;
+  // A completed deck Save / Download fires the form's document-review logic,
+  // the same first-class trigger a saved/downloaded DOCX fires.
+  onReviewAction?: (
+    action: string,
+    result?: Record<string, any> | null
+  ) => void;
 }) {
   const sessions = useRef(new Map<string, Handle>());
   const selectedId = useRef(activeId);
@@ -355,7 +362,21 @@ export default function PptxDocumentPacket({
             action?.editor_toolbar_actions?.includes('save') &&
             action?.save_document_field_key
           ) {
-            const latest = allResolved ? envelopes : await resolveEnvelopes();
+            let latest = envelopes;
+            if (!allResolved) {
+              // A single-deck Save still writes the whole ordered field, so
+              // resolve siblings best-effort. A sibling with no generated file
+              // yet keeps the saved field unchanged rather than failing a deck
+              // save that already landed.
+              let unavailable = false;
+              latest = await resolveEnvelopes(() => {
+                unavailable = true;
+              });
+              if (unavailable) {
+                onError(null);
+                return;
+              }
+            }
             const files = latest.map(
               (env) =>
                 (
@@ -370,13 +391,14 @@ export default function PptxDocumentPacket({
             };
             setFieldValues(values, true, true);
             await client.submitCustom(values);
+            onReviewAction?.('save', { files: files.filter(Boolean) });
           }
           onError(null);
         });
       fieldWrites.current = write;
       return write;
     },
-    [action, client, resolveEnvelopes, onError]
+    [action, client, resolveEnvelopes, onError, onReviewAction]
   );
   const run = useCallback(
     async (operation: () => Promise<void>, background = false) => {
@@ -432,6 +454,9 @@ export default function PptxDocumentPacket({
           { cache: 'no-store' },
           true
         );
+        onReviewAction?.('download', {
+          files: envelopes.map((env) => env.file).filter(Boolean)
+        });
         if (result.failures.length)
           throw new Error(
             `Downloaded ${
@@ -440,7 +465,7 @@ export default function PptxDocumentPacket({
           );
         setFeedback('All documents downloaded');
       }),
-    [run, savePacket, action]
+    [run, savePacket, action, onReviewAction]
   );
   const outcomes = containerToolbarOutcomes(action ?? {});
   const offersDownload = outcomes.offersDownload && !outcomes.savesToField;
