@@ -32,9 +32,6 @@ const getToggleDimensions = (
 
 type ToggleDimensions = ReturnType<typeof getToggleDimensions>;
 
-const formatColour = (colour: string) =>
-  colour === 'transparent' ? colour : `#${colour}`;
-
 const toggleSize = ({ height, width }: ToggleDimensions): CSSObject => ({
   height: `${height}px`,
   width: `${width}px`
@@ -97,8 +94,8 @@ const sizedDimensions = (
 const DEFAULT_DIMENSIONS = getToggleDimensions(DEFAULT_HEIGHT);
 
 // Maps the checkbox style settings onto the toggle's parts. The checkbox's
-// square size becomes the toggle's height. The checkmark colour is the "on"
-// fallback so themed toggles keep the theme's brand colour.
+// square size becomes the toggle's height. The checkmark color is the "on"
+// color, as themes put their brand color there.
 export function applyToggleStyles(responsiveStyles: any) {
   responsiveStyles.addTargets(
     'toggle',
@@ -166,13 +163,10 @@ export function applyToggleStyles(responsiveStyles: any) {
     'hover_background_color',
     'backgroundColor'
   );
-  responsiveStyles.apply(
+  responsiveStyles.applyColor(
     'toggleOn',
-    ['selected_font_color', 'selected_background_color'],
-    (background: any, checkmark: any) => {
-      const colour = background || checkmark;
-      return colour ? { backgroundColor: formatColour(colour) } : {};
-    }
+    'selected_font_color',
+    'backgroundColor'
   );
   responsiveStyles.applyColor(
     'toggleOnHover',

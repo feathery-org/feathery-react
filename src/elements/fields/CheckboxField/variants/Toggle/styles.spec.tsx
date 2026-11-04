@@ -98,7 +98,8 @@ describe('applyToggleStyles', () => {
     );
   });
 
-  it('uses the selected background as the on color, falling back to the checkmark colour', () => {
+  // The selected background is the checkbox's checked fill, not the on color
+  it('uses the checkmark color as the on color', () => {
     expect(
       toggleStyles({
         selected_background_color: '112233',
@@ -106,9 +107,10 @@ describe('applyToggleStyles', () => {
       }).getTarget('toggleOn').backgroundColor
     ).toBe('#aabbcc');
     expect(
-      toggleStyles({ selected_font_color: '112233' }).getTarget('toggleOn')
-        .backgroundColor
-    ).toBe('#112233');
+      toggleStyles({ selected_background_color: '112233' }).getTarget(
+        'toggleOn'
+      ).backgroundColor
+    ).toBeUndefined();
   });
 
   it('maps background and hover colours onto the segments', () => {
