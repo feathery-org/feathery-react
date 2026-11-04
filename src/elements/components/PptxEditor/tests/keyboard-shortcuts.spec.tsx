@@ -89,6 +89,12 @@ it('tooltips carry the platform shortcut hints', async () => {
   );
   const { host, store } = mounted;
   await act(async () => store.loadFile(sampleBytes(), 'sample.pptx'));
+  // Bold/Italic live in the shape cluster, shown once a shape is selected.
+  await act(async () =>
+    store.select(
+      store.getState().deck!.slides[0].shapes.find((sh) => sh.text)!.id
+    )
+  );
   // jsdom is not a Mac platform, so hints render as Ctrl+.
   expect(host.querySelector('button[title="Bold (Ctrl+B)"]')).toBeTruthy();
   expect(host.querySelector('button[title="Italic (Ctrl+I)"]')).toBeTruthy();

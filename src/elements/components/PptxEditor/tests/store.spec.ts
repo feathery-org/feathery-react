@@ -102,6 +102,32 @@ describe('PptxEditorStore instance isolation', () => {
     store.dispose();
   });
 
+  it('undo jumps to the slide the reverted change belongs to', () => {
+    const store = loadedStore();
+    // Edit a shape on slide index 2, then navigate away to slide 5.
+    const target = store.getState().deck!.slides[2];
+    const shape = target.shapes.find((candidate) => candidate.xfrm)!;
+    store.setActiveSlide(2);
+    store.select(shape.id);
+    store.executeCommand({
+      type: 'set-shape-geometries',
+      slideId: target.path,
+      updates: [{ shapeId: shape.id, geometry: { x: 424242 } }]
+    });
+    store.setActiveSlide(5);
+    expect(store.getState().activeSlide).toBe(5);
+
+    store.undo();
+    // The view returns to the edited slide so the reverted change is visible.
+    expect(store.getState().activeSlide).toBe(2);
+
+    store.setActiveSlide(7);
+    store.redo();
+    // Redo likewise surfaces the slide it re-applies to.
+    expect(store.getState().activeSlide).toBe(2);
+    store.dispose();
+  });
+
   it('resets local state when a second document is loaded', () => {
     const store = loadedStore();
     const slide = store.getState().deck!.slides[0];

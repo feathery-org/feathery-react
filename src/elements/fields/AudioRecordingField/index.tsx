@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CloseIcon, MicrophoneIcon } from '../../components/icons';
+import { hasIconGlyph, IconGlyph } from '../../components/icons/iconGlyph';
 import ErrorInput from '../../components/ErrorInput';
 import { imgMaxSizeStyles } from '../../styles';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
@@ -430,6 +431,51 @@ function AudioRecordingField({
       </>
     );
   } else {
+    let recordIcon;
+    if (hasIconGlyph(element.properties.icon_glyph)) {
+      recordIcon = (
+        <span
+          css={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            ...imgStyles,
+            ...(message ? { color: RECORDING_COLOR } : {}),
+            maxWidth: '100%',
+            maxHeight: '100%',
+            flexShrink: stacked ? 1 : 0
+          }}
+        >
+          <IconGlyph
+            glyph={element.properties.icon_glyph}
+            size={iconWidth ? '100%' : 20}
+          />
+        </span>
+      );
+    } else if (element.properties.icon) {
+      recordIcon = (
+        <img
+          src={element.properties.icon}
+          style={{
+            ...imgStyles,
+            maxHeight: '100%',
+            flexShrink: stacked ? 1 : 0
+          }}
+          alt=''
+        />
+      );
+    } else {
+      recordIcon = (
+        <MicrophoneIcon
+          width={iconWidth ?? '20px'}
+          style={{
+            ...imgStyles,
+            maxHeight: '100%',
+            flexShrink: stacked ? 1 : 0
+          }}
+          color={message ? RECORDING_COLOR : undefined}
+        />
+      );
+    }
     content = (
       <div
         role='button'
@@ -450,27 +496,7 @@ function AudioRecordingField({
           ...themedAc
         }}
       >
-        {element.properties.icon ? (
-          <img
-            src={element.properties.icon}
-            style={{
-              ...imgStyles,
-              maxHeight: '100%',
-              flexShrink: stacked ? 1 : 0
-            }}
-            alt=''
-          />
-        ) : (
-          <MicrophoneIcon
-            width={iconWidth ?? '20px'}
-            style={{
-              ...imgStyles,
-              maxHeight: '100%',
-              flexShrink: stacked ? 1 : 0
-            }}
-            color={message ? RECORDING_COLOR : undefined}
-          />
-        )}
+        {recordIcon}
         <span
           role={message ? 'status' : undefined}
           css={{

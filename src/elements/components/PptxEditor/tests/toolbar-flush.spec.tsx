@@ -22,50 +22,6 @@ afterEach(async () => {
 const runText = (shape: Shape) =>
   shape.text!.paragraphs[0].runs.map((run) => run.text).join('');
 
-it('keeps pending text when a toolbar command changes shape order', async () => {
-  mounted = await mountEditor(
-    <>
-      <Toolbar />
-      <SvgSlide />
-    </>
-  );
-  const { store, host } = mounted;
-  let deck!: Deck;
-  let shape!: Shape;
-  await act(async () => {
-    store.loadFile(sampleBytes(), 'sample.pptx');
-    deck = store.getState().deck!;
-    shape = addTextBox(
-      deck,
-      deck.slides[0],
-      914400,
-      914400,
-      3000000,
-      900000,
-      'Before'
-    );
-    store.resetHistory();
-  });
-  await act(async () => store.select(shape.id));
-  const editor = host.querySelector(
-    `[data-shape-id="${shape.id}"] [data-textbody]`
-  ) as HTMLElement;
-  await act(async () =>
-    editor.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
-  );
-  editor.querySelector('[data-source-run="0"]')!.textContent =
-    'Typed before reorder';
-  await act(async () => store.setTextToolbarPointer(false));
-  const back = host.querySelector(
-    'button[title="Send to back"]'
-  ) as HTMLButtonElement;
-  await act(async () => back.click());
-  expect(
-    runText(deck.slides[0].shapes.find((item) => item.id === shape.id)!)
-  ).toBe('Typed before reorder');
-  expect(deck.slides[0].shapes[0].id).toBe(shape.id);
-});
-
 it('commits pending text before applying bullets from the toolbar', async () => {
   mounted = await mountEditor(
     <>

@@ -239,6 +239,7 @@ import {
   verifyConnectivity
 } from '../utils/offlineRequestHandler';
 import {
+  isFetchNetworkError,
   removeCustomErrorHandler,
   setCustomErrorHandler
 } from '../utils/error';
@@ -250,6 +251,7 @@ import ConnectAccountModal, {
 import {
   CONFIG_COMPONENTS,
   PROVIDER_LABELS,
+  SALESFORCE_PROVIDER,
   configFieldKey,
   connectionFieldKey,
   hasEmailIdentity
@@ -304,10 +306,10 @@ const ENVELOPE_FLOW_TOAST_ID = 'envelope-flow';
 const ENVELOPE_CONTAINER_TOAST_ID = 'envelope-container';
 
 // Shown instead of the closed-form copy when the session request itself fails
-// while an access link is open. A token this device kept for the form makes
-// that path reachable on an ordinary connectivity failure, where the form is
-// not closed at all and a reload is all the user needs.
-const LINK_SESSION_FAILED_MESSAGE =
+// on a form only the session can open (an access link, or a session-gated
+// form). That path is reachable on an ordinary connectivity failure, where the
+// form is not closed at all and a reload is all the user needs.
+const SESSION_FAILED_MESSAGE =
   "We couldn't load this form. Please refresh the page.";
 
 // Bottom-right overlays stack rather than overlap: each one clears the boxes
@@ -317,6 +319,12 @@ const stackAbove = (height: number) =>
   height > 0 ? height + BOTTOM_RIGHT_STACK_GAP : 0;
 
 export * from './grid/StyledContainer';
+
+// DocuSign's own status, when the backend reports it, says whether the press
+// ended as a draft: a Sign can be held as one, and a retried Draft can find
+// the envelope already sent. Older backends report none, so the press decides.
+const isDocusignDraft = (draft: boolean, data: any) =>
+  data?.docusign_status ? data.docusign_status === 'created' : draft;
 
 export interface Props {
   formId: string;
@@ -370,7 +378,7 @@ export interface ClickActionElement {
 }
 
 const getSubmissionErrorMessage = (error: unknown): string => {
-  if (error instanceof TypeError && error.message === 'Failed to fetch') {
+  if (isFetchNetworkError(error)) {
     return 'Unable to upload files. Please check your connection and try again.';
   }
   if (error instanceof Error) {
@@ -409,7 +417,10 @@ function isRequiredFlowSatisfied(action: RequiredFlowAction) {
 function preOpenActionWindows(actions: any[]) {
   const windows = new Map<number, Window | null>();
   actions.forEach((action, idx) => {
-    if (action.type === ACTION_CONNECT_ACCOUNT && action.provider !== 'box') {
+    if (
+      action.type === ACTION_CONNECT_ACCOUNT &&
+      !['box', SALESFORCE_PROVIDER].includes(action.provider)
+    ) {
       windows.set(
         idx,
         featheryWindow().open(
@@ -492,6 +503,7 @@ function Form({
   // stays behind the Continue screen until the user redeems it.
   const [linkConfirmRequired, setLinkConfirmRequired] = useState(false);
   const [formSettings, setFormSettings] = useState({
+    formKey: formIdProp,
     readOnly,
     authSensitiveActionsOnly: false,
     errorType: 'html5',
@@ -531,6 +543,9 @@ function Form({
   const extractionFileFields = useRef<Record<string, Record<string, string[]>>>(
     {}
   );
+  // Whether only the session decides if this form may open (link required,
+  // collaboration, business email). Gated until the form payload says otherwise
+  const sessionGated = useRef(true);
   const [inlineErrors, setInlineErrors] = useState<InlineErrors>({});
   const [, setRepeatChanged] = useState(false);
 
@@ -1019,6 +1034,7 @@ function Form({
       triggerErrors: false,
       clearErrors: false
     });
+    return updatedValues;
   }
 
   function addRepeatedRow(
@@ -1081,7 +1097,7 @@ function Form({
       ];
       return newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
     };
-    updateRepeatValues(curRepeatContainer, getNewVal);
+    const updatedValues = updateRepeatValues(curRepeatContainer, getNewVal);
     internalState[_internalId].updateFieldOptions(removeServars, curIndex);
 
     // HTML5-mode errors live in the DOM as setCustomValidity state, and repeat
@@ -1118,6 +1134,16 @@ function Form({
       internalState[_internalId]?.pendingInlineErrorPublish;
     if (pendingPublish) pendingPublish.then(applyShift);
     else applyShift();
+
+    // Every descendant changes position, including fields hidden by the
+    // current row's conditions. A later step submit may omit those fields, so
+    // persist the whole structural edit now.
+    return {
+      values: updatedValues,
+      repeatedFileKeys: fieldsInContainer
+        .filter((field: any) => FILE_FIELD_TYPES.includes(field.servar.type))
+        .map((field: any) => field.servar.key)
+    };
   }
 
   // Debouncing the validateElements call to rate limit calls
@@ -1501,7 +1527,9 @@ function Form({
                 // completion signal, so all that's left is telling the filler.
                 showEnvelopeOutcome(
                   ENVELOPE_FLOW_TOAST_ID,
-                  draft ? 'Saved as Draft' : 'Sent for Signature',
+                  isDocusignDraft(draft, data)
+                    ? 'Saved as Draft'
+                    : 'Sent for Signature',
                   action.documents
                 );
                 return;
@@ -1530,9 +1558,9 @@ function Form({
           if (data.status === 'error') throw new Error(data.message);
           if (action.envelope_action === 'open_in_editor') {
             return await new Promise((resolve, reject) => {
-              // What finalize returned, so the method resolves with the real
-              // outcome ({files: [...]}) — the generate payload here only holds
-              // {documents, expires_at}.
+              // What the completing finalize returned, so the method resolves
+              // with the real outcome ({files: [...]}) — the generate payload
+              // here only holds {documents, expires_at}.
               let finalized: any;
               setReviewViewerPayload({
                 payload: data,
@@ -1540,12 +1568,15 @@ function Form({
                 onFinalize: async ({
                   envelopes,
                   envelopeAction,
-                  draft
+                  draft,
+                  refreshDraft,
+                  completes
                 }: any) => {
                   const result = await client.finalizeEnvelopeReview(action, {
                     envelopes,
                     envelopeAction,
-                    draft
+                    draft,
+                    refreshDraft
                   });
                   if (!result) {
                     return { status: 'error', message: 'Finalize failed' };
@@ -1562,12 +1593,14 @@ function Form({
                       result
                     })
                   );
-                  // The toolbar action that produced this outcome rides along
-                  // so the awaiting rule can branch on it.
-                  finalized = {
-                    ...result,
-                    reviewAction: draft ? 'draft' : envelopeAction
-                  };
+                  // A kept-open screen can Download after a Draft; the flow
+                  // still completes with the draft. The toolbar action rides
+                  // along so the awaiting rule can branch on it.
+                  if (completes)
+                    finalized = {
+                      ...result,
+                      reviewAction: draft ? 'draft' : envelopeAction
+                    };
                   return result;
                 },
                 onComplete: () => {
@@ -1980,7 +2013,11 @@ function Form({
           };
         if (res.save_url_params) saveUrlParamsFormSetting = true;
         const mappedSettings = mapFormSettingsResponse(res);
-        setFormSettings({ ...formSettings, ...mappedSettings });
+        setFormSettings({
+          ...formSettings,
+          ...mappedSettings,
+          formKey: newClient.formKey
+        });
         // The upload tracker is keyed by formKey since upload reporting
         // happens in FeatheryClient, outside React state. Read the mapped
         // setting rather than the raw response so the default lives in one place
@@ -1992,6 +2029,8 @@ function Form({
         setLogicRules(res.logic_rules);
         setSharedCodes((prev) => res.shared_codes || prev);
         extractionFileFields.current = res.extraction_file_fields || {};
+        // A payload from before the flag existed can't vouch for the form
+        sessionGated.current = res.session_gated ?? true;
         trackHashes.current =
           hashNavigation !== undefined ? hashNavigation : res.track_hashes;
 
@@ -2088,20 +2127,31 @@ function Form({
       })
       .catch(async (error: any) => {
         console.warn(error);
-        // Only the session resolves which submission an access link opens, so
-        // without one there is no user id to write against. Block instead of
-        // opening the origin step on an empty submission.
-        if (initState.linkToken) {
+        // The session can fail before the form payload sets sessionGated. An
+        // origin outage can fail both, and a missing payload is treated as gated.
+        const data = await formPromise.catch(() => null);
+        // Only the session resolves which submission an access link opens, and
+        // whether a gated form may open at all. Block instead of opening the
+        // origin step past checks that never ran. After a login redirect the
+        // auth hook picks the step, but it waits on integrations that only a
+        // loaded session provides, so it would never pick one.
+        if (
+          !data ||
+          initState.linkToken ||
+          sessionGated.current ||
+          authState.redirectAfterLogin ||
+          authState.hasRedirected
+        ) {
           formOffReason.current = CLOSED;
-          formOffMessage.current = LINK_SESSION_FAILED_MESSAGE;
+          formOffMessage.current = SESSION_FAILED_MESSAGE;
           setRender((render) => ({ ...render }));
           return;
         }
+        if (stepKey) return;
         // Go to first step if origin fails
-        const [data] = await formPromise;
         const newKey = (getOrigin as any)(data).key;
-        if (trackHashes.current) setUrlStepHash(navigate, steps, newKey);
-        else setStepKey(newKey);
+        if (trackHashes.current) setUrlStepHash(navigate, data, newKey);
+        setStepKey(newKey);
       });
   }, [activeStep, setSteps, updateFieldValues]);
 
@@ -2204,18 +2254,20 @@ function Form({
     repeat: number | undefined,
     hasNext: boolean
   ): Promise<[Promise<any>] | undefined> => {
-    const formattedFields = formatStepFields(
+    let formattedFields = formatStepFields(
       activeStep,
       formSettings.saveHideIfFields ? null : visiblePositions,
       false
     );
-    const trigger = lookUpTrigger(
-      activeStep,
-      metadata.elementIDs[0],
-      metadata.elementType
-    );
-    // Legacy callback contract is numeric, so fall back to 0 here only.
-    trigger.repeatIndex = repeat ?? 0;
+    const trigger = {
+      ...lookUpTrigger(
+        activeStep,
+        metadata.elementIDs[0],
+        metadata.elementType
+      ),
+      // Legacy callback contract is numeric, so fall back to 0 here only.
+      repeatIndex: repeat ?? 0
+    } as Trigger;
 
     if (
       activeStep.servar_fields.find(
@@ -2249,13 +2301,12 @@ function Form({
     const customSubmitCode = async (beforeSubmit: boolean) => {
       let invalid = false;
       // Execute user-provided onSubmit function or submit rules if present
-      if (
-        await runUserLogic('submit', () => ({
-          submitFields: formattedFields,
-          trigger,
-          beforeSubmit
-        }))
-      ) {
+      const logicRan = await runUserLogic('submit', () => ({
+        submitFields: formattedFields,
+        trigger,
+        beforeSubmit
+      }));
+      if (logicRan) {
         // do validation check in case user has manually invalidated the step
         invalid = await setFormElementError({
           formRef,
@@ -2267,11 +2318,39 @@ function Form({
           triggerErrors: true
         });
       }
-      return invalid;
+      return { invalid, logicRan };
     };
 
-    let invalid = await customSubmitCode(true);
+    let { invalid, logicRan } = await customSubmitCode(true);
     if (invalid) return;
+
+    if (logicRan) {
+      // Submit logic can update field values and hide-if state. Validate and
+      // snapshot both from the completed rule's state before persisting it.
+      const latestVisiblePositions = getVisiblePositions(
+        activeStep,
+        _internalId
+      );
+      const { invalid: latestValuesInvalid } = validateElements({
+        step: activeStep,
+        visiblePositions: latestVisiblePositions,
+        triggerErrors: true,
+        errorType: formSettings.errorType,
+        formRef,
+        errorCallback: getErrorCallback({ trigger }),
+        setInlineErrors,
+        trigger
+      });
+      if (latestValuesInvalid) {
+        setAutoValidate(true);
+        return;
+      }
+      formattedFields = formatStepFields(
+        activeStep,
+        formSettings.saveHideIfFields ? null : latestVisiblePositions,
+        false
+      );
+    }
 
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
       const servar = servarByKey.get(key);
@@ -2334,7 +2413,7 @@ function Form({
       // If running submit logic rule after, must finish
       // submit data first
       await stepPromise;
-      invalid = await customSubmitCode(false);
+      ({ invalid } = await customSubmitCode(false));
       if (invalid) return;
     }
 
@@ -3029,7 +3108,21 @@ function Form({
         addRepeatedRow(container, action.max_repeats);
       } else if (type === ACTION_REMOVE_REPEATED_ROW) {
         const container = getContainerById(activeStep, action.repeat_container);
-        removeRepeatedRow(element, container);
+        // A button can submit the old step values before its actions run.
+        // Wait for that write so it cannot restore the deleted row afterward.
+        await submitPromise.catch(() => undefined);
+        const removed = removeRepeatedRow(element, container);
+        if (removed) {
+          try {
+            await client.submitCustom(removed.values, {
+              shouldFlush: true,
+              repeatedFileKeys: removed.repeatedFileKeys
+            });
+          } catch (error) {
+            setElementError(getSubmissionErrorMessage(error));
+            break;
+          }
+        }
       } else if (type === ACTION_TRIGGER_PERSONA) {
         await Promise.all([submitPromise, client.flushCustomFields()]);
         const personaMeta = integrations?.persona.metadata ?? {};
@@ -3096,14 +3189,14 @@ function Form({
         // that a connection exists. Either way a value here means connected.
         const connectionKey = connectionFieldKey(provider);
 
-        const alreadyConnected = !!fieldValues[connectionKey];
+        let alreadyConnected = !!fieldValues[connectionKey];
         let connected = false;
         let credentials: SavedAccountCredential[] = [];
         let chooseCredential = false;
         let canSaveCredential = false;
         let lockedByOwner = false;
         try {
-          if (provider === 'box') {
+          if (['box', SALESFORCE_PROVIDER].includes(provider)) {
             // Listing saved accounts is optional; a throttle or temporary outage
             // must not prevent the existing OAuth or change-account flow.
             const saved = await client
@@ -3129,9 +3222,18 @@ function Form({
               );
             }
             credentials = saved?.credentials ?? [];
-            canSaveCredential = !!saved;
+            canSaveCredential = !!saved && saved.can_save !== false;
             lockedByOwner =
               alreadyConnected && saved?.attached?.owner === false;
+            if (provider === SALESFORCE_PROVIDER) {
+              // A failed credential lookup leaves `saved` undefined, so the
+              // modal opens as "not connected" with an empty list on purpose:
+              // Salesforce requires a reconnect rather than trusting the field.
+              alreadyConnected =
+                saved?.attached?.status === 'connected' &&
+                saved?.attached?.owner === true;
+              lockedByOwner = saved?.attached?.owner === false;
+            }
             // Always open Box's picker first. If the saved-account lookup is
             // unavailable, the picker still offers an explicit new-account
             // action instead of pre-opening and dismissing an OAuth window.
@@ -3170,7 +3272,11 @@ function Form({
           // connect the modal is worth showing only for a provider with setup
           // to collect; otherwise connecting is the whole job and the flow
           // continues straight away.
-          if (alreadyConnected || CONFIG_COMPONENTS[provider]) {
+          if (
+            alreadyConnected ||
+            chooseCredential ||
+            CONFIG_COMPONENTS[provider]
+          ) {
             // The flow advances from the modal's onSaved, which only a
             // provider's config component calls - the respondent has not
             // finished configuring the account yet.
@@ -3491,12 +3597,15 @@ function Form({
               //
               // Create Draft finalizes as a sign too, so the label comes off
               // the request — a draft is saved in the sender's DocuSign
-              // account, not delivered to anyone. Not off the response: the
-              // poll endpoint overwrites its status with "complete", so
-              // DocuSign's own "created" never reaches here.
+              // account, not delivered to anyone. A Sign can end as a draft
+              // too (the Quik Joint Agreements hold), which only
+              // `docusign_status` reports: the poll endpoint overwrites
+              // `status` with "complete".
               showEnvelopeOutcome(
                 envelopeId,
-                draft ? 'Saved as Draft' : 'Sent for Signature',
+                isDocusignDraft(draft, data)
+                  ? 'Saved as Draft'
+                  : 'Sent for Signature',
                 action.documents
               );
               return;
@@ -3593,16 +3702,19 @@ function Form({
               onFinalize: async ({
                 envelopes,
                 envelopeAction,
-                draft
+                draft,
+                refreshDraft
               }: {
                 envelopes: { envelopeId: string }[];
                 envelopeAction: 'sign' | 'fill' | 'download' | 'save';
                 draft: boolean;
+                refreshDraft: boolean;
               }) => {
                 const result = await client.finalizeEnvelopeReview(action, {
                   envelopes,
                   envelopeAction,
-                  draft
+                  draft,
+                  refreshDraft
                 });
                 // A missing result is a failure, not a success: _fetch
                 // resolves undefined on a network blip / 403 / 409, and
@@ -3628,11 +3740,10 @@ function Form({
                 );
                 return result;
               },
-              onComplete: () => {
+              onComplete: () =>
                 flowOnSuccess(i)().then(() => {
                   setTimeout(() => setReviewViewerPayload(null), 500);
-                });
-              }
+                })
             });
             break;
           } else {

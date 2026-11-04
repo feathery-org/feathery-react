@@ -257,7 +257,11 @@ it('flushes an in-progress cell edit through the store commit hook, as keyboard 
   for (let i = 0; i < 2; i++) {
     await act(async () =>
       first.dispatchEvent(
-        new MouseEvent('mousedown', { bubbles: true, clientX: 100, clientY: 100 })
+        new MouseEvent('mousedown', {
+          bubbles: true,
+          clientX: 100,
+          clientY: 100
+        })
       )
     );
     await act(async () =>

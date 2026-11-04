@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
+import Toggle from './variants/Toggle/Toggle';
 
 // Draws a checkmark, similar in dimensions to the default Chrome checkbox, in CSS
 const checkmarkClipPath =
@@ -278,6 +279,9 @@ function CheckboxField({
   );
 
   const servar = element.servar;
+  // Per placement, so the same field can be a toggle in one form and a
+  // checkbox in another
+  const isToggle = element.properties?.display === 'toggle';
 
   return (
     <div
@@ -290,22 +294,34 @@ function CheckboxField({
       {...elementProps}
     >
       {children}
-      <input
-        id={servar.key}
-        name={servar.key}
-        type='checkbox'
-        checked={fieldVal}
-        disabled={disabled}
-        onChange={onChange}
-        onFocus={iosScrollOnFocus}
-        aria-label={element.properties.aria_label}
-        css={{
-          ...composeCheckableInputStyle(styles, disabled),
-          ...(!fieldLabel ? { marginRight: 5 } : {}),
-          ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
-          '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
-        }}
-      />
+      {isToggle ? (
+        <Toggle
+          id={servar.key}
+          name={servar.key}
+          checked={fieldVal}
+          onChange={onChange}
+          ariaLabel={element.properties.aria_label}
+          responsiveStyles={responsiveStyles}
+          disabled={disabled}
+        />
+      ) : (
+        <input
+          id={servar.key}
+          name={servar.key}
+          type='checkbox'
+          checked={fieldVal}
+          disabled={disabled}
+          onChange={onChange}
+          onFocus={iosScrollOnFocus}
+          aria-label={element.properties.aria_label}
+          css={{
+            ...composeCheckableInputStyle(styles, disabled),
+            ...(!fieldLabel ? { marginRight: 5 } : {}),
+            ...(disabled ? responsiveStyles.getTarget('disabled') : {}),
+            '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
+          }}
+        />
+      )}
       {fieldLabel}
     </div>
   );

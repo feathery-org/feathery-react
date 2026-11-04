@@ -103,6 +103,26 @@ describe('composeTracked', () => {
     expect(trackedAs(deleted)).toBe('Deletion');
     expect(bookmarks(deleted)).toBe(bookmarks(control));
   });
+
+  it('a paragraph rewritten inside an earlier pending insertion keeps that insertion mark', () => {
+    const nf = JSON.parse(JSON.stringify(s.view.nf)) as NormalForm;
+    let id = '';
+    walk(nf.root, docxTree, ({ node }) => {
+      const runs = arr<NfNode>(node.inlines);
+      if (id || node.kind !== 'paragraph' || !runs.length || runs.some((r) => r.kind !== 'run')) return;
+      id = node.id;
+      const earlier = { kind: 'Insertion', author: 'Robin', group: 'X' };
+      node.pending = { mark: { ...earlier } };
+      for (const r of runs) r.pending = { ...earlier };
+    });
+    const intended = JSON.parse(JSON.stringify(nf)) as NormalForm;
+    const [rewritten] = occurrences(intended, id);
+    delete rewritten.pending;
+    rewritten.inlines = [{ kind: 'run', text: 'fixed' }];
+    const { tracked } = composeTracked(makeView(nf, docxPack), intended, 'X.2');
+    const [paragraph] = occurrences(tracked, id);
+    expect(paragraph.pending).toEqual({ mark: { kind: 'Insertion', author: 'Robin', group: 'X' } });
+  });
 });
 
 describe('inOrder: which ids a reordering moved', () => {
