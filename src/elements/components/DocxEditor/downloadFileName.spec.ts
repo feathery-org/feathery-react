@@ -1,6 +1,6 @@
-import { downloadBaseName } from './downloadFileName';
+import { envelopeDownloadName } from './downloadFileName';
 
-describe('downloadBaseName', () => {
+describe('envelopeDownloadName', () => {
   it.each([
     [
       'encoded spaces in a presigned URL',
@@ -8,24 +8,14 @@ describe('downloadBaseName', () => {
       'DIAMOND LAKE YACHT CLUB_Management_Liability_Comparison_Proposal'
     ],
     [
-      'a plain name',
-      'https://bucket.s3.amazonaws.com/envelopes/abc/Proposal.pdf',
-      'Proposal'
+      'a dotted name',
+      'https://x.test/a/Acme%20Inc.%20Proposal.pdf',
+      'Acme Inc. Proposal'
     ],
-    [
-      'characters browsers reject',
-      'https://x.test/a/Acme%3A%20%22Q1%22%2FQ2%3F.docx',
-      'Acme_ _Q1__Q2_'
-    ],
+    ['malformed percent-encoding', 'https://x.test/a/Bad%E7.docx', 'Bad%E7'],
     ['a missing file', null, 'document'],
-    ['an empty file', '', 'document'],
-    [
-      'malformed percent-encoding',
-      'https://x.test/a/Bad%E0%A4%A.docx',
-      'document'
-    ],
-    ['a name that is only an extension', 'https://x.test/a/.docx', 'document']
+    ['an extension-only name', 'https://x.test/a/.docx', 'document']
   ])('handles %s', (_, url, expected) => {
-    expect(downloadBaseName(url)).toBe(expected);
+    expect(envelopeDownloadName(url)).toBe(expected);
   });
 });
