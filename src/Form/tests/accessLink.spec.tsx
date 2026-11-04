@@ -1,4 +1,9 @@
-import { ClientMod, FormHelperMod, PollFuserDataMod } from './testMocks';
+import {
+  ClientMod,
+  FormHelperMod,
+  PollFuserDataMod,
+  StepHelperMod
+} from './testMocks';
 import {
   act,
   cleanup,
@@ -18,6 +23,7 @@ jest.mock('../../utils/accessLink', () => ({
 
 const InitMod: any = jest.requireMock('../../utils/init');
 const AccessLinkMod: any = jest.requireMock('../../utils/accessLink');
+const LoginFormMod: any = jest.requireMock('../../auth/LoginForm');
 
 const CONTINUE_COPY = 'This form link can only be opened on one device.';
 const BLOCKED_COPY = 'Please open this form from your personal link.';
@@ -197,5 +203,95 @@ describe('access link session flags', () => {
     PollFuserDataMod.default.mock.calls.forEach((call: any[]) =>
       expect(call[0]).toBe(false)
     );
+  });
+});
+
+describe('session request failure without a link', () => {
+  const originStep = {
+    key: 'origin',
+    id: 's-origin',
+    servar_fields: [],
+    buttons: [],
+    next_conditions: []
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    Object.assign(InitMod.initState, {
+      linkToken: '',
+      linkSecret: '',
+      authenticationError: undefined
+    });
+    ClientMod._spies.state.steps = [originStep];
+    ClientMod._spies.state.sessionError = new TypeError('Failed to fetch');
+  });
+
+  afterEach(() => {
+    cleanup();
+    ClientMod._spies.state.steps = null;
+    ClientMod._spies.state.sessionError = null;
+    ClientMod._spies.state.sessionGated = false;
+    ClientMod._spies.state.formError = null;
+    LoginFormMod.authState.hasRedirected = false;
+  });
+
+  // Link required, collaboration or business email: only the session can say
+  // whether the form opens, so it has to stay closed rather than skip the check
+  it.each([
+    ['a session-gated form', true],
+    ['a payload without the flag', undefined]
+  ])('asks for a refresh on %s', async (_, sessionGated) => {
+    ClientMod._spies.state.sessionGated = sessionGated;
+
+    render(<JSForm formId='f1' _internalId={`iid-session-gated-${_}`} />);
+
+    expect(await screen.findByText(LOAD_FAILED_COPY)).toBeInTheDocument();
+    expect(screen.queryByTestId('btn')).not.toBeInTheDocument();
+    expect(StepHelperMod.setUrlStepHash).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])(
+    'opens the origin step with hash navigation %s',
+    async (hashNavigation) => {
+      render(
+        <JSForm
+          formId='f1'
+          _internalId={`iid-session-fail-${hashNavigation}`}
+          hashNavigation={hashNavigation}
+        />
+      );
+
+      expect(await screen.findByTestId('btn')).toBeInTheDocument();
+      if (hashNavigation)
+        expect(StepHelperMod.setUrlStepHash).toHaveBeenCalledWith(
+          expect.anything(),
+          { origin: originStep },
+          'origin'
+        );
+      else expect(StepHelperMod.setUrlStepHash).not.toHaveBeenCalled();
+    }
+  );
+
+  // The auth hook only picks a step once a loaded session hands it
+  // integrations, so returning here would leave the form with no step at all
+  it('asks for a refresh after a login redirect', async () => {
+    LoginFormMod.authState.hasRedirected = true;
+
+    render(<JSForm formId='f1' _internalId='iid-session-fail-auth' />);
+
+    expect(await screen.findByText(LOAD_FAILED_COPY)).toBeInTheDocument();
+    expect(screen.queryByTestId('btn')).not.toBeInTheDocument();
+    expect(StepHelperMod.setUrlStepHash).not.toHaveBeenCalled();
+  });
+
+  // An origin outage can fail the form payload too. Without it the form can't
+  // vouch for being ungated, so it must not render blank.
+  it('asks for a refresh when the form payload also fails', async () => {
+    ClientMod._spies.state.formError = new Error('502 Bad Gateway');
+
+    render(<JSForm formId='f1' _internalId='iid-session-fail-form' />);
+
+    expect(await screen.findByText(LOAD_FAILED_COPY)).toBeInTheDocument();
+    expect(StepHelperMod.setUrlStepHash).not.toHaveBeenCalled();
   });
 });
