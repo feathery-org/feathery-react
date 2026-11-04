@@ -711,6 +711,52 @@ describe('step save and completion ordering', () => {
     expect(sent).toEqual(['step', 'custom fields']);
   });
 
+  it('waits for step submissions that start while a custom flush is waiting', async () => {
+    const { client: formClient } = createClientWithStorage();
+    const ruleClient: any = new FeatheryClient('form');
+    const stepResolvers: Array<(value: {}) => void> = [];
+    const stepStarted: Array<() => void> = [];
+    const stepSignals = [0, 1].map(
+      () => new Promise<void>((resolve) => stepStarted.push(resolve))
+    );
+    const sent: string[] = [];
+    jest.spyOn(formClient, '_fetch').mockImplementation(async () => {
+      const index = stepResolvers.length;
+      sent.push(`step ${index + 1}`);
+      stepStarted[index]();
+      return new Promise((resolve) => stepResolvers.push(resolve));
+    });
+    jest.spyOn(ruleClient, '_fetch').mockImplementation(async () => {
+      sent.push('custom fields');
+      return {};
+    });
+
+    const firstStep = formClient.submitStep(
+      [{ key: 'name', text_field: 'first' }],
+      { key: 'first', buttons: [], subgrids: [] },
+      true
+    );
+    await stepSignals[0];
+    const customFlush = ruleClient.submitCustom(
+      { name: 'from click action' },
+      { shouldFlush: true }
+    );
+    const secondStep = formClient.submitStep(
+      [{ key: 'name', text_field: 'second' }],
+      { key: 'second', buttons: [], subgrids: [] },
+      true
+    );
+    await stepSignals[1];
+
+    stepResolvers[0]({});
+    await Promise.resolve();
+    expect(sent).toEqual(['step 1', 'step 2']);
+
+    stepResolvers[1]({});
+    await Promise.all([firstStep, secondStep, customFlush]);
+    expect(sent).toEqual(['step 1', 'step 2', 'custom fields']);
+  });
+
   it('keeps concurrent flushes pending through the delayed custom request', async () => {
     const { client: formClient } = createClientWithStorage();
     const ruleClient: any = new FeatheryClient('form');
