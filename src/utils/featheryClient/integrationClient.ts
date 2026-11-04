@@ -1,4 +1,10 @@
-import { fieldValues, initFormsPromise, initInfo, initState } from '../init';
+import {
+  fieldValues,
+  initFormsPromise,
+  initInfo,
+  initState,
+  setFieldValues
+} from '../init';
 import { encodeGetParams } from '../primitives';
 import { API_URL, STATIC_URL } from '.';
 import { OfflineRequestHandler } from '../offlineRequestHandler';
@@ -1917,9 +1923,22 @@ export default class IntegrationClient {
       })
     };
     const res = await this._fetch(url, reqOptions, false);
-    if (res && res.status === 201)
-      return { ok: true, payload: await res.json() };
-    else return { ok: false, error: (await res?.text()) ?? '' };
+    if (!res || res.status !== 201)
+      return { ok: false, error: (await res?.text()) ?? '' };
+
+    const payload = await res.json();
+    // A get writes into the submission server-side, which the live form would
+    // otherwise never see. skipServerSubmit, since the values came FROM the
+    // server - resubmitting them would be a pointless round trip.
+    const prefilled = (payload?.actions ?? []).reduce(
+      (acc: Record<string, any>, action: any) => ({
+        ...acc,
+        ...(action?.fields ?? {})
+      }),
+      {}
+    );
+    if (Object.keys(prefilled).length) setFieldValues(prefilled, true, true);
+    return { ok: true, payload };
   }
 
   async customRolloutAction(

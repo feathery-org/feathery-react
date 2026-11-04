@@ -1281,6 +1281,29 @@ export default class FeatheryClient extends IntegrationClient {
       );
     }
 
+    // An integration get on a step trigger writes into the submission
+    // server-side. The step is rendering now with its own values, so apply
+    // whatever came back or the prefill stays invisible. skipServerSubmit,
+    // since these came FROM the server.
+    eventPromise = eventPromise.then(async (res: any) => {
+      // apiFetch resolves with the Response itself, whose body may only be
+      // read once - clone it so callers still receive an unconsumed one. A
+      // queued/offline event resolves with nothing readable, which is not
+      // worth failing the event over; anything else is a real problem and
+      // must not disappear, or a prefill that never applies looks identical
+      // to one the server never sent.
+      let prefilled: Record<string, any> | undefined;
+      try {
+        const body = await res?.clone?.()?.json?.();
+        prefilled = body?.prefilled_fields;
+      } catch (e) {
+        prefilled = undefined;
+      }
+      if (prefilled && Object.keys(prefilled).length)
+        setFieldValues(prefilled, true, true);
+      return res;
+    });
+
     // Callers still see the rejection; the shared chain must not stay rejected
     this.eventQueue = this.eventQueue.then(() => eventPromise.catch(() => {}));
     return eventPromise;
