@@ -950,6 +950,55 @@ describe('IntegrationClient', () => {
       });
     });
 
+    it.each([
+      undefined,
+      [],
+      ['copy@example.com'],
+      [
+        {
+          email: 'custodian@example.com',
+          name: 'Custodian',
+          excluded_documents: [0]
+        }
+      ]
+    ])(
+      'forwards conditional CCs through generation and review finalization: %j',
+      async (ccRecipients) => {
+        const integrationClient = new IntegrationClient('test_form_key');
+        global.fetch.mockResolvedValue({
+          ok: true,
+          json: jest
+            .fn()
+            .mockResolvedValue({ documents: [], docusign_envelope_id: 'ds-cc' })
+        });
+        const action = {
+          documents: ['doc1', 'doc2'],
+          run_async: false,
+          sign_method: 'docusign',
+          envelope_action: 'open_in_editor',
+          cc_recipients: ccRecipients
+        };
+        await integrationClient.generateEnvelopes(action);
+        for (const options of [
+          { draft: true },
+          { draft: true, refreshDraft: true },
+          { draft: false }
+        ]) {
+          await integrationClient.finalizeEnvelopeReview(action, {
+            envelopes: [{ envelopeId: 'env-cc' }],
+            envelopeAction: 'sign',
+            ...options
+          });
+        }
+        for (const [, options] of global.fetch.mock.calls) {
+          const body = JSON.parse(options.body);
+          if (ccRecipients === undefined)
+            expect(body).not.toHaveProperty('cc_recipients');
+          else expect(body.cc_recipients).toEqual(ccRecipients);
+        }
+      }
+    );
+
     it('forwards email subject and blurb, omitting them when unset', async () => {
       const integrationClient = new IntegrationClient('test_form_key');
 
