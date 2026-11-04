@@ -985,8 +985,12 @@ export default class FeatheryClient extends IntegrationClient {
       // Keep the whole flush registered as in flight, including this wait and
       // value resolution, so concurrent flushers cannot mistake it for a
       // completed request before the custom fields are sent.
-      const stepAnswers = stepAnswersInFlight;
-      if (stepAnswers) await stepAnswers;
+      let stepAnswers = stepAnswersInFlight;
+      while (stepAnswers) {
+        await stepAnswers;
+        if (stepAnswers === stepAnswersInFlight) break;
+        stepAnswers = stepAnswersInFlight;
+      }
 
       const customKeyValues = { ...this.pendingCustomFieldUpdates };
       this.pendingCustomFieldUpdates = {}; // Clear pending updates after copying them
