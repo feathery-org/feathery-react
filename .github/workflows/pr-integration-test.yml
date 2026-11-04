@@ -8,7 +8,9 @@ on:
 
 jobs:
   integration-test:
-    runs-on: ubuntu-latest
+    # hosted-forms-next currently uses Playwright 1.57, which does not support
+    # the Ubuntu 26.04 image selected by ubuntu-latest.
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: read

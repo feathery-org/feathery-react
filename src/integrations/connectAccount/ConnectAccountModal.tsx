@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import CloseIcon from '../../elements/components/icons/Close';
-import TrashIcon from '../../elements/components/icons/TrashIcon';
 import { featheryDoc, featheryWindow } from '../../utils/browser';
 import { MODAL_Z_INDEX } from '../../utils/styles';
 import { CONFIG_COMPONENTS, PROVIDER_LABELS } from './providers';
@@ -42,18 +41,16 @@ const cancelButtonStyles = {
   cursor: 'pointer',
   '&:disabled': { opacity: 0.6, cursor: 'not-allowed' }
 } as const;
-const deleteButtonStyles = {
-  display: 'grid',
-  flex: '0 0 32px',
-  placeItems: 'center',
-  width: '32px',
-  height: '32px',
+const rowActionStyles = {
+  flex: '0 0 auto',
   margin: '3px 0 3px 4px',
-  padding: 0,
+  padding: '6px 10px',
   border: 0,
   borderRadius: '6px',
   background: 'transparent',
   color: '#71717a',
+  fontSize: '13px',
+  fontWeight: 500,
   cursor: 'pointer',
   '&:hover': { background: '#fef2f2', color: '#dc2626' },
   '&:focus-visible': { outline: '2px solid #2563eb', outlineOffset: '1px' }
@@ -271,7 +268,8 @@ function ConnectAccountModal({
   // picker opens for a fresh connection; any other choice is the user's to
   // make explicitly.
   useEffect(() => {
-    if (!show || connected || !chooseCredential || changingAccount) return;
+    if (!show || connected || locked || !chooseCredential || changingAccount)
+      return;
     const credentialId = credentials.find(
       (credential) => credential.preferred
     )?.id;
@@ -285,6 +283,7 @@ function ConnectAccountModal({
     changingAccount,
     chooseCredential,
     connected,
+    locked,
     credentials,
     show,
     selectedCredential
@@ -294,6 +293,7 @@ function ConnectAccountModal({
 
   const providerLabel = PROVIDER_LABELS[provider] ?? provider;
   const ConfigComponent = CONFIG_COMPONENTS[provider];
+  const showConfig = connected && !locked && !!ConfigComponent;
   const availableCredentials =
     connected && accountEmail
       ? visibleCredentials.filter(
@@ -458,6 +458,21 @@ function ConnectAccountModal({
                 ? 'This connection was set up by another user and is locked to them. Choose one of your saved accounts or connect a new one to use your own instead.'
                 : 'Select a saved account or connect a new one.'}
             </p>
+            {!credentials.length && !canSaveCredential && connected && !locked && (
+              // Without a saved-account menu, this is the only place the current account shows
+              <p
+                css={{
+                  margin: '12px 0 0',
+                  color: '#18181b',
+                  fontSize: '14px',
+                  lineHeight: 1.5
+                }}
+              >
+                {accountEmail
+                  ? `Connected as ${accountEmail}`
+                  : `Your ${providerLabel} account is connected.`}
+              </p>
+            )}
             {!credentials.length && !canSaveCredential && (
               <button
                 type='button'
@@ -487,7 +502,8 @@ function ConnectAccountModal({
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '12px',
-                marginBottom: '20px'
+                // Menu overlays content; with nothing below, leave a little room
+                marginBottom: showConfig ? '20px' : '36px'
               }}
             >
               <div
@@ -560,6 +576,8 @@ function ConnectAccountModal({
                         left: 0,
                         right: 0,
                         top: 'calc(100% + 4px)',
+                        maxHeight: '176px',
+                        overflowY: 'auto',
                         padding: '4px',
                         border: '1px solid #d4d4d8',
                         borderRadius: '8px',
@@ -596,9 +614,9 @@ function ConnectAccountModal({
                             type='button'
                             aria-label='Disconnect current account'
                             onClick={handleDisconnect}
-                            css={deleteButtonStyles}
+                            css={rowActionStyles}
                           >
-                            <TrashIcon width={16} height={16} />
+                            Disconnect
                           </button>
                         </div>
                       )}
@@ -613,12 +631,14 @@ function ConnectAccountModal({
                             css={{
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '8px',
-                              padding: '6px 10px',
-                              borderRadius: '5px',
+                              gap: '10px',
+                              margin: '2px 0',
+                              padding: '12px 14px',
+                              borderRadius: '6px',
                               background: '#fef2f2',
                               color: '#7f1d1d',
-                              fontSize: '13px'
+                              fontSize: '13px',
+                              lineHeight: 1.45
                             }}
                           >
                             <span css={{ flex: 1 }}>
@@ -682,9 +702,9 @@ function ConnectAccountModal({
                               }`}
                               disabled={changingAccount || deletingCredential}
                               onClick={() => setPendingDelete(credential.id)}
-                              css={deleteButtonStyles}
+                              css={rowActionStyles}
                             >
-                              <TrashIcon width={16} height={16} />
+                              Forget
                             </button>
                           </div>
                         )

@@ -141,9 +141,15 @@ function TextNodes({
     ...textCallbacks
   });
 
+  // Empty labels stay mounted in the builder so they can be typed into, but
+  // take no space until selected so the canvas matches the published form.
+  const collapseEmptyLabel =
+    editMode === 'editable' && !focused && !element.properties.text;
+
   editableProps.css = {
     ...editableProps.css,
-    ...responsiveStyles.getTarget(cssTarget)
+    ...responsiveStyles.getTarget(cssTarget),
+    ...(collapseEmptyLabel ? { minWidth: 0, paddingBottom: 0 } : {})
   };
 
   // Not using jsonpath because of issues with NextJS

@@ -296,10 +296,7 @@ export function attachBindings(
     runGuarded(() => {
       triggers.onEditorBlur();
       // Focus left the editor: drop the locked-edit hint so it can't linger.
-      if (lockHintActive) {
-        lockHintActive = false;
-        onLockedEditResolved?.();
-      }
+      resolveLockedHint();
     });
 
   // Syncfusion fires 'contentControl' whenever the caret sits in ANY control
@@ -332,6 +329,17 @@ export function attachBindings(
       lockedHintTimer = null;
     }, 600);
   };
+  // Ends the debounce too: a stale re-show for the cell being left can start
+  // or hit the timer, and the next show after a resolve must always fire.
+  const resolveLockedHint = (): void => {
+    if (!lockHintActive) return;
+    lockHintActive = false;
+    if (lockedHintTimer !== null) {
+      cancelTimeout(lockedHintTimer);
+      lockedHintTimer = null;
+    }
+    onLockedEditResolved?.();
+  };
   const onLockedControl = () =>
     runGuarded(() => {
       // The event means a lock was hit; the only false positive is the caret
@@ -349,10 +357,7 @@ export function attachBindings(
       // isAdapterWriting. A flush from here mid-write is re-entrant.
       if (isAdapterWriting() || isProgrammaticSelection()) return;
       triggers.onSelectionChange();
-      if (lockHintActive && !isLockedControl(caretControl())) {
-        lockHintActive = false;
-        onLockedEditResolved?.();
-      }
+      if (!isLockedControl(caretControl())) resolveLockedHint();
     });
 
   eventful.addEventListener?.('contentChange', onContentChange);
