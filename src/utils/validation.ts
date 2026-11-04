@@ -90,6 +90,7 @@ function validateElements({
 
     if (message && !invalid) invalid = true;
 
+    let inputKey = key;
     if (type === 'matrix' && message && errorType === 'html5') {
       // The `${key}-${questionIndex}` suffix targets the specific unanswered
       // matrix question's DOM control, so it is only for HTML5 targeting.
@@ -108,7 +109,7 @@ function validateElements({
           value === undefined ||
           (Array.isArray(value) && value.length === 0)
         ) {
-          key = `${key}-${i}`;
+          inputKey = `${key}-${i}`;
           break;
         }
       }
@@ -119,6 +120,7 @@ function validateElements({
         formRef,
         errorCallback,
         fieldKey: key,
+        inputKey,
         message,
         errorType: errorType,
         servarType: type,

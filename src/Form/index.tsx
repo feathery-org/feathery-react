@@ -547,6 +547,7 @@ function Form({
   // collaboration, business email). Gated until the form payload says otherwise
   const sessionGated = useRef(true);
   const [inlineErrors, setInlineErrors] = useState<InlineErrors>({});
+  const [shouldScrollToError, setShouldScrollToError] = useState(false);
   const [, setRepeatChanged] = useState(false);
 
   const [integrations, setIntegrations] = useState<null | Record<string, any>>(
@@ -955,6 +956,17 @@ function Form({
     );
   }, [activeStep?.id]);
 
+  useEffect(() => {
+    if (!shouldScrollToError) return;
+    setShouldScrollToError(false);
+    const firstInvalidField = formRef.current?.querySelector(
+      '[aria-invalid="true"]'
+    );
+    if (firstInvalidField && !isElementInViewport(firstInvalidField)) {
+      firstInvalidField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [shouldScrollToError, inlineErrors]);
+
   // viewElements state
   const [viewElements, setViewElements] = useState<string[]>([]);
   useEffect(() => {
@@ -1150,17 +1162,17 @@ function Form({
   const debouncedValidate = useCallback(
     debounce((setInlineErrors: any) => {
       // default form validation
-      visiblePositions &&
+      activeStep &&
         validateElements({
           step: activeStep,
-          visiblePositions,
+          visiblePositions: getVisiblePositions(activeStep, _internalId),
           triggerErrors: true,
           errorType: formSettings.errorType,
           formRef,
           setInlineErrors
         });
     }, 750),
-    [activeStep?.id, formRef]
+    [activeStep, formSettings.errorType, _internalId]
   );
 
   // Debouncing the rerender due to changing values of referenced fields in hide if rules.
@@ -2342,6 +2354,7 @@ function Form({
         trigger
       });
       if (latestValuesInvalid) {
+        setShouldScrollToError(true);
         setAutoValidate(true);
         return;
       }
@@ -2955,6 +2968,7 @@ function Form({
       });
 
       if (invalid) {
+        setShouldScrollToError(true);
         setAutoValidate(true);
         elementClicks[id] = false;
         clearButtonActionState();
@@ -4212,6 +4226,7 @@ function Form({
     <ReactPortal options={popupOptions}>
       <form
         {...formProps}
+        noValidate
         autoComplete={formSettings.autocomplete}
         className={`feathery ${className || ''}`}
         ref={formRef}

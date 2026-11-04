@@ -66,6 +66,69 @@ afterEach(() => {
   FeatheryClient.prototype.fetchForm = originalFetchForm;
 });
 
+describe('validation feedback navigation', () => {
+  const originalValidate =
+    ValidationMod.validateElements.getMockImplementation();
+
+  afterEach(() => {
+    ValidationMod.validateElements
+      .mockReset()
+      .mockImplementation(originalValidate);
+    jest.restoreAllMocks();
+    delete (internalState as any)['iid-validation-feedback'];
+  });
+
+  it('scrolls once after Next, then revalidates current visibility without moving focus', async () => {
+    jest.spyOn(FormHelperMod, 'isElementInViewport').mockReturnValue(false);
+    const publishErrors = ({ setInlineErrors }: any) => {
+      const inlineErrors = { missing: { message: 'Required' } };
+      setInlineErrors(inlineErrors);
+      return { invalid: true, inlineErrors };
+    };
+    ValidationMod.validateElements
+      .mockImplementationOnce(publishErrors)
+      .mockImplementationOnce(publishErrors);
+    const instanceId = 'iid-validation-feedback';
+    (internalState as any)[instanceId] = { inlineErrors: {} };
+
+    render(
+      <JSForm formId='f1' _internalId={instanceId}>
+        <input data-testid='missing' aria-invalid='true' />
+        <input data-testid='typing' />
+      </JSForm>
+    );
+    await screen.findByTestId('btn');
+    // Finish the initial step effects before attempting submission.
+    await act(async () => {});
+    const missingField = screen.getByTestId('missing');
+    missingField.scrollIntoView = jest.fn();
+
+    await act(async () => {
+      await GridMod._spies.form.runElementActions({
+        actions: [],
+        element: { id: 'b1', properties: {} },
+        elementType: 'button',
+        submit: true
+      });
+    });
+    expect(missingField.scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(missingField.closest('form')).toHaveAttribute('novalidate');
+    expect(ClientMod._spies.submitStep).not.toHaveBeenCalled();
+
+    const typingField = screen.getByTestId('typing');
+    typingField.focus();
+    const currentVisibility = { missing: [false] };
+    HideAndRepeatsMod._spies.visiblePositions = currentVisibility;
+    act(() => GridMod._spies.form.updateFieldValues({ edited: 'filled' }));
+
+    expect(ValidationMod.validateElements).toHaveBeenLastCalledWith(
+      expect.objectContaining({ visiblePositions: currentVisibility })
+    );
+    expect(missingField.scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(typingField).toHaveFocus();
+  });
+});
+
 describe('submit field snapshot', () => {
   const setSubmitFields = (fieldKeys: string[]) => {
     ClientMod._spies.state.steps = [

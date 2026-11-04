@@ -1,4 +1,4 @@
-import React, { memo, useMemo, Suspense, lazy } from 'react';
+import React, { memo, useId, useMemo, Suspense, lazy } from 'react';
 import { InView } from 'react-intersection-observer';
 
 import Fields from './fields';
@@ -39,10 +39,12 @@ Object.entries(Elements).map(([key, Element]) => {
       children,
       componentOnly = true,
       inlineError = '',
+      elementProps = {},
       onView,
       formSettings,
       ...props
     }: any) => {
+      const errorId = useId();
       const responsiveStyles = useMemo(() => {
         return new ResponsiveStyles(
           element,
@@ -64,6 +66,25 @@ Object.entries(Elements).map(([key, Element]) => {
           <Element
             element={element}
             responsiveStyles={responsiveStyles}
+            inlineError={inlineError}
+            elementProps={{
+              ...elementProps,
+              ...(inlineError &&
+                !componentOnly && {
+                  'aria-invalid': true,
+                  'aria-describedby': [
+                    elementProps['aria-describedby'],
+                    errorId
+                  ]
+                    .filter(Boolean)
+                    .join(' '),
+                  style: {
+                    ...elementProps.style,
+                    outline: `1px solid ${ERROR_COLOR}`,
+                    outlineOffset: '2px'
+                  }
+                })
+            }}
             {...props}
           />
         </Suspense>
@@ -88,8 +109,13 @@ Object.entries(Elements).map(([key, Element]) => {
             {e}
             {inlineError && (
               <span
+                id={errorId}
+                role='alert'
                 css={{
                   alignSelf: 'flex-start',
+                  flexShrink: 0,
+                  marginTop: '4px',
+                  overflowWrap: 'anywhere',
                   color: ERROR_COLOR,
                   ...responsiveStyles.getTarget('error')
                 }}

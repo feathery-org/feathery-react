@@ -24,6 +24,9 @@ jest.mock('../init', () => ({
   fieldValues: {}
 }));
 
+// Older jsdom versions omit the browser's RadioNodeList global.
+(global as any).RadioNodeList ??= class RadioNodeList {};
+
 describe('validation', () => {
   const fieldKey = 'text-field-1';
   const servar = {
@@ -85,66 +88,71 @@ describe('validation', () => {
     });
   });
 
-  describe('validateElements matrix inline storage', () => {
-    const matrixServar = (repeated: boolean) => ({
-      key: 'matrix',
-      type: 'matrix',
-      required: true,
-      repeated,
-      metadata: { questions: [{ id: 'q0' }, { id: 'q1' }] }
-    });
-    const run = (step: any, visiblePositions: any) =>
-      validateElements({
-        step,
-        visiblePositions,
-        triggerErrors: true,
-        errorType: 'inline',
-        formRef: { current: null } as any,
-        setInlineErrors: jest.fn()
+  describe.each(['inline', 'html5'])(
+    'validateElements %s errors',
+    (errorType) => {
+      const matrixServar = (repeated: boolean) => ({
+        key: 'matrix',
+        type: 'matrix',
+        required: true,
+        repeated,
+        metadata: { questions: [{ id: 'q0' }, { id: 'q1' }] }
+      });
+      const run = (step: any, visiblePositions: any) =>
+        validateElements({
+          step,
+          visiblePositions,
+          triggerErrors: true,
+          errorType,
+          formRef: { current: featheryDoc().createElement('form') },
+          setInlineErrors: jest.fn()
+        });
+
+      it('stores a non-repeat matrix error under the real servar key (not the question-suffixed key)', () => {
+        Object.assign(fieldValues, { matrix: {} });
+        const field = {
+          servar: matrixServar(false),
+          position: [0],
+          validations: []
+        };
+        const step = { servar_fields: [field], buttons: [], subgrids: [] };
+
+        const { inlineErrors } = run(step, { '0': [true] }) as any;
+
+        // Renderer reads inlineErrors[servar.key], so it must live under 'matrix'.
+        expect(inlineErrors.matrix?.message).toBe('This is a required field');
+        // Must NOT be stored under the HTML5 question-suffixed key.
+        expect(inlineErrors['matrix-0']).toBeUndefined();
       });
 
-    it('stores a non-repeat matrix error under the real servar key (not the question-suffixed key)', () => {
-      Object.assign(fieldValues, { matrix: {} });
-      const field = {
-        servar: matrixServar(false),
-        position: [0],
-        validations: []
-      };
-      const step = { servar_fields: [field], buttons: [], subgrids: [] };
+      it('stores repeated matrix errors per row under the real servar key', () => {
+        Object.assign(fieldValues, { matrix: [{}, {}] });
+        const field = {
+          servar: matrixServar(true),
+          position: [0, 1],
+          validations: []
+        };
+        const step = {
+          servar_fields: [field],
+          buttons: [],
+          subgrids: [{ position: [0], repeated: true, id: 'sg' }]
+        };
 
-      const { inlineErrors } = run(step, { '0': [true] }) as any;
+        const { inlineErrors } = run(step, { '0,1': [true, true] }) as any;
 
-      // Renderer reads inlineErrors[servar.key], so it must live under 'matrix'.
-      expect(inlineErrors.matrix?.message).toBe('This is a required field');
-      // Must NOT be stored under the HTML5 question-suffixed key.
-      expect(inlineErrors['matrix-0']).toBeUndefined();
-    });
+        expect(inlineErrors.matrix?.byIndex?.[0]?.message).toBe(
+          'This is a required field'
+        );
+        expect(inlineErrors.matrix?.byIndex?.[1]?.message).toBe(
+          'This is a required field'
+        );
+        expect(inlineErrors['matrix-0']).toBeUndefined();
+      });
+    }
+  );
 
-    it('stores repeated matrix errors per row under the real servar key', () => {
-      Object.assign(fieldValues, { matrix: [{}, {}] });
-      const field = {
-        servar: matrixServar(true),
-        position: [0, 1],
-        validations: []
-      };
-      const step = {
-        servar_fields: [field],
-        buttons: [],
-        subgrids: [{ position: [0], repeated: true, id: 'sg' }]
-      };
-
-      const { inlineErrors } = run(step, { '0,1': [true, true] }) as any;
-
-      expect(inlineErrors.matrix?.byIndex?.[0]?.message).toBe(
-        'This is a required field'
-      );
-      expect(inlineErrors.matrix?.byIndex?.[1]?.message).toBe(
-        'This is a required field'
-      );
-      expect(inlineErrors['matrix-0']).toBeUndefined();
-    });
-
-    it('still targets the unanswered question control in html5 mode', () => {
+  describe('validateElements native validity', () => {
+    it('keeps the matrix error on the field while targeting the unanswered question control', () => {
       // Positive case guarding the `errorType === 'html5'` condition: native
       // browser validation must land on the question-suffixed DOM control.
       // This jsdom build doesn't define the RadioNodeList global that the
@@ -160,13 +168,19 @@ describe('validation', () => {
       doc.body.appendChild(form);
 
       const field = {
-        servar: matrixServar(false),
+        servar: {
+          key: 'matrix',
+          type: 'matrix',
+          required: true,
+          repeated: false,
+          metadata: { questions: [{ id: 'q0' }, { id: 'q1' }] }
+        },
         position: [0],
         validations: []
       };
       const step = { servar_fields: [field], buttons: [], subgrids: [] };
 
-      const { invalid } = validateElements({
+      const { invalid, inlineErrors } = validateElements({
         step,
         visiblePositions: { '0': [true] },
         triggerErrors: true,
@@ -176,6 +190,8 @@ describe('validation', () => {
       });
 
       expect(questionInput.validationMessage).toBe('This is a required field');
+      expect(inlineErrors.matrix?.message).toBe('This is a required field');
+      expect(inlineErrors['matrix-0']).toBeUndefined();
       expect(invalid).toBe(true);
       form.remove();
     });

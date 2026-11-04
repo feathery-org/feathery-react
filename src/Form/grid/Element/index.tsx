@@ -366,7 +366,7 @@ const Element = ({ node, form }: any) => {
             {...fieldProps}
             rawValue={fieldVal}
             onChange={(value: any) => {
-              const change = changeValue(value, el, index, true, false);
+              const change = changeValue(value, el, index);
               if (change) debouncedOnChange();
             }}
             fieldStyles={el.properties.style}
@@ -608,7 +608,7 @@ const Element = ({ node, form }: any) => {
             rawValue={stringifyWithNull(fieldVal)}
             onChange={(e: any) => {
               const val = e.target.value;
-              const change = changeValue(val, el, index, true, false);
+              const change = changeValue(val, el, index);
               if (change) debouncedOnChange();
             }}
             setRef={(ref: any) => {
@@ -624,7 +624,7 @@ const Element = ({ node, form }: any) => {
             rawValue={stringifyWithNull(fieldVal)}
             onChange={(e: any) => {
               const val = e.target.value;
-              const change = changeValue(val, el, index, true, false);
+              const change = changeValue(val, el, index);
               if (change) debouncedOnChange();
             }}
             setRef={(ref: any) => {
@@ -657,7 +657,7 @@ const Element = ({ node, form }: any) => {
             repeatIndex={index}
             onChange={(e: any) => {
               const val = e.target.value;
-              const change = changeValue(val, el, index, true, false);
+              const change = changeValue(val, el, index);
               if (change) debouncedOnChange();
             }}
             onSelect={(address: any, addressId: string) => {
@@ -736,7 +736,8 @@ const Element = ({ node, form }: any) => {
               const isOrWasEmpty = !newVal || !fieldVal;
               const rerender =
                 isOrWasEmpty || (servar.metadata.options ?? []).length > 0;
-              const change = changeValue(val, el, index, rerender, false);
+              // Inline feedback can revalidate while typing without stealing focus.
+              const change = changeValue(val, el, index, rerender);
               if (change) {
                 const submitData =
                   autosubmit && textFieldShouldSubmit(servar, val);
