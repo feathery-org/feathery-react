@@ -742,7 +742,14 @@ describe('DocumentEditorContainer signing outcomes', () => {
   });
 
   it('sends draft=true when Create Draft is the only signing outcome', async () => {
-    seed({ sign_method: 'docusign', editor_toolbar_actions: ['draft'] });
+    const recipients = [
+      { email: 'custodian@example.com', excluded_documents: [0] }
+    ];
+    seed({
+      sign_method: 'docusign',
+      editor_toolbar_actions: ['draft'],
+      cc_recipients: recipients
+    });
     const { getByTestId } = mount();
 
     await waitFor(() => expect(getByTestId('terminal:draft')).toBeTruthy());
@@ -750,6 +757,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
 
     await waitFor(() => expect(mockFinalizeEnvelopeReview).toHaveBeenCalled());
     expect(mockFinalizeEnvelopeReview.mock.calls[0][1].draft).toBe(true);
+    expect(mockFinalizeEnvelopeReview.mock.calls[0][0].cc_recipients).toEqual(
+      recipients
+    );
   });
 
   it('fires document_review with action "download" after a container download', async () => {
