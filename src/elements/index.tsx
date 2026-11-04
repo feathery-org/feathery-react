@@ -77,12 +77,7 @@ Object.entries(Elements).map(([key, Element]) => {
                     errorId
                   ]
                     .filter(Boolean)
-                    .join(' '),
-                  style: {
-                    ...elementProps.style,
-                    outline: `1px solid ${ERROR_COLOR}`,
-                    outlineOffset: '2px'
-                  }
+                    .join(' ')
                 })
             }}
             {...props}

@@ -166,14 +166,20 @@ describe.each(['html5', 'inline'])(
       await user.click(screen.getByRole('button', { name: 'Next' }));
 
       await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(3));
-      for (const { servar } of fields) {
+      for (const { id, servar } of fields) {
         const control = screen.getByTestId(`${servar.key}-control`);
         const error = screen
           .getByTestId(servar.key)
           .querySelector('[role="alert"]') as HTMLElement;
         expect(control).toHaveAttribute('aria-invalid', 'true');
         expect(control.getAttribute('aria-describedby')).toContain(error.id);
-        expect(control).toHaveStyle(`outline: 1px solid ${ERROR_COLOR}`);
+        // Highlight the controls themselves, leaving the surrounding field unoutlined.
+        expect(control.style.outline).toBe('');
+        const borders = control.querySelectorAll(`[id="bb-${id}"]`);
+        expect(borders.length).toBeGreaterThan(0);
+        borders.forEach((border) =>
+          expect(border).toHaveStyle({ borderColor: ERROR_COLOR })
+        );
       }
 
       const nameInput = screen.getByRole('textbox', { name: 'Name' });
