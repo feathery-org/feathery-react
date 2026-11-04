@@ -193,8 +193,6 @@ interface SetFormElementErrorArgs {
   errorType?: string;
   errorCallback?: (props: Record<string, unknown>) => unknown;
   fieldKey?: string;
-  // A composite field can target a question's native input separately.
-  inputKey?: string;
   message?: string;
   index?: number | null;
   servarType?: string;
@@ -208,7 +206,6 @@ export async function setFormElementError({
   errorType,
   errorCallback = () => {},
   fieldKey = '',
-  inputKey = fieldKey,
 
   // Empty message means no error / clearing the error
   message = '',
@@ -225,17 +222,18 @@ export async function setFormElementError({
     const form = formRef?.current;
     if (!form) return false;
 
+    let errorTriggered = false;
     if (fieldKey) {
       if (['pin_input', 'select', 'multiselect'].includes(servarType))
-        inputKey = `${inputKey}-0`;
-      // Add the repeat index for fields using radio inputs.
+        fieldKey = `${fieldKey}-0`;
+      // Add repeat index to fieldKey for fields using radio inputs
       if (index != null && ['matrix', 'select'].includes(servarType)) {
-        inputKey = `${inputKey}-${index}`;
+        fieldKey = `${fieldKey}-${index}`;
         // no longer use index to key into element list
         listIndex = null;
       }
       // form.elements has reserved props so must use namedItem to get by id
-      const singleOrList = form.elements.namedItem(inputKey);
+      const singleOrList = form.elements.namedItem(fieldKey);
       let elements =
         singleOrList instanceof RadioNodeList
           ? Array.from(singleOrList)
@@ -259,13 +257,31 @@ export async function setFormElementError({
           if (!element) return;
         }
         element.setCustomValidity(message);
+        if (triggerErrors) {
+          // Trigger manually-set errors first before other form errors
+          element.reportValidity();
+          errorTriggered = true;
+        }
       });
     }
+    if (triggerErrors && !errorTriggered) {
+      // Find the first visible invalid element to show the browser tooltip.
+      // Calling reportValidity() on the entire form fails if the first
+      // invalid control is hidden via CSS (display:none).
+      const formElements = Array.from(form.elements) as HTMLElement[];
+      for (const el of formElements) {
+        if (
+          'checkValidity' in el &&
+          !(el as HTMLInputElement).checkValidity() &&
+          el.offsetParent !== null
+        ) {
+          (el as HTMLInputElement).reportValidity();
+          break;
+        }
+      }
+    }
     invalid = !form.checkValidity();
-  }
-  if (errorType === 'inline' || errorType === 'html5') {
-    // Keep errors attached to every field. Browser popups steal focus during
-    // revalidation and can consume the first click on a button group.
+  } else if (errorType === 'inline') {
     // Scope a repeated-field error to its row via a nested `byIndex` map under
     // the real field key, so an error validated on one repeat row doesn't bleed
     // onto other rows (including freshly added, untouched ones) and can never
@@ -274,10 +290,9 @@ export async function setFormElementError({
     applyInlineError(inlineErrors, fieldKey, message, index);
     if (triggerErrors)
       setInlineErrors(JSON.parse(JSON.stringify(inlineErrors)));
-    if (errorType === 'inline')
-      invalid = Object.values(inlineErrors).some((data) =>
-        inlineEntryHasMessage(data)
-      );
+    invalid = Object.values(inlineErrors).some((data) =>
+      inlineEntryHasMessage(data as any)
+    );
   }
   if (message) {
     await errorCallback({

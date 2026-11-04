@@ -2354,7 +2354,7 @@ function Form({
         trigger
       });
       if (latestValuesInvalid) {
-        setShouldScrollToError(true);
+        setShouldScrollToError(formSettings.errorType === 'inline');
         setAutoValidate(true);
         return;
       }
@@ -2968,7 +2968,7 @@ function Form({
       });
 
       if (invalid) {
-        setShouldScrollToError(true);
+        setShouldScrollToError(formSettings.errorType === 'inline');
         setAutoValidate(true);
         elementClicks[id] = false;
         clearButtonActionState();
@@ -4226,7 +4226,7 @@ function Form({
     <ReactPortal options={popupOptions}>
       <form
         {...formProps}
-        noValidate
+        noValidate={formSettings.errorType === 'inline' || formProps.noValidate}
         autoComplete={formSettings.autocomplete}
         className={`feathery ${className || ''}`}
         ref={formRef}

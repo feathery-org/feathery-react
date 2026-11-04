@@ -86,7 +86,7 @@ function ValidationForm({ errorType }: { errorType: string }) {
   }, [submitted]);
 
   return (
-    <form ref={formRef} noValidate>
+    <form ref={formRef} noValidate={errorType === 'inline'}>
       <span id='choice-hint'>Choose one option</span>
       {fields.map((element) => {
         const key = element.servar.key;
@@ -125,94 +125,124 @@ function ValidationForm({ errorType }: { errorType: string }) {
   );
 }
 
-describe.each(['html5', 'inline'])(
-  '%s field validation feedback',
-  (errorType) => {
-    const originalErrors = initState.defaultErrors;
-    const originalSdkKey = initState.sdkKey;
+describe('field validation modes', () => {
+  const originalErrors = initState.defaultErrors;
+  const originalSdkKey = initState.sdkKey;
 
-    beforeAll(async () => {
-      (global as any).RadioNodeList ??= class RadioNodeList {};
-      window.matchMedia = jest.fn().mockReturnValue({
-        matches: false,
-        addEventListener: jest.fn(),
-        removeEventListener: jest.fn()
-      });
-      await preloadStepFields(step, visiblePositions);
+  beforeAll(async () => {
+    (global as any).RadioNodeList ??= class RadioNodeList {};
+    window.matchMedia = jest.fn().mockReturnValue({
+      matches: false,
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn()
     });
+    await preloadStepFields(step, visiblePositions);
+  });
 
-    beforeEach(() => {
-      initState.sdkKey = 'test-sdk-key';
-      initState.defaultErrors = { required: 'This is a required field' };
-      Object.assign(fieldValues, { Name: '', Choice: [], Details: '' });
-    });
+  beforeEach(() => {
+    initState.sdkKey = 'test-sdk-key';
+    initState.defaultErrors = { required: 'This is a required field' };
+    Object.assign(fieldValues, { Name: '', Choice: [], Details: '' });
+  });
 
-    afterEach(() => {
-      initState.sdkKey = originalSdkKey;
-      initState.defaultErrors = originalErrors;
-      fields.forEach(({ servar }) => delete fieldValues[servar.key]);
-      jest.restoreAllMocks();
-    });
+  afterEach(() => {
+    initState.sdkKey = originalSdkKey;
+    initState.defaultErrors = originalErrors;
+    fields.forEach(({ servar }) => delete fieldValues[servar.key]);
+    jest.restoreAllMocks();
+  });
 
-    it('shows every missing field, keeps focus while correcting values, and accepts the first option click', async () => {
-      const reportValidity = jest.spyOn(
-        HTMLInputElement.prototype,
-        'reportValidity'
+  it('uses inline labels and control highlights without moving focus or consuming the first option click', async () => {
+    const reportValidity = jest.spyOn(
+      HTMLInputElement.prototype,
+      'reportValidity'
+    );
+    const user = userEvent.setup();
+    render(<ValidationForm errorType='inline' />);
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(3));
+    for (const { id, servar } of fields) {
+      const control = screen.getByTestId(`${servar.key}-control`);
+      const error = screen
+        .getByTestId(servar.key)
+        .querySelector('[role="alert"]') as HTMLElement;
+      expect(control).toHaveAttribute('aria-invalid', 'true');
+      expect(control.getAttribute('aria-describedby')).toContain(error.id);
+      // Highlight the controls themselves, leaving the surrounding field unoutlined.
+      expect(control.style.outline).toBe('');
+      const borders = control.querySelectorAll(`[id="bb-${id}"]`);
+      expect(borders.length).toBeGreaterThan(0);
+      borders.forEach((border) =>
+        expect(border).toHaveStyle({ borderColor: ERROR_COLOR })
       );
-      const user = userEvent.setup();
-      render(<ValidationForm errorType={errorType} />);
+    }
 
-      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-      await user.click(screen.getByRole('button', { name: 'Next' }));
+    const nameInput = screen.getByRole('textbox', { name: 'Name' });
+    await user.type(nameInput, 'Ada');
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(2));
+    expect(nameInput).toHaveFocus();
+    expect(screen.getByTestId('Name-control')).not.toHaveAttribute(
+      'aria-invalid'
+    );
+    expect(screen.getByTestId('Name-control').style.outline).toBe('');
 
-      await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(3));
-      for (const { id, servar } of fields) {
-        const control = screen.getByTestId(`${servar.key}-control`);
-        const error = screen
-          .getByTestId(servar.key)
-          .querySelector('[role="alert"]') as HTMLElement;
-        expect(control).toHaveAttribute('aria-invalid', 'true');
-        expect(control.getAttribute('aria-describedby')).toContain(error.id);
-        // Highlight the controls themselves, leaving the surrounding field unoutlined.
-        expect(control.style.outline).toBe('');
-        const borders = control.querySelectorAll(`[id="bb-${id}"]`);
-        expect(borders.length).toBeGreaterThan(0);
-        borders.forEach((border) =>
-          expect(border).toHaveStyle({ borderColor: ERROR_COLOR })
-        );
-      }
+    await user.click(screen.getByRole('button', { name: 'Yes' }));
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(1));
+    expect(fieldValues.Choice).toEqual(['Yes']);
+    expect(
+      screen.getByTestId('Choice').querySelector('input[type="hidden"]')
+    ).toHaveValue('Yes');
+    expect(screen.getByTestId('Choice-control')).toHaveAttribute(
+      'aria-describedby',
+      'choice-hint'
+    );
+    expect(screen.getByTestId('Choice-control')).toHaveStyle('padding: 2px');
+    expect(screen.getByTestId('Details')).toHaveTextContent(
+      'This is a required field'
+    );
 
-      const nameInput = screen.getByRole('textbox', { name: 'Name' });
-      await user.type(nameInput, 'Ada');
-      await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(2));
-      expect(nameInput).toHaveFocus();
-      expect(screen.getByTestId('Name-control')).not.toHaveAttribute(
+    const detailsInput = screen.getByRole('textbox', { name: 'Details' });
+    await user.type(detailsInput, 'Complete');
+    await waitFor(() =>
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    );
+    expect(detailsInput).toHaveFocus();
+    expect(reportValidity).not.toHaveBeenCalled();
+  });
+
+  it('preserves native error reporting without rendering inline feedback', async () => {
+    const user = userEvent.setup();
+    render(<ValidationForm errorType='html5' />);
+    const nameInput = screen.getByRole('textbox', { name: 'Name' });
+    // jsdom has no layout; expose the native control as visible for reporting.
+    Object.defineProperty(nameInput, 'offsetParent', {
+      configurable: true,
+      value: nameInput.closest('form')
+    });
+    const reportValidity = jest
+      .spyOn(nameInput as HTMLInputElement, 'reportValidity')
+      .mockReturnValue(false);
+
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(reportValidity).toHaveBeenCalledTimes(1));
+    expect((nameInput as HTMLInputElement).validationMessage).toBe(
+      'This is a required field'
+    );
+    expect(nameInput.closest('form')).not.toHaveAttribute('novalidate');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fields.forEach(({ servar }) => {
+      expect(screen.getByTestId(`${servar.key}-control`)).not.toHaveAttribute(
         'aria-invalid'
       );
-      expect(screen.getByTestId('Name-control').style.outline).toBe('');
-
-      await user.click(screen.getByRole('button', { name: 'Yes' }));
-      await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(1));
-      expect(fieldValues.Choice).toEqual(['Yes']);
-      expect(
-        screen.getByTestId('Choice').querySelector('input[type="hidden"]')
-      ).toHaveValue('Yes');
-      expect(screen.getByTestId('Choice-control')).toHaveAttribute(
-        'aria-describedby',
-        'choice-hint'
-      );
-      expect(screen.getByTestId('Choice-control')).toHaveStyle('padding: 2px');
-      expect(screen.getByTestId('Details')).toHaveTextContent(
-        'This is a required field'
-      );
-
-      const detailsInput = screen.getByRole('textbox', { name: 'Details' });
-      await user.type(detailsInput, 'Complete');
-      await waitFor(() =>
-        expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-      );
-      expect(detailsInput).toHaveFocus();
-      expect(reportValidity).not.toHaveBeenCalled();
     });
-  }
-);
+
+    // Native typing retains its existing suppression of popup revalidation.
+    await user.type(nameInput, 'Ada');
+    expect(fieldValues.Name).toBe('Ada');
+    expect(reportValidity).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});

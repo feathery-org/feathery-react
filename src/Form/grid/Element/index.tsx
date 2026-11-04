@@ -204,6 +204,7 @@ const Element = ({ node, form }: any) => {
     if (!focusRef.current && empty) focusRef.current = el.id;
 
     const autosubmit = el.properties.submit_trigger === 'auto';
+    const validateWhileTyping = formSettings.errorType === 'inline';
 
     const hasRepeatOptions =
       index !== null &&
@@ -366,7 +367,13 @@ const Element = ({ node, form }: any) => {
             {...fieldProps}
             rawValue={fieldVal}
             onChange={(value: any) => {
-              const change = changeValue(value, el, index);
+              const change = changeValue(
+                value,
+                el,
+                index,
+                true,
+                validateWhileTyping
+              );
               if (change) debouncedOnChange();
             }}
             fieldStyles={el.properties.style}
@@ -608,7 +615,13 @@ const Element = ({ node, form }: any) => {
             rawValue={stringifyWithNull(fieldVal)}
             onChange={(e: any) => {
               const val = e.target.value;
-              const change = changeValue(val, el, index);
+              const change = changeValue(
+                val,
+                el,
+                index,
+                true,
+                validateWhileTyping
+              );
               if (change) debouncedOnChange();
             }}
             setRef={(ref: any) => {
@@ -624,7 +637,13 @@ const Element = ({ node, form }: any) => {
             rawValue={stringifyWithNull(fieldVal)}
             onChange={(e: any) => {
               const val = e.target.value;
-              const change = changeValue(val, el, index);
+              const change = changeValue(
+                val,
+                el,
+                index,
+                true,
+                validateWhileTyping
+              );
               if (change) debouncedOnChange();
             }}
             setRef={(ref: any) => {
@@ -657,7 +676,13 @@ const Element = ({ node, form }: any) => {
             repeatIndex={index}
             onChange={(e: any) => {
               const val = e.target.value;
-              const change = changeValue(val, el, index);
+              const change = changeValue(
+                val,
+                el,
+                index,
+                true,
+                validateWhileTyping
+              );
               if (change) debouncedOnChange();
             }}
             onSelect={(address: any, addressId: string) => {
@@ -737,7 +762,13 @@ const Element = ({ node, form }: any) => {
               const rerender =
                 isOrWasEmpty || (servar.metadata.options ?? []).length > 0;
               // Inline feedback can revalidate while typing without stealing focus.
-              const change = changeValue(val, el, index, rerender);
+              const change = changeValue(
+                val,
+                el,
+                index,
+                rerender,
+                validateWhileTyping
+              );
               if (change) {
                 const submitData =
                   autosubmit && textFieldShouldSubmit(servar, val);
