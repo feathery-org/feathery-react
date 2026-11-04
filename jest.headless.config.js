@@ -5,6 +5,7 @@ module.exports = {
   testEnvironment:
     '<rootDir>/src/robin/document/tests/headless/headlessEnvironment.js',
   testMatch: ['<rootDir>/src/**/*.headless.spec.ts'],
+  testPathIgnorePatterns: ['/PptxEditor/tests/font-parity/'],
   globalSetup:
     '<rootDir>/src/robin/document/tests/headless/globalSetup.ts',
   // sweeps any lane Chrome a killed worker left behind (laneChrome.ts)

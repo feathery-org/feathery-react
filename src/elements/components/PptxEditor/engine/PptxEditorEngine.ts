@@ -1,3 +1,5 @@
+import { releaseEmbeddedFonts } from '../core/render/embeddedFonts';
+import { ungroupShape } from '../core/model/groups';
 import { applySlideJSON } from '../core/model/applyJson';
 import { deepClone } from '../core/opc/deepClone';
 import { exportDeckBytes } from '../core/model/export';
@@ -13,6 +15,7 @@ import {
 import { importDeck } from '../core/model/import';
 import { deckToJSON, type DeckJSON } from '../core/model/json';
 import { setPresentationSize } from '../core/model/slideSize';
+import { addSlide, deleteSlide, moveSlide } from '../core/model/slides';
 import {
   addAutoShape,
   addTableColumn,
@@ -30,6 +33,8 @@ import {
   setParagraphAlignAt,
   setParagraphBullet,
   setPictureCrop,
+  setShapeFillColor,
+  setShapeLineColor,
   setShapeGeometry,
   setShapeRichText,
   setSlideBackground,
@@ -43,6 +48,7 @@ import {
   setTableStyle,
   setTextRangeStyle,
   setTextStyle,
+  slideNumberShapes,
   snapTableColumnToContent,
   snapTableRowToContent,
   snapTableRowsToContent,
@@ -85,7 +91,9 @@ export interface EditorEvent {
 export type EditorListener = (event: EditorEvent) => void;
 
 function historyInvalidations(result: HistoryRestoreResult): Invalidation[] {
-  if (result.size) return [{ kind: 'deck' }];
+  // A slide add/delete/duplicate or a presentation resize changes every
+  // slide; a full redraw covers the navigator and the active slide.
+  if (result.deck || result.size) return [{ kind: 'deck' }];
   const invalidations: Invalidation[] = [];
   for (const change of result.slides) {
     if (change.fullContent || change.structure || change.slideSize) {
@@ -144,7 +152,10 @@ export class PptxEditorEngine {
   /** Adopt an already-imported deck, replacing any current document. */
   adopt(deck: Deck): void {
     if (this.deck !== deck) {
-      if (this.deck) releaseObjectUrls(this.deck.pkg);
+      if (this.deck) {
+        releaseObjectUrls(this.deck.pkg);
+        releaseEmbeddedFonts(this.deck.pkg);
+      }
       // Snapshot reuse keys on slide paths + mutation sequence, which fresh
       // imports share; a previous document's snapshot must never seed it.
       this.present = null;
@@ -320,16 +331,16 @@ export class PptxEditorEngine {
               );
               break;
             case 'add-row':
-              addTableRow(deck, slide, shape);
+              addTableRow(deck, slide, shape, operation.index);
               break;
             case 'remove-row':
-              removeTableRow(deck, slide, shape);
+              removeTableRow(deck, slide, shape, operation.index);
               break;
             case 'add-column':
-              addTableColumn(deck, slide, shape);
+              addTableColumn(deck, slide, shape, operation.index);
               break;
             case 'remove-column':
-              removeTableColumn(deck, slide, shape);
+              removeTableColumn(deck, slide, shape, operation.index);
               break;
             case 'set-column-width':
               setTableColumnWidth(
@@ -478,6 +489,69 @@ export class PptxEditorEngine {
         defaultLabel = 'Insert shape';
         break;
       }
+      case 'set-shape-fill': {
+        const slide = this.requireSlide(command.slideId);
+        const shape = this.requireShape(slide, command.shapeId);
+        setShapeFillColor(deck, slide, shape, command.color);
+        invalidations = [
+          { kind: 'shapes', slideId: slide.path, shapeIds: [shape.id] }
+        ];
+        defaultLabel = 'Change fill color';
+        break;
+      }
+      case 'set-line-color': {
+        const slide = this.requireSlide(command.slideId);
+        const shape = this.requireShape(slide, command.shapeId);
+        setShapeLineColor(deck, slide, shape, command.color);
+        invalidations = [
+          { kind: 'shapes', slideId: slide.path, shapeIds: [shape.id] }
+        ];
+        defaultLabel = 'Change line color';
+        break;
+      }
+      case 'toggle-deck-slide-numbers': {
+        // Deck-wide toggle: turning on adds a slide number to every slide
+        // that lacks one (slides where the user deleted theirs get it back
+        // only through this explicit re-toggle); turning off removes all.
+        invalidations = [];
+        deck.slides.forEach((slide, index) => {
+          const existing = slideNumberShapes(slide);
+          if (command.enabled && !existing.length) {
+            const shape = insertSlideNumber(deck, slide, index + 1);
+            createdShapeIds.push(shape.id);
+            invalidations.push({
+              kind: 'structure',
+              slideId: slide.path,
+              shapeIds: [shape.id]
+            });
+          } else if (!command.enabled && existing.length) {
+            for (const shape of existing) deleteShape(deck, slide, shape);
+            invalidations.push({
+              kind: 'structure',
+              slideId: slide.path,
+              shapeIds: existing.map((shape) => shape.id)
+            });
+          }
+        });
+        defaultLabel = command.enabled
+          ? 'Add slide numbers'
+          : 'Remove slide numbers';
+        break;
+      }
+      case 'ungroup-shape': {
+        const slide = this.requireSlide(command.slideId);
+        const group = this.requireShape(slide, command.shapeId);
+        createdShapeIds.push(...ungroupShape(deck, slide, group));
+        invalidations = [
+          {
+            kind: 'structure',
+            slideId: slide.path,
+            shapeIds: [group.id, ...createdShapeIds]
+          }
+        ];
+        defaultLabel = 'Ungroup';
+        break;
+      }
       case 'delete-shapes': {
         const slide = this.requireSlide(command.slideId);
         const shapes = [...new Set(command.shapeIds)].map((shapeId) =>
@@ -504,6 +578,27 @@ export class PptxEditorEngine {
           { kind: 'structure', slideId: slide.path, shapeIds: [shape.id] }
         ];
         defaultLabel = 'Reorder shape';
+        break;
+      }
+      case 'add-slide': {
+        // A duplicate source, when named, must exist.
+        if (command.duplicateOf) this.requireSlide(command.duplicateOf);
+        addSlide(deck, command.atIndex, command.duplicateOf);
+        invalidations = [{ kind: 'deck' }];
+        defaultLabel = command.duplicateOf ? 'Duplicate slide' : 'Add slide';
+        break;
+      }
+      case 'delete-slide': {
+        this.requireSlide(command.slideId);
+        deleteSlide(deck, command.slideId);
+        invalidations = [{ kind: 'deck' }];
+        defaultLabel = 'Delete slide';
+        break;
+      }
+      case 'move-slide': {
+        moveSlide(deck, command.fromIndex, command.toIndex);
+        invalidations = [{ kind: 'deck' }];
+        defaultLabel = 'Move slide';
         break;
       }
     }
@@ -755,7 +850,10 @@ export class PptxEditorEngine {
 
   dispose(): void {
     this.listeners.clear();
-    if (this.deck) releaseObjectUrls(this.deck.pkg);
+    if (this.deck) {
+      releaseObjectUrls(this.deck.pkg);
+      releaseEmbeddedFonts(this.deck.pkg);
+    }
     this.changeLog = [];
     this.shelvedRecords.clear();
     this.deck = null;
