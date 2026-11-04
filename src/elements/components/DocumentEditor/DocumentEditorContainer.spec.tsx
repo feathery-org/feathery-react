@@ -15,7 +15,7 @@ import {
 import {
   _clearDocxDirtyRegistry,
   hasDirtyDocxEditors
-} from './docxDirtyRegistry';
+} from '../DocxEditor/docxDirtyRegistry';
 
 jest.mock('../../../utils/documentEditorPrimitives', () => ({
   rebindRevisionGroups: jest.fn()
@@ -33,7 +33,7 @@ let mockLiveEditor: any;
 
 // Exposes the terminal handlers as buttons so the container's outcome routing
 // can be driven the way the real toolbar drives it.
-jest.mock('./index', () => {
+jest.mock('../DocxEditor', () => {
   const React = jest.requireActual('react');
 
   return function MockDocxEditor({
@@ -162,7 +162,7 @@ jest.mock('./index', () => {
 
 // Stands in for the pdf.js-backed signed-PDF view so these tests don't load
 // pdf.js; exposes its props for assertion.
-jest.mock('./SignedEnvelopeView', () => {
+jest.mock('../DocxEditor/SignedEnvelopeView', () => {
   const React = jest.requireActual('react');
   return function MockSignedEnvelopeView({
     pdfUrl,
