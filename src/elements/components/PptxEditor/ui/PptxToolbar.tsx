@@ -66,15 +66,13 @@ export function Toolbar({
     undoStack,
     redoStack
   } = state;
-  const {
-    selectedShape,
-    select,
-    setPictureCropMode,
-    toggleJson,
-    undo,
-    redo,
-    executeCommand
-  } = store;
+  const { selectedShape, select, setPictureCropMode, toggleJson, undo, redo } =
+    store;
+  const executeCommand: typeof store.executeCommand = (...args) => {
+    // Every toolbar mutation must preserve text that has not blurred yet.
+    store.commitSvgTextEdit?.();
+    return store.executeCommand(...args);
+  };
   const { svgRoot, commitSvgTextEdit } = store;
 
   const slide = deck?.slides[activeSlide];

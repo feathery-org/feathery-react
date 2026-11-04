@@ -96,6 +96,7 @@ export const styles = {
   },
   topRow: {
     display: 'flex',
+    flexWrap: 'wrap' as const,
     alignItems: 'center',
     gap: 2,
     minHeight: TOOLBAR_HEIGHT,
