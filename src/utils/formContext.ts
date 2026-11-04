@@ -18,6 +18,8 @@ import internalState, {
   GetConfigParams,
   CreateEgnyteFolderParams,
   GetDocusignEnvelopeParams,
+  GetEgnyteFileParams,
+  ListEgnyteFolderParams,
   UploadFileToEgnyteParams,
   LoanProCustomerObject,
   RunComputerAgentOptions,
@@ -329,6 +331,10 @@ export const getFormContext = (formUuid: string) => {
       formState.uploadFileToEgnyte(params),
     createEgnyteFolder: (params: CreateEgnyteFolderParams) =>
       formState.createEgnyteFolder(params),
+    listEgnyteFolder: (params: ListEgnyteFolderParams = {}) =>
+      formState.listEgnyteFolder(params),
+    getEgnyteFile: (params: GetEgnyteFileParams) =>
+      formState.getEgnyteFile(params),
     getDocusignBrands: () => formState.getDocusignBrands(),
     applyAlloyJourney: (journeyToken: string, entities: AlloyEntities) =>
       formState.client.alloyJourneyApplication(journeyToken, entities),
