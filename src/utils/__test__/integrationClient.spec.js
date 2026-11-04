@@ -1297,6 +1297,33 @@ describe('IntegrationClient', () => {
       expect(result).toEqual({ files: ['merged.pdf'] });
     });
 
+    it('sends refresh_draft only when the review asks to refresh its draft', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ status: 'created' })
+      });
+      const finalize = (refreshDraft) =>
+        integrationClient.finalizeEnvelopeReview(
+          { ...baseAction, run_async: false, sign_method: 'docusign' },
+          {
+            envelopes: [{ envelopeId: 'env-1' }],
+            envelopeAction: 'sign',
+            draft: true,
+            refreshDraft
+          }
+        );
+
+      await finalize(true);
+      await finalize(false);
+
+      const bodies = global.fetch.mock.calls.map(([, options]) =>
+        JSON.parse(options.body)
+      );
+      expect(bodies[0].refresh_draft).toBe(true);
+      expect(bodies[1]).not.toHaveProperty('refresh_draft');
+    });
+
     it('never sends signer_email on finalize (removed from the final contract)', async () => {
       const formKey = 'test_form_key';
       const integrationClient = new IntegrationClient(formKey);

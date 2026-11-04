@@ -24,7 +24,15 @@ it('double-clicking an unselected text shape selects it and enters editing', asy
   await act(async () => {
     store.loadFile(sampleBytes(), 'sample.pptx');
     const deck = store.getState().deck!;
-    shape = addTextBox(deck, deck.slides[0], 914400, 914400, 3000000, 900000, 'Edit me');
+    shape = addTextBox(
+      deck,
+      deck.slides[0],
+      914400,
+      914400,
+      3000000,
+      900000,
+      'Edit me'
+    );
     refreshShapeText(shape);
     store.resetHistory();
   });

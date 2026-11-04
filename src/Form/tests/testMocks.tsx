@@ -60,18 +60,25 @@ jest.mock('../../utils/repeat', () => ({
 }));
 
 // Hide and repeats
-jest.mock('../../utils/hideAndRepeats', () => ({
-  getHideIfReferences: () => new Set(),
-  getTextVariableReferences: () => new Set(),
-  getPositionKey: () => 'k',
-  getVisiblePositions: () => ({})
-}));
+jest.mock('../../utils/hideAndRepeats', () => {
+  const state = { visiblePositions: {} as Record<string, boolean[]> };
+  return {
+    getHideIfReferences: () => new Set(),
+    getTextVariableReferences: () => new Set(),
+    getPositionKey: () => 'k',
+    getVisiblePositions: jest.fn(() => state.visiblePositions),
+    _spies: state
+  };
+});
 
 // Validation
 jest.mock('../../utils/validation', () => {
   const state = { invalid: false };
   return {
-    validateElements: () => ({ invalid: state.invalid, inlineErrors: {} }),
+    validateElements: jest.fn(() => ({
+      invalid: state.invalid,
+      inlineErrors: {}
+    })),
     validators: { phone: () => true, email: () => true },
     _spies: state
   };
@@ -135,19 +142,33 @@ jest.mock('../../utils/formHelperFunctions', () => ({
 
 // Field helper functions
 jest.mock('../../utils/fieldHelperFunctions', () => ({
+  _spies: {
+    formattedFields: {} as Record<string, any>
+  },
   castHiddenVal: (_: any, v: any) => v,
   castServarVal: (_: any, v: any) => v,
   FieldOptions: {},
   FieldProperties: {},
   FieldStyles: {},
-  formatStepFields: () => ({}),
+  FILE_FIELD_TYPES: [],
+  formatStepFields: jest.fn(() => {
+    const { _spies } = jest.requireMock('../../utils/fieldHelperFunctions');
+    return Object.fromEntries(
+      Object.entries(_spies.formattedFields).map(([key, value]: any) => [
+        key,
+        { ...value }
+      ])
+    );
+  }),
   formatAllFormFields: () => ({}),
   getAllFields: () => ({}),
   getDefaultFieldValue: () => '',
   getDefaultFormFieldValue: () => '',
   getFieldValue: () => ({ value: '', valueList: undefined }),
   isValidFieldIdentifier: () => true,
+  normalizeRepeatArrayValue: (value: any) => value,
   saveInitialValuesAndUrlParams: () => {},
+  stripEmptyRepeatEntries: (value: any) => value,
   updateStepFieldOptions: () => {},
   updateStepFieldProperties: () => {},
   updateStepFieldStyles: () => {}
@@ -171,7 +192,7 @@ jest.mock('../../utils/stepHelperFunctions', () => ({
   mapFormSettingsResponse: () => ({ shared_codes: [] }),
   nextStepKey: () => undefined,
   recurseProgressDepth: () => [0, 1],
-  setUrlStepHash: () => {}
+  setUrlStepHash: jest.fn()
 }));
 
 // Grid mock: no out of scope captures, only uses props
@@ -364,14 +385,18 @@ jest.mock('../../utils/featheryClient', () => {
     .mockResolvedValue({ ok: true, payload: { collaborators: [] } });
   const redeemLinkSpy = jest.fn();
   const registerEventSpy = jest.fn().mockResolvedValue(undefined);
+  const submitStepSpy = jest.fn().mockResolvedValue(undefined);
   // Lets a test answer the session fetch with something other than a loadable
   // step (e.g. the access link flags that carry no form data), turn the form
   // off, or fail the session outright.
   const state = {
     session: null as any,
     sessionError: null as any,
+    formError: null as any,
     formOff: false,
     authSensitiveActionsOnly: false,
+    // undefined mimics a payload from before the backend sent the flag
+    sessionGated: false as boolean | undefined,
     // Lets a test give the single step its own elements (e.g. a button whose
     // action gates the step) instead of the empty default.
     steps: null as any[] | null
@@ -379,24 +404,28 @@ jest.mock('../../utils/featheryClient', () => {
 
   class MockClient {
     // Return one step so getNewStep can set activeStep and render Grid
-    fetchForm = async () => ({
-      steps: state.steps ?? [
-        {
-          key: 'step-1',
-          id: 's1',
-          servar_fields: [],
-          buttons: [],
-          next_conditions: []
-        }
-      ],
-      form_name: 'Test Form',
-      auth_sensitive_actions_only: state.authSensitiveActionsOnly,
-      completion_behavior: '',
-      formOff: state.formOff,
-      logic_rules: [],
-      shared_codes: [],
-      track_hashes: false
-    });
+    fetchForm = async () => {
+      if (state.formError) throw state.formError;
+      return {
+        steps: state.steps ?? [
+          {
+            key: 'step-1',
+            id: 's1',
+            servar_fields: [],
+            buttons: [],
+            next_conditions: []
+          }
+        ],
+        form_name: 'Test Form',
+        auth_sensitive_actions_only: state.authSensitiveActionsOnly,
+        session_gated: state.sessionGated,
+        completion_behavior: '',
+        formOff: state.formOff,
+        logic_rules: [],
+        shared_codes: [],
+        track_hashes: false
+      };
+    };
 
     fetchSession = async () => {
       if (state.sessionError) throw state.sessionError;
@@ -415,7 +444,7 @@ jest.mock('../../utils/featheryClient', () => {
       ];
     };
 
-    submitStep = jest.fn();
+    submitStep = submitStepSpy;
     registerEvent = registerEventSpy;
     runAIExtraction = jest.fn();
     forwardInboxEmail = jest.fn();
@@ -435,6 +464,7 @@ jest.mock('../../utils/featheryClient', () => {
       inviteCollaborator: inviteCollaboratorSpy,
       redeemLink: redeemLinkSpy,
       registerEvent: registerEventSpy,
+      submitStep: submitStepSpy,
       state
     }
   };
@@ -544,11 +574,23 @@ export const BrowserMod: any = jest.requireMock('../../utils/browser');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const ValidationMod: any = jest.requireMock('../../utils/validation');
 
+// Controls the visibility snapshot returned before and after awaited logic.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const HideAndRepeatsMod: any = jest.requireMock(
+  '../../utils/hideAndRepeats'
+);
+
 // Exposes the mocked setFormElementError spy for assertions on surfaced
 // element errors (e.g. a connect_account popup-blocked/OAuth failure).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const FormHelperMod: any = jest.requireMock(
   '../../utils/formHelperFunctions'
+);
+
+// Controls the field snapshot that submitStep receives.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const FieldHelperMod: any = jest.requireMock(
+  '../../utils/fieldHelperFunctions'
 );
 
 // Exposes the mocked client's collaborator invite call for assertions.

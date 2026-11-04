@@ -21,7 +21,12 @@ it('replaces an existing template line color on the stroke (a:ln)', () => {
       el('a:solidFill', undefined, [el('a:srgbClr', { val: '888888' })])
     ])
   ]);
-  const shape = { type: 'connector', id: '1', node: spPr, spPr } as unknown as Shape;
+  const shape = {
+    type: 'connector',
+    id: '1',
+    node: spPr,
+    spPr
+  } as unknown as Shape;
 
   setShapeLineColor(deck, slide, shape, 'FF0000');
 
@@ -37,7 +42,12 @@ it('replaces an existing template line color on the stroke (a:ln)', () => {
 it('adds a stroke fill to a line that has none', () => {
   const { deck, slide } = stub();
   const spPr = el('p:spPr', undefined, []);
-  const shape = { type: 'connector', id: '2', node: spPr, spPr } as unknown as Shape;
+  const shape = {
+    type: 'connector',
+    id: '2',
+    node: spPr,
+    spPr
+  } as unknown as Shape;
 
   setShapeLineColor(deck, slide, shape, '00AA00');
 

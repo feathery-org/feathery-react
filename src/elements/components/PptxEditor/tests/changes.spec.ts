@@ -60,7 +60,11 @@ describe('tracked edits (engine change log)', () => {
         shapeId: shape.id,
         style: { italic: true }
       },
-      { label: 'Suggest italics', origin: 'assistant', authorLabel: 'Assistant' }
+      {
+        label: 'Suggest italics',
+        origin: 'assistant',
+        authorLabel: 'Assistant'
+      }
     );
     const record = engine.changes()[0];
     expect(record.status).toBe('pending');
@@ -102,7 +106,9 @@ describe('tracked edits (engine change log)', () => {
     ).toBe('rejected');
     // The inverse apply is its own accepted transaction.
     expect(
-      engine.changes().some((candidate) => candidate.summary === 'Reject suggestion')
+      engine
+        .changes()
+        .some((candidate) => candidate.summary === 'Reject suggestion')
     ).toBe(true);
   });
 

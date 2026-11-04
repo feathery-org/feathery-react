@@ -363,6 +363,7 @@ export const getFormContext = (formUuid: string) => {
       signMethod,
       draft,
       toolbarActions,
+      closeOnAction,
       emailSubject,
       emailBlurb,
       customFields,
@@ -410,6 +411,10 @@ export const getFormContext = (formUuid: string) => {
       // toolbar offers. 'draft' is DocuSign-only (it finalizes as a sign with
       // draft=true).
       toolbarActions?: ('sign' | 'download' | 'save' | 'draft')[];
+      // Only for envelopeAction 'open_in_editor': false keeps the editor open
+      // after a toolbar action, and the flow continues once the filler closes
+      // it. Defaults to true.
+      closeOnAction?: boolean;
       // Only for signMethod 'docusign': the subject and body of the envelope's
       // signing email, as sendDocusignEnvelope takes them.
       emailSubject?: string;
@@ -511,8 +516,27 @@ export const getFormContext = (formUuid: string) => {
                 ...(form.signerIds ? { signerIds: { ...form.signerIds } } : {})
               }))
             }
+          : typeof doc !== 'string' && doc.kind === 'template'
+          ? {
+              ...doc,
+              ...(doc.references ? { references: [...doc.references] } : {})
+            }
           : doc
       );
+      const hasReferences = documentIds.some(
+        (doc) =>
+          typeof doc !== 'string' &&
+          ((doc.kind === 'template' && doc.references !== undefined) ||
+            (doc.kind === 'quik' &&
+              doc.forms?.some((form) => form.reference !== undefined)))
+      );
+      if (hasReferences && (signMethod !== 'docusign' || merge)) {
+        return Promise.reject(
+          new Error(
+            "generateDocuments: references require signMethod 'docusign' and cannot be merged"
+          )
+        );
+      }
       const unknownUploadKeys: string[] = [];
       let missingUploadField = false;
       documentIds = documentIds.map((doc) => {
@@ -602,6 +626,9 @@ export const getFormContext = (formUuid: string) => {
               })
             ),
             editor_toolbar_actions: toolbarActions,
+            ...(closeOnAction !== undefined
+              ? { editor_close_on_action: closeOnAction }
+              : {}),
             email_subject: emailSubject,
             email_blurb: emailBlurb,
             custom_fields: customFields,

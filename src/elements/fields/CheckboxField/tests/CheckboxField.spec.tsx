@@ -241,6 +241,63 @@ describe('CheckboxField - Base Functionality', () => {
     });
   });
 
+  describe('Toggle Display', () => {
+    const createToggleElement = () => {
+      const element = createCheckboxElement('checkbox');
+      return {
+        ...element,
+        properties: { ...element.properties, display: 'toggle' }
+      };
+    };
+
+    it('renders a checkbox unless the placement is set to toggle', () => {
+      const props = createCheckboxProps(createCheckboxElement('checkbox'));
+
+      render(<CheckboxField {...props} />);
+
+      expect(screen.getByRole('checkbox')).toBeTruthy();
+      expect(screen.queryByRole('switch')).toBeNull();
+    });
+
+    it('renders a switch driven by the field value', () => {
+      const mockOnChange = createStatefulOnChange();
+      const props = createCheckboxProps(createToggleElement(), {
+        onChange: mockOnChange,
+        fieldVal: false
+      });
+
+      render(<CheckboxField {...props} />);
+
+      const toggle = screen.getByRole('switch') as HTMLInputElement;
+      expect(toggle.checked).toBe(false);
+      expect(toggle.id).toBe('test-checkbox-key');
+      expect(toggle.name).toBe('test-checkbox-key');
+      expectFieldToHaveAriaLabel(toggle, 'Test checkbox field');
+
+      act(() => {
+        fireEvent.click(toggle);
+      });
+
+      expect(getMockFieldValue()).toBe(true);
+      expect(mockOnChange).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not change when disabled', () => {
+      const mockOnChange = jest.fn();
+      const props = createCheckboxProps(createToggleElement(), {
+        onChange: mockOnChange,
+        disabled: true,
+        fieldVal: true
+      });
+
+      render(<CheckboxField {...props} />);
+
+      const toggle = screen.getByRole('switch') as HTMLInputElement;
+      expectFieldToBeDisabled(toggle);
+      expect(toggle.checked).toBe(true);
+    });
+  });
+
   describe('Disabled State', () => {
     it('prevents interaction when disabled', () => {
       const mockOnChange = jest.fn();
