@@ -98,17 +98,17 @@ describe('applyToggleStyles', () => {
     );
   });
 
-  it('uses the selected background as the on colour, falling back to the checkmark colour', () => {
+  it('uses the selected background as the on color, falling back to the checkmark colour', () => {
     expect(
       toggleStyles({
         selected_background_color: '112233',
         selected_font_color: 'aabbcc'
       }).getTarget('toggleOn').backgroundColor
-    ).toBe('#112233');
-    expect(
-      toggleStyles({ selected_font_color: 'aabbcc' }).getTarget('toggleOn')
-        .backgroundColor
     ).toBe('#aabbcc');
+    expect(
+      toggleStyles({ selected_font_color: '112233' }).getTarget('toggleOn')
+        .backgroundColor
+    ).toBe('#112233');
   });
 
   it('maps background and hover colours onto the segments', () => {
