@@ -43,6 +43,9 @@ export interface PptxEditorProps {
   /** The document could not be opened at all; falls back to onError. */
   onLoadError?: (message: string) => void;
   onSave?: (blob: Blob) => unknown | Promise<unknown>;
+  /** Convert the saved presentation to PDF (host calls the backend). When set,
+   * the editor offers "Download as PDF" alongside the native .pptx download. */
+  onExportPdf?: () => Promise<Blob>;
   historyHost?: PptxHistoryHost;
   /** Developer flag: show the live JSON side panel toggle. */
   devJsonPanel?: boolean;
