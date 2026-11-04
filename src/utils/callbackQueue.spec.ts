@@ -1,7 +1,7 @@
 import CallbackQueue from './callbackQueue';
 import { featheryWindow } from './browser';
 
-const newQueue = () => new CallbackQueue({ buttons: [] }, jest.fn());
+const newQueue = () => new CallbackQueue(jest.fn());
 
 describe('CallbackQueue', () => {
   // addCallback rethrows each rejection as an uncaught error, as the page sees it

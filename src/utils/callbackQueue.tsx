@@ -1,46 +1,15 @@
-import React from 'react';
-import { isObjectEmpty } from './primitives';
-import FeatherySpinner from '../elements/components/Spinner';
-
 export default class CallbackQueue {
   awaiting: any;
   queue: any;
   setLoaders: any;
-  step: any;
-  constructor(step: any, setLoaders: any) {
+  constructor(setLoaders: any) {
     this.queue = [];
     this.awaiting = false;
-    this.step = step;
     this.setLoaders = setLoaders;
   }
 
   addCallback(promise: any) {
     if (promise) {
-      this.setLoaders((loaders: any) => {
-        if (isObjectEmpty(loaders)) return loaders;
-
-        const payload = {
-          showOn: 'on_button',
-          loader: <FeatherySpinner />,
-          type: 'default'
-        };
-        const newLoaders = this.step.buttons
-          .filter(
-            (button: any) => button.properties.show_loading_icon === 'on_button'
-          )
-          .reduce((loaders: any, button: any) => {
-            loaders[button.id] = payload;
-            return loaders;
-          }, {});
-
-        if (isObjectEmpty(newLoaders)) return loaders;
-
-        return {
-          ...loaders,
-          ...newLoaders
-        };
-      });
-
       this.queue.push(promise);
       // Drop settled promises so an old rejection can't fail every later all()
       const forget = () => {
