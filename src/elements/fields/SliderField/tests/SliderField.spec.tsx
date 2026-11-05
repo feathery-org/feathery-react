@@ -13,6 +13,7 @@ import {
 } from './test-utils';
 import { render, screen, fireEvent } from '@testing-library/react';
 import SliderField from '../index';
+import { fieldValues } from '../../../../utils/init';
 
 describe('SliderField - Base Functionality', () => {
   beforeEach(() => {
@@ -319,5 +320,61 @@ describe('SliderField - DOM naming', () => {
     render(<SliderField {...createSliderProps(element, { fieldVal: 3 })} />);
 
     expect(getSliderHandle()?.getAttribute('name')).toBe(element.servar.key);
+  });
+});
+
+describe('SliderField - linked range', () => {
+  const linkedSlider = (stepSize = 1) => {
+    const element = createSliderElement('slider', {
+      min_value: 0,
+      max_value: 100,
+      step_size: stepSize
+    });
+    element.servar.metadata = {
+      ...element.servar.metadata,
+      min_value_field_key: 'floor',
+      max_value_field_key: 'limit'
+    };
+    return element;
+  };
+
+  it('takes its range from the linked fields', () => {
+    Object.assign(fieldValues, { floor: 20, limit: '50' });
+    render(<SliderField {...createSliderProps(linkedSlider())} />);
+
+    expectSliderToHaveMin(20);
+    expectSliderToHaveMax(50);
+  });
+
+  it('falls back to the fixed bound while a linked field is empty', () => {
+    Object.assign(fieldValues, { floor: '', limit: 50 });
+    render(<SliderField {...createSliderProps(linkedSlider())} />);
+
+    expectSliderToHaveMin(0);
+    expectSliderToHaveMax(50);
+  });
+
+  it('shows a value past the linked range at the range end', () => {
+    Object.assign(fieldValues, { floor: 0, limit: 50 });
+    render(
+      <SliderField {...createSliderProps(linkedSlider(), { fieldVal: 80 })} />
+    );
+
+    expectSliderToHaveValue(50);
+    expect(document.querySelector('.current-value')?.textContent).toBe('50');
+  });
+
+  // Steps count from the min, so moving a linked min moves the handle off 10
+  it('shows the step the handle snaps to when the linked min moves', () => {
+    Object.assign(fieldValues, { floor: 2, limit: 100 });
+    render(
+      <SliderField {...createSliderProps(linkedSlider(5), { fieldVal: 10 })} />
+    );
+
+    expectSliderToHaveValue(12);
+    expect(document.querySelector('.current-value')?.textContent).toBe('12');
+    expect(
+      document.querySelector<HTMLInputElement>('input[type="hidden"]')?.value
+    ).toBe('12');
   });
 });

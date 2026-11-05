@@ -181,6 +181,16 @@ describe('submit field snapshot', () => {
     expect(ValidationMod.validateElements).toHaveBeenLastCalledWith(
       expect.objectContaining({ visiblePositions: afterLogicVisibility })
     );
+    // Sliders store their settled values from the same visibility, before the
+    // snapshot reads them
+    const store = ValidationMod.storeAlignedSliderValues;
+    expect(store).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: 's1' }),
+      afterLogicVisibility
+    );
+    expect(store.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      FieldHelperMod.formatStepFields.mock.invocationCallOrder.at(-1)
+    );
     expect(ClientMod._spies.submitStep).toHaveBeenCalledWith(
       [
         { key: 'FieldA', text_field: 'a' },
@@ -220,6 +230,8 @@ describe('submit field snapshot', () => {
     });
 
     expect(ValidationMod.validateElements).toHaveBeenCalledTimes(2);
+    // Only the first, passing validation stores slider values
+    expect(ValidationMod.storeAlignedSliderValues).toHaveBeenCalledTimes(1);
     expect(ClientMod._spies.submitStep).not.toHaveBeenCalled();
     delete (internalState as any)['iid-submit-revalidate'];
   });
@@ -303,6 +315,8 @@ describe('docx discard navigation boundary', () => {
     await act(async () => {});
     expect(BrowserMod._spies.confirm).not.toHaveBeenCalled();
     expect(hasDirtyDocxEditors('iid-docx-invalid')).toBe(true);
+    // A failed submit leaves slider answers as the user left them
+    expect(ValidationMod.storeAlignedSliderValues).not.toHaveBeenCalled();
   });
 
   it('does not prompt for actions that stay on the current step', async () => {
