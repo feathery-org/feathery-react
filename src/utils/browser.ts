@@ -113,14 +113,25 @@ export function downloadFile(file: File) {
   );
 }
 
-async function getFileData(url: string) {
-  const response = await fetch(url);
+async function getFileData(
+  url: string,
+  options?: RequestInit,
+  requireAll = false
+) {
+  const response = await fetch(url, options);
+  if (requireAll && !response.ok)
+    throw new Error('Could not download the document. Please retry.');
   const blob = await response.blob();
   const fileName = getFilenameFromUrl(url);
   return { fileName, blob };
 }
 
-export async function downloadAllFileUrls(urls: string[], zipName?: string) {
+export async function downloadAllFileUrls(
+  urls: string[],
+  zipName?: string,
+  options?: RequestInit,
+  requireAll = false
+) {
   if (urls.length === 0) return;
 
   let file: File;
@@ -129,7 +140,7 @@ export async function downloadAllFileUrls(urls: string[], zipName?: string) {
     const zip = new JSZip();
 
     const files = await Promise.all(
-      urls.map((url: string) => getFileData(url))
+      urls.map((url: string) => getFileData(url, options, requireAll))
     );
 
     const nameCount: Record<string, number> = {};
@@ -158,7 +169,7 @@ export async function downloadAllFileUrls(urls: string[], zipName?: string) {
       type: 'application/zip'
     });
   } else {
-    const { fileName, blob } = await getFileData(urls[0]);
+    const { fileName, blob } = await getFileData(urls[0], options, requireAll);
     file = new File([blob], fileName, { type: blob.type });
   }
 

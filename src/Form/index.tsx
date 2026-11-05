@@ -320,6 +320,12 @@ const stackAbove = (height: number) =>
 
 export * from './grid/StyledContainer';
 
+// DocuSign's own status, when the backend reports it, says whether the press
+// ended as a draft: a Sign can be held as one, and a retried Draft can find
+// the envelope already sent. Older backends report none, so the press decides.
+const isDocusignDraft = (draft: boolean, data: any) =>
+  data?.docusign_status ? data.docusign_status === 'created' : draft;
+
 export interface Props {
   formId: string;
   onChange?: null | ((context: ContextOnChange) => Promise<any> | void);
@@ -1521,7 +1527,9 @@ function Form({
                 // completion signal, so all that's left is telling the filler.
                 showEnvelopeOutcome(
                   ENVELOPE_FLOW_TOAST_ID,
-                  draft ? 'Saved as Draft' : 'Sent for Signature',
+                  isDocusignDraft(draft, data)
+                    ? 'Saved as Draft'
+                    : 'Sent for Signature',
                   action.documents
                 );
                 return;
@@ -1550,9 +1558,9 @@ function Form({
           if (data.status === 'error') throw new Error(data.message);
           if (action.envelope_action === 'open_in_editor') {
             return await new Promise((resolve, reject) => {
-              // What finalize returned, so the method resolves with the real
-              // outcome ({files: [...]}) — the generate payload here only holds
-              // {documents, expires_at}.
+              // What the completing finalize returned, so the method resolves
+              // with the real outcome ({files: [...]}) — the generate payload
+              // here only holds {documents, expires_at}.
               let finalized: any;
               setReviewViewerPayload({
                 payload: data,
@@ -1560,12 +1568,15 @@ function Form({
                 onFinalize: async ({
                   envelopes,
                   envelopeAction,
-                  draft
+                  draft,
+                  refreshDraft,
+                  completes
                 }: any) => {
                   const result = await client.finalizeEnvelopeReview(action, {
                     envelopes,
                     envelopeAction,
-                    draft
+                    draft,
+                    refreshDraft
                   });
                   if (!result) {
                     return { status: 'error', message: 'Finalize failed' };
@@ -1582,12 +1593,14 @@ function Form({
                       result
                     })
                   );
-                  // The toolbar action that produced this outcome rides along
-                  // so the awaiting rule can branch on it.
-                  finalized = {
-                    ...result,
-                    reviewAction: draft ? 'draft' : envelopeAction
-                  };
+                  // A kept-open screen can Download after a Draft; the flow
+                  // still completes with the draft. The toolbar action rides
+                  // along so the awaiting rule can branch on it.
+                  if (completes)
+                    finalized = {
+                      ...result,
+                      reviewAction: draft ? 'draft' : envelopeAction
+                    };
                   return result;
                 },
                 onComplete: () => {
@@ -3584,12 +3597,15 @@ function Form({
               //
               // Create Draft finalizes as a sign too, so the label comes off
               // the request — a draft is saved in the sender's DocuSign
-              // account, not delivered to anyone. Not off the response: the
-              // poll endpoint overwrites its status with "complete", so
-              // DocuSign's own "created" never reaches here.
+              // account, not delivered to anyone. A Sign can end as a draft
+              // too (the Quik Joint Agreements hold), which only
+              // `docusign_status` reports: the poll endpoint overwrites
+              // `status` with "complete".
               showEnvelopeOutcome(
                 envelopeId,
-                draft ? 'Saved as Draft' : 'Sent for Signature',
+                isDocusignDraft(draft, data)
+                  ? 'Saved as Draft'
+                  : 'Sent for Signature',
                 action.documents
               );
               return;
@@ -3686,16 +3702,19 @@ function Form({
               onFinalize: async ({
                 envelopes,
                 envelopeAction,
-                draft
+                draft,
+                refreshDraft
               }: {
                 envelopes: { envelopeId: string }[];
                 envelopeAction: 'sign' | 'fill' | 'download' | 'save';
                 draft: boolean;
+                refreshDraft: boolean;
               }) => {
                 const result = await client.finalizeEnvelopeReview(action, {
                   envelopes,
                   envelopeAction,
-                  draft
+                  draft,
+                  refreshDraft
                 });
                 // A missing result is a failure, not a success: _fetch
                 // resolves undefined on a network blip / 403 / 409, and
@@ -3721,11 +3740,10 @@ function Form({
                 );
                 return result;
               },
-              onComplete: () => {
+              onComplete: () =>
                 flowOnSuccess(i)().then(() => {
                   setTimeout(() => setReviewViewerPayload(null), 500);
-                });
-              }
+                })
             });
             break;
           } else {
