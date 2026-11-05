@@ -15,6 +15,7 @@ export default function SliderField({
   rightToLeft,
   onChange = () => {},
   elementProps = {},
+  errorAttributes = {},
   children
 }: any) {
   const [internalValue, setInternalValue] = useState(fieldVal);
@@ -85,7 +86,10 @@ export default function SliderField({
           // The handle is the element the user drags, so it carries the
           // field key like a native control would
           handleRender={(handle) =>
-            React.cloneElement(handle, { name: servar.key } as any)
+            React.cloneElement(handle, {
+              name: servar.key,
+              ...errorAttributes
+            } as any)
           }
         />
         <HiddenValueInput name={servar.key} value={internalValue} />

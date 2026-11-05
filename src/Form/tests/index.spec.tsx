@@ -101,7 +101,10 @@ describe('validation feedback navigation', () => {
 
       render(
         <JSForm formId='f1' _internalId={instanceId}>
-          <input data-testid='missing' aria-invalid='true' />
+          <input data-testid='missing' data-feathery-error-id='missing-error' />
+          <span id='missing-error' data-feathery-error-label='Name'>
+            Required
+          </span>
           <input data-testid='typing' />
         </JSForm>
       );
@@ -126,7 +129,12 @@ describe('validation feedback navigation', () => {
         errorType === 'inline'
       );
       expect(ClientMod._spies.submitStep).not.toHaveBeenCalled();
-
+      const announcement =
+        errorType === 'inline' ? screen.getByRole('status') : null;
+      if (announcement) {
+        expect(announcement).toHaveAttribute('aria-live', 'polite');
+        expect(announcement).toHaveTextContent('Name: Required');
+      } else expect(screen.queryByRole('status')).not.toBeInTheDocument();
       const typingField = screen.getByTestId('typing');
       typingField.focus();
       const currentVisibility = { missing: [false] };
@@ -134,12 +142,16 @@ describe('validation feedback navigation', () => {
       act(() => GridMod._spies.form.updateFieldValues({ edited: 'filled' }));
 
       expect(ValidationMod.validateElements).toHaveBeenLastCalledWith(
-        expect.objectContaining({ visiblePositions: currentVisibility })
+        expect.objectContaining({
+          visiblePositions: currentVisibility,
+          reportNativeErrors: false
+        })
       );
       expect(missingField.scrollIntoView).toHaveBeenCalledTimes(
         expectedScrolls
       );
       expect(typingField).toHaveFocus();
+      if (announcement) expect(announcement).toBeEmptyDOMElement();
     }
   );
 });

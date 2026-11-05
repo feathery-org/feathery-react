@@ -30,6 +30,7 @@ function CheckboxGroupField({
   onOtherChange = () => {},
   onEnter = () => {},
   elementProps = {},
+  errorAttributes = {},
   disabled = false,
   children
 }: any) {
@@ -137,6 +138,7 @@ function CheckboxGroupField({
           >
             <label style={{ display: 'contents' }}>
               <input
+                {...errorAttributes}
                 ref={selectAllRef}
                 type='checkbox'
                 id={`${servar.key}-select-all`}
@@ -190,6 +192,7 @@ function CheckboxGroupField({
             >
               <label style={{ display: 'contents' }}>
                 <input
+                  {...errorAttributes}
                   type='checkbox'
                   id={`${servar.key}-${i}`}
                   name={value}
@@ -232,6 +235,7 @@ function CheckboxGroupField({
         {servar.metadata.other && (
           <div style={{ display: 'flex', flexGrow: 1 }}>
             <input
+              {...errorAttributes}
               type='checkbox'
               id={`${servar.key}-`}
               key={`${servar.key}-`}
@@ -260,6 +264,7 @@ function CheckboxGroupField({
               {otherLabel}
             </label>
             <FormControl
+              {...errorAttributes}
               type='text'
               // Paired with flex grow, will not expand parent width
               htmlSize={1}

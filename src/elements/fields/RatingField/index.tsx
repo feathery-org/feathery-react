@@ -12,6 +12,7 @@ export default function RatingField({
   editMode,
   onChange = () => {},
   elementProps = {},
+  errorAttributes = {},
   disabled = false,
   children
 }: any) {
@@ -51,6 +52,22 @@ export default function RatingField({
             return (
               <Icon
                 key={index}
+                role='button'
+                {...errorAttributes}
+                aria-label={`${element.properties.aria_label || servar.name}: ${
+                  index + 1
+                }`}
+                tabIndex={disabled || editMode ? -1 : 0}
+                onKeyDown={(event: React.KeyboardEvent<SVGElement>) => {
+                  if (
+                    !disabled &&
+                    !editMode &&
+                    (event.key === 'Enter' || event.key === ' ')
+                  ) {
+                    event.preventDefault();
+                    onChange(index + 1);
+                  }
+                }}
                 id={`${servar.key}-${index + 1}`}
                 onClick={() => onChange(index + 1)}
                 onMouseEnter={() => setHoverIndex(index)}

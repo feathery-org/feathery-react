@@ -46,6 +46,7 @@ function AudioRecordingField({
   onChange: customOnChange = () => {},
   initialFile = null,
   elementProps = {},
+  errorAttributes = {},
   children
 }: any) {
   const servar = element.servar;
@@ -479,6 +480,7 @@ function AudioRecordingField({
     content = (
       <div
         role='button'
+        {...errorAttributes}
         aria-label={element.properties.aria_label || t.record}
         tabIndex={disabled || editMode ? -1 : 0}
         onClick={startRecording}

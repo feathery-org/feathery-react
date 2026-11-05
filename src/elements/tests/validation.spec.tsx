@@ -2,11 +2,18 @@ import React, { useEffect, useRef, useState } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import Element from '../../Form/grid/Element';
+import Elements from '..';
+import { featheryDoc, featheryWindow } from '../../utils/browser';
 import { preloadStepFields } from '../fields';
 import { ERROR_COLOR } from '../styles';
 import { fieldValues, initState } from '../../utils/init';
 import { validateElements } from '../../utils/validation';
 import type { InlineErrors } from '../../utils/inlineErrors';
+
+jest.mock('../fields/SignatureField/components/SignatureCanvas', () => ({
+  __esModule: true,
+  default: () => null
+}));
 
 jest.mock('../../hooks/useSalesforceSync', () => ({
   __esModule: true,
@@ -57,13 +64,14 @@ function ValidationForm({ errorType }: { errorType: string }) {
   const [submitted, setSubmitted] = useState(false);
   const [, setValues] = useState({ Name: '', Choice: [], Details: '' });
 
-  const validate = () =>
+  const validate = (reportNativeErrors = true) =>
     validateElements({
       step,
       visiblePositions,
       errorType,
       formRef,
       triggerErrors: true,
+      reportNativeErrors,
       setInlineErrors
     });
 
@@ -71,13 +79,13 @@ function ValidationForm({ errorType }: { errorType: string }) {
     value: string | string[],
     element: typeof fields[number],
     _index: number | null,
-    _rerender = true,
+    _rerender?: boolean,
     triggerErrors = true
   ) => {
     const key = element.servar.key;
     fieldValues[key] = value;
     setValues((prev) => ({ ...prev, [key]: value }));
-    if (submitted && triggerErrors) validate();
+    if (submitted && triggerErrors) validate(false);
     return true;
   };
 
@@ -131,7 +139,7 @@ describe('field validation modes', () => {
 
   beforeAll(async () => {
     (global as any).RadioNodeList ??= class RadioNodeList {};
-    window.matchMedia = jest.fn().mockReturnValue({
+    featheryWindow().matchMedia = jest.fn().mockReturnValue({
       matches: false,
       addEventListener: jest.fn(),
       removeEventListener: jest.fn()
@@ -163,17 +171,27 @@ describe('field validation modes', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Next' }));
 
-    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(3));
+    await waitFor(() =>
+      expect(screen.getAllByText('This is a required field')).toHaveLength(3)
+    );
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     for (const { id, servar } of fields) {
-      const control = screen.getByTestId(`${servar.key}-control`);
+      const wrapper = screen.getByTestId(`${servar.key}-control`);
+      const controls = wrapper.querySelectorAll(
+        'input:not([tabindex="-1"]):not([type="hidden"]), textarea, [role="button"]'
+      );
       const error = screen
         .getByTestId(servar.key)
-        .querySelector('[role="alert"]') as HTMLElement;
-      expect(control).toHaveAttribute('aria-invalid', 'true');
-      expect(control.getAttribute('aria-describedby')).toContain(error.id);
+        .querySelector('[data-feathery-error-label]') as HTMLElement;
+      expect(wrapper).not.toHaveAttribute('aria-invalid');
+      expect(controls.length).toBeGreaterThan(0);
+      controls.forEach((control) => {
+        expect(control).toHaveAttribute('aria-invalid', 'true');
+        expect(control.getAttribute('aria-describedby')).toContain(error.id);
+      });
       // Highlight the controls themselves, leaving the surrounding field unoutlined.
-      expect(control.style.outline).toBe('');
-      const borders = control.querySelectorAll(`[id="bb-${id}"]`);
+      expect(wrapper.style.outline).toBe('');
+      const borders = wrapper.querySelectorAll(`[id="bb-${id}"]`);
       expect(borders.length).toBeGreaterThan(0);
       borders.forEach((border) =>
         expect(border).toHaveStyle({ borderColor: ERROR_COLOR })
@@ -182,20 +200,22 @@ describe('field validation modes', () => {
 
     const nameInput = screen.getByRole('textbox', { name: 'Name' });
     await user.type(nameInput, 'Ada');
-    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(2));
-    expect(nameInput).toHaveFocus();
-    expect(screen.getByTestId('Name-control')).not.toHaveAttribute(
-      'aria-invalid'
+    await waitFor(() =>
+      expect(screen.getAllByText('This is a required field')).toHaveLength(2)
     );
+    expect(nameInput).toHaveFocus();
+    expect(nameInput).not.toHaveAttribute('aria-invalid');
     expect(screen.getByTestId('Name-control').style.outline).toBe('');
 
     await user.click(screen.getByRole('button', { name: 'Yes' }));
-    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(1));
+    await waitFor(() =>
+      expect(screen.getAllByText('This is a required field')).toHaveLength(1)
+    );
     expect(fieldValues.Choice).toEqual(['Yes']);
     expect(
       screen.getByTestId('Choice').querySelector('input[type="hidden"]')
     ).toHaveValue('Yes');
-    expect(screen.getByTestId('Choice-control')).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Yes' })).toHaveAttribute(
       'aria-describedby',
       'choice-hint'
     );
@@ -207,13 +227,30 @@ describe('field validation modes', () => {
     const detailsInput = screen.getByRole('textbox', { name: 'Details' });
     await user.type(detailsInput, 'Complete');
     await waitFor(() =>
-      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(
+        screen.queryByText('This is a required field')
+      ).not.toBeInTheDocument()
     );
     expect(detailsInput).toHaveFocus();
     expect(reportValidity).not.toHaveBeenCalled();
   });
 
-  it('preserves native error reporting without rendering inline feedback', async () => {
+  it('supports keyboard selection on an invalid button group', async () => {
+    const user = userEvent.setup();
+    render(<ValidationForm errorType='inline' />);
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    const choice = screen.getByRole('button', { name: 'Yes' });
+    screen.getByRole('textbox', { name: 'Name' }).focus();
+    await user.tab();
+    expect(choice).toHaveFocus();
+    expect(choice).toHaveAttribute('aria-invalid', 'true');
+    await user.keyboard(' ');
+    expect(fieldValues.Choice).toEqual(['Yes']);
+    expect(choice).toHaveFocus();
+    expect(choice).not.toHaveAttribute('aria-invalid');
+  });
+
+  it('highlights native errors and clears them during edits without reopening popups or rendering inline labels', async () => {
     const user = userEvent.setup();
     render(<ValidationForm errorType='html5' />);
     const nameInput = screen.getByRole('textbox', { name: 'Name' });
@@ -239,10 +276,137 @@ describe('field validation modes', () => {
       );
     });
 
-    // Native typing retains its existing suppression of popup revalidation.
+    expect(nameInput).toHaveAttribute('aria-invalid', 'true');
+    expect(
+      screen.queryByText('This is a required field')
+    ).not.toBeInTheDocument();
+    expect(featheryDoc().querySelector('[id="bb-field-Name"]')).toHaveStyle({
+      borderColor: ERROR_COLOR
+    });
+    expect(screen.getByRole('button', { name: 'Yes' })).toHaveAttribute(
+      'aria-invalid',
+      'true'
+    );
+
+    // Editing clears native borders and validity without reporting the next error.
     await user.type(nameInput, 'Ada');
     expect(fieldValues.Name).toBe('Ada');
+    await waitFor(() => expect(nameInput).not.toHaveAttribute('aria-invalid'));
+    expect((nameInput as HTMLInputElement).validationMessage).toBe('');
+    expect(nameInput).toHaveFocus();
+    expect(reportValidity).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: 'Yes' }));
+    expect(fieldValues.Choice).toEqual(['Yes']);
+    expect(screen.getByRole('button', { name: 'Yes' })).not.toHaveAttribute(
+      'aria-invalid'
+    );
     expect(reportValidity).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
+});
+
+const controlCases = [
+  ['TextField', 'text_field', 'input'],
+  ['TextArea', 'text_area', 'textarea'],
+  ['PasswordField', 'password', 'input'],
+  ['PhoneField', 'phone_number', 'input[type="tel"]'],
+  ['AddressLine1', 'gmap_line_1', 'input'],
+  ['DropdownField', 'dropdown', 'select'],
+  ['DropdownMultiField', 'dropdown_multi', '[role="combobox"]'],
+  ['DateSelectorField', 'date_selector', 'input'],
+  ['CheckboxField', 'checkbox', 'input[type="checkbox"]'],
+  ['CheckboxGroupField', 'multiselect', 'input[type="checkbox"]'],
+  ['RadioButtonGroupField', 'select', 'input[type="radio"]'],
+  ['MatrixField', 'matrix', 'input[type="radio"]'],
+  ['PinInputField', 'pin_input', 'input'],
+  ['SliderField', 'slider', '[role="slider"]'],
+  ['ButtonGroupField', 'button_group', '[role="button"]'],
+  ['FileUploadField', 'file_upload', 'input[type="file"]'],
+  ['ColorPickerField', 'hex_color', '[role="button"]'],
+  ['RatingField', 'rating', '[role="button"]'],
+  ['SignatureField', 'signature', '[role="button"]']
+];
+
+describe('accessible field errors', () => {
+  const originalResizeObserver = global.ResizeObserver;
+  beforeAll(() => {
+    global.ResizeObserver = jest.fn().mockImplementation(() => ({
+      observe: jest.fn(),
+      unobserve: jest.fn(),
+      disconnect: jest.fn()
+    }));
+  });
+  afterAll(() => {
+    global.ResizeObserver = originalResizeObserver;
+  });
+  it.each(controlCases)(
+    'links %s errors to its controls in each validation mode',
+    async (component, type, selector) => {
+      const element = {
+        ...fields[0],
+        servar: {
+          ...fields[0].servar,
+          type,
+          max_length: 4,
+          metadata: {
+            file_types: [],
+            options: ['Yes', 'No'],
+            option_labels: [],
+            option_images: [],
+            questions: [{ id: 'question', label: 'Question' }]
+          }
+        }
+      };
+      await preloadStepFields({ servar_fields: [element] }, { '0': [true] });
+      const Field = (Elements as Record<string, React.ComponentType<any>>)[
+        component
+      ];
+      const renderField = (errorType: string, inlineError = 'Required') => (
+        <>
+          <span id='field-hint'>Helpful description</span>
+          <Field
+            element={element}
+            componentOnly={false}
+            inlineError={inlineError}
+            formSettings={{ errorType }}
+            elementProps={{
+              'data-testid': 'wrapper',
+              'aria-describedby': 'field-hint'
+            }}
+          />
+        </>
+      );
+      const { container, rerender } = render(renderField('inline'));
+      const controls = container.querySelectorAll(selector);
+      expect(controls.length).toBeGreaterThan(0);
+      const errorId = screen.getByText('Required').id;
+      expect(screen.getByTestId('wrapper')).not.toHaveAttribute('aria-invalid');
+      controls.forEach((control) => {
+        expect(control).toHaveAttribute('aria-invalid', 'true');
+        expect(control.getAttribute('aria-describedby')).toContain(errorId);
+        expect(control.getAttribute('aria-describedby')).toContain(
+          'field-hint'
+        );
+      });
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+      rerender(renderField('html5'));
+      expect(screen.queryByText('Required')).not.toBeInTheDocument();
+      controls.forEach((control) => {
+        expect(control).toHaveAttribute('aria-invalid', 'true');
+        expect(control.getAttribute('aria-describedby')).not.toContain(errorId);
+        expect(control.getAttribute('aria-describedby')).toContain(
+          'field-hint'
+        );
+      });
+
+      rerender(renderField('inline', ''));
+      controls.forEach((control) => {
+        expect(control).not.toHaveAttribute('aria-invalid');
+        expect(control.getAttribute('aria-describedby')).toContain(
+          'field-hint'
+        );
+      });
+    }
+  );
 });

@@ -31,6 +31,7 @@ function RadioButtonGroupField({
   onOtherChange = () => {},
   onEnter = () => {},
   elementProps = {},
+  errorAttributes = {},
   children
 }: any) {
   const asciiOnly = formSettings?.asciiOnly ?? false;
@@ -116,6 +117,7 @@ function RadioButtonGroupField({
             >
               <label style={{ display: 'contents' }}>
                 <input
+                  {...errorAttributes}
                   type='radio'
                   id={`${servar.key}-${i}`}
                   name={
@@ -165,6 +167,7 @@ function RadioButtonGroupField({
         {servar.metadata.other && (
           <div style={{ display: 'flex', flexGrow: 1 }}>
             <input
+              {...errorAttributes}
               type='radio'
               id={`${servar.key}-`}
               key={`${servar.key}-`}
@@ -201,6 +204,7 @@ function RadioButtonGroupField({
               {otherLabel}
             </label>
             <FormControl
+              {...errorAttributes}
               type='text'
               // Paired with flex grow, will not expand parent width
               htmlSize={1}

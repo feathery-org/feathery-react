@@ -15,6 +15,7 @@ function MatrixField({
   repeatIndex = null,
   onChange = () => {},
   elementProps = {},
+  errorAttributes = {},
   disabled = false,
   children
 }: any) {
@@ -125,6 +126,7 @@ function MatrixField({
                   }}
                 >
                   <input
+                    {...errorAttributes}
                     type={inputType}
                     name={questionName}
                     // Each option is identifiable on its own, not only

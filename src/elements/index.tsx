@@ -45,6 +45,15 @@ Object.entries(Elements).map(([key, Element]) => {
       ...props
     }: any) => {
       const errorId = useId();
+      const hasError = Boolean(inlineError && !componentOnly);
+      const showInlineError = hasError && formSettings?.errorType !== 'html5';
+      const errorAttributes: React.AriaAttributes = {
+        'aria-invalid': hasError || undefined,
+        'aria-describedby':
+          [elementProps['aria-describedby'], showInlineError && errorId]
+            .filter(Boolean)
+            .join(' ') || undefined
+      };
       const responsiveStyles = useMemo(() => {
         return new ResponsiveStyles(
           element,
@@ -67,18 +76,10 @@ Object.entries(Elements).map(([key, Element]) => {
             element={element}
             responsiveStyles={responsiveStyles}
             inlineError={inlineError}
+            errorAttributes={errorAttributes}
             elementProps={{
               ...elementProps,
-              ...(inlineError &&
-                !componentOnly && {
-                  'aria-invalid': true,
-                  'aria-describedby': [
-                    elementProps['aria-describedby'],
-                    errorId
-                  ]
-                    .filter(Boolean)
-                    .join(' ')
-                })
+              ...(showInlineError && { 'data-feathery-error-id': errorId })
             }}
             {...props}
           />
@@ -102,10 +103,12 @@ Object.entries(Elements).map(([key, Element]) => {
         return (
           <>
             {e}
-            {inlineError && (
+            {showInlineError && (
               <span
                 id={errorId}
-                role='alert'
+                data-feathery-error-label={
+                  element.servar?.name || element.properties?.aria_label || ''
+                }
                 css={{
                   alignSelf: 'flex-start',
                   flexShrink: 0,

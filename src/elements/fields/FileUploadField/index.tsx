@@ -27,6 +27,7 @@ function FileUploadField({
   onChange: customOnChange = () => {},
   initialFiles = [],
   elementProps = {},
+  errorAttributes = {},
   children
 }: any) {
   const servar = element.servar;
@@ -347,6 +348,7 @@ function FileUploadField({
         accept={allowedFileTypes.join(',') || undefined}
         disabled={disabled}
         aria-label={element.properties.aria_label}
+        {...errorAttributes}
         multiple={isMultiple}
         onFocus={iosScrollOnFocus}
         style={{

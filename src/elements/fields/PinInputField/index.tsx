@@ -19,6 +19,7 @@ function SingleOtpInput({
   element,
   responsiveStyles,
   inlineError,
+  errorAttributes = {},
   changeCodeAtFocus,
   focusPrevInput,
   focusNextInput,
@@ -111,6 +112,7 @@ function SingleOtpInput({
     >
       {customBorder}
       <input
+        {...errorAttributes}
         id={`${element.servar.key}-${index}`}
         name={element.servar.key}
         aria-label={`${
@@ -155,7 +157,8 @@ function OtpInput({
   value,
   disabled,
   autoComplete,
-  inlineError
+  inlineError,
+  errorAttributes = {}
 }: any) {
   const [activeInput, setActiveInput] = useState(autoFocus ? 0 : -1);
   const [pasted, setPasted] = useState(false);
@@ -281,6 +284,7 @@ function OtpInput({
           element={element}
           responsiveStyles={responsiveStyles}
           inlineError={inlineError}
+          errorAttributes={errorAttributes}
           changeCodeAtFocus={changeCodeAtFocus}
           focusPrevInput={focusPrevInput}
           focusNextInput={focusNextInput}
@@ -312,6 +316,7 @@ function PinInputField({
   responsiveStyles,
   fieldLabel,
   inlineError,
+  errorAttributes = {},
   autoFocus = false,
   fieldVal = '',
   editMode,
@@ -343,6 +348,7 @@ function PinInputField({
         onChange={onChange}
         onEnter={onEnter}
         inlineError={inlineError}
+        errorAttributes={errorAttributes}
         disabled={disabled}
         autoComplete={autoComplete}
       />
