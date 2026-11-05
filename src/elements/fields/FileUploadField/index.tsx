@@ -6,12 +6,17 @@ import {
   DownloadIcon,
   FileUploadIcon
 } from '../../components/icons';
+import { hasIconGlyph, IconGlyph } from '../../components/icons/iconGlyph';
 import { imgMaxSizeStyles } from '../../styles';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { downloadFile, iosScrollOnFocus } from '../../../utils/browser';
-
-const DEFAULT_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
-const NUM_FILES_LIMIT = 20;
+import {
+  fileSizeLimitFor,
+  NUM_FILES_LIMIT,
+  resolveAllowedFileTypes,
+  validateFileSizes,
+  validateFileTypes
+} from './validation';
 
 function FileUploadField({
   element,
@@ -76,61 +81,8 @@ function FileUploadField({
     fileInput.current?.click();
   };
 
-  const allowedFileTypes: string[] = [...servar.metadata.file_types];
-  if (servar.metadata.custom_file_types)
-    allowedFileTypes.push(
-      ...servar.metadata.custom_file_types.map((type: string) => `.${type}`)
-    );
-
-  const isFileTypeMatch = (file: File, allowedType: string) => {
-    // handle image/* or video/* etc.
-    if (allowedType.endsWith('/*')) {
-      const typeCategory = allowedType.split('/')[0];
-      return file.type.startsWith(typeCategory + '/');
-    }
-    // handle specific file types like application/pdf
-    if (allowedType.includes('/')) {
-      return file.type === allowedType;
-    }
-    const extension = '.' + file.name.split('.').pop()?.toLowerCase();
-    return allowedType.toLowerCase() === extension;
-  };
-
-  const validateFileTypes = (files: File[]) => {
-    if (allowedFileTypes.length === 0) return;
-
-    const individualTypes = allowedFileTypes.flatMap((str: string) =>
-      str.split(',').map((item) => item.trim())
-    );
-    const invalidFiles = files.filter(
-      (file) => !individualTypes.some((type) => isFileTypeMatch(file, type))
-    );
-
-    if (invalidFiles.length > 0) {
-      throw new Error(
-        `Invalid file type. Allowed types: ${allowedFileTypes.join(', ')}`
-      );
-    }
-  };
-
-  const fileSizeLimit = servar.max_length
-    ? servar.max_length * 1024
-    : DEFAULT_FILE_SIZE_LIMIT;
-
-  const validateFileSizes = (files: File[]) => {
-    if (files.some((file) => file.size > fileSizeLimit)) {
-      let sizeLabel = '';
-      if (fileSizeLimit < 1024) sizeLabel = `${fileSizeLimit} bytes`;
-      else if (fileSizeLimit <= 1024 * 1024) {
-        const kbSize = Math.floor(fileSizeLimit / 1024);
-        sizeLabel = `${kbSize} kb`;
-      } else {
-        const mbSize = Math.floor(fileSizeLimit / (1024 * 1024));
-        sizeLabel = `${mbSize} mb`;
-      }
-      throw new Error(`File exceeds max size of ${sizeLabel}`);
-    }
-  };
+  const allowedFileTypes = resolveAllowedFileTypes(servar);
+  const fileSizeLimit = fileSizeLimitFor(servar);
 
   // When the user uploads files to the multi-file upload, we just append to the existing set
   // By default the input element would just replace all the uploaded files (we don't want that)
@@ -148,8 +100,8 @@ function FileUploadField({
         throw new Error('Some files are invalid');
       }
 
-      validateFileTypes(files);
-      validateFileSizes(files);
+      validateFileTypes(files, allowedFileTypes);
+      validateFileSizes(files, fileSizeLimit);
 
       const existingCount = hidePreview ? 0 : rawFiles.length;
       if (files.length + existingCount > NUM_FILES_LIMIT) {
@@ -193,22 +145,46 @@ function FileUploadField({
     ...imgMaxSizeStyles,
     ...responsiveStyles.getTarget('img')
   };
-  const icon = element.properties.icon ? (
-    <img
-      src={element.properties.icon}
-      style={{ ...imgStyles, maxWidth: '100%', height: 'auto' }}
-      alt=''
-    />
-  ) : (
-    <FileUploadIcon
-      width={
-        imgStyles.width && imgStyles.width !== 'px'
-          ? imgStyles.width
-          : undefined
-      }
-      style={{ maxHeight: '100%' }}
-    />
-  );
+  let icon;
+  if (hasIconGlyph(element.properties.icon_glyph)) {
+    icon = (
+      <span
+        css={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          ...imgStyles,
+          maxWidth: '100%'
+        }}
+      >
+        <IconGlyph
+          glyph={element.properties.icon_glyph}
+          // Unset widths are emitted as a bare unit, so use the default icon size.
+          size={
+            Number.isFinite(parseFloat(imgStyles.width as any)) ? '100%' : 32
+          }
+        />
+      </span>
+    );
+  } else if (element.properties.icon) {
+    icon = (
+      <img
+        src={element.properties.icon}
+        style={{ ...imgStyles, maxWidth: '100%', height: 'auto' }}
+        alt=''
+      />
+    );
+  } else {
+    icon = (
+      <FileUploadIcon
+        width={
+          imgStyles.width && imgStyles.width !== 'px'
+            ? imgStyles.width
+            : undefined
+        }
+        style={{ maxHeight: '100%' }}
+      />
+    );
+  }
 
   return (
     <div

@@ -9,7 +9,11 @@ import { createPortal } from 'react-dom';
 import { featheryDoc } from '../../../utils/browser';
 import DocxToolbar from './DocxToolbar';
 import { CheckIcon, CloseIcon, SpinnerIcon } from './icons';
-import { FEATHERY_RED, TOOLBAR_HEIGHT } from './DocxToolbar/styles';
+import {
+  downloadBtn,
+  FEATHERY_RED,
+  TOOLBAR_HEIGHT
+} from './DocxToolbar/styles';
 import DocumentPanel from './DocumentPanel';
 import {
   ActivePanel,
@@ -43,10 +47,7 @@ import {
   VersionAuthor
 } from './history/types';
 import { DocxSource } from './types';
-import {
-  isAssistantWriting,
-  onAssistantSessionChange
-} from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import { isRobinEditing, onRobinTurnChange } from './robinActivity';
 
 const DEFAULT_CURRENT_USER: VersionAuthor = {
   kind: 'user',
@@ -171,6 +172,24 @@ const overlay = {
   color: '#3f3f46'
 };
 
+// The save error and unsaved-changes notices above the toolbar.
+const saveBanner = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 12,
+  padding: '6px 12px',
+  background: '#fff4e5',
+  color: '#7a4100',
+  fontSize: 13
+};
+// The toolbar's secondary button, sized down to the banner.
+const saveBannerBtn = {
+  ...downloadBtn,
+  flex: '0 0 auto',
+  height: 28,
+  fontSize: 13
+};
+
 const PREVIEW_DOCUMENT = JSON.stringify({
   sections: [
     {
@@ -266,10 +285,6 @@ function DocxEditor({
   const saveToastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined
   );
-  // Mirror the toast into a ref so editor-event callbacks can read the current
-  // type without re-subscribing.
-  const saveToastRef = useRef(saveToast);
-  saveToastRef.current = saveToast;
   const [terminalRunning, setTerminalRunning] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   // Debounces the DOCX download: a double-click must not race two exports
@@ -396,11 +411,9 @@ function DocxEditor({
     });
   }, []);
 
-  // The caret left the locked spot: hide the hint now, but never clobber a save
-  // success/error toast that happens to be showing.
+  // Show and resolve can land in one batch: decide on pending state, never clobber a save toast.
   const handleLockedEditResolved = useCallback(() => {
-    if (saveToastRef.current?.type !== 'info') return;
-    setSaveToast(null);
+    setSaveToast((toast) => (toast?.type === 'info' ? null : toast));
   }, []);
 
   const handleEditorReady = useCallback(
@@ -669,8 +682,8 @@ function DocxEditor({
   }, [onBeforeReplaceReady]);
 
   useEffect(() => {
-    setAssistantWriting(isAssistantWriting(editor));
-    return onAssistantSessionChange(editor, setAssistantWriting);
+    setAssistantWriting(isRobinEditing(editor));
+    return onRobinTurnChange(editor, setAssistantWriting);
   }, [editor]);
 
   // Opening the history rail is a good idle point to resolve its recent,
@@ -1087,7 +1100,7 @@ function DocxEditor({
   const restoreBlockedReason = () =>
     readOnly
       ? "Signed or read-only documents can't be restored"
-      : assistantWriting || isAssistantWriting(editor)
+      : assistantWriting || isRobinEditing(editor)
       ? 'Wait for Robin to finish'
       : null;
 
@@ -1175,19 +1188,29 @@ function DocxEditor({
       }}
     >
       {historySession.error && (
-        <div
-          role='alert'
-          css={{
-            padding: '8px 12px',
-            background: '#fff4e5',
-            color: '#7a4100',
-            fontSize: 13
-          }}
-        >
-          {historySession.error}{' '}
-          <button type='button' onClick={historySession.retry}>
+        <div role='alert' css={saveBanner}>
+          <span>{historySession.error}</span>
+          <button
+            type='button'
+            css={saveBannerBtn}
+            onClick={historySession.retry}
+          >
             Retry save
           </button>
+        </div>
+      )}
+      {!historySession.error && historySession.saveHeld && (
+        <div role='status' css={saveBanner}>
+          <span>
+            Your latest changes aren&apos;t saved yet.{' '}
+            {bindingsState.blocked
+              ? `Fix this to resume saving: ${
+                  bindingsState.diagnostics.find(
+                    (entry) => entry.severity === 'error'
+                  )?.message ?? 'a document field has an error'
+                }`
+              : 'Keep this tab open until they are.'}
+          </span>
         </div>
       )}
       {/* Reserve the toolbar's space until it mounts (it needs `editor`), so its

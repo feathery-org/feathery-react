@@ -16,8 +16,14 @@ jest.mock('../init', () => ({
 const QUEUED_AT = new Date('2026-01-01T00:00:00.000Z');
 const SENT_AT = new Date('2026-01-01T00:05:00.000Z');
 
-const makeClient = () => {
-  const client = new FeatheryClient('formKey');
+const makeClient = (formFill = false) => {
+  const client = new FeatheryClient(
+    'formKey',
+    undefined,
+    false,
+    false,
+    formFill
+  );
   client.flushCustomFields = jest.fn().mockResolvedValue(undefined);
   const runOrSaveRequest = jest.fn().mockResolvedValue(undefined);
   client.offlineRequestHandler.runOrSaveRequest = runOrSaveRequest;
@@ -95,6 +101,25 @@ describe('FeatheryClient.registerEvent', () => {
     });
 
     expect(markStepCompleted).toHaveBeenCalledWith('step-1');
+  });
+
+  it("tags a Robin form-fill driver's events so they never complete the form", async () => {
+    const driver = makeClient(true);
+    const person = makeClient();
+    const event = {
+      step_key: 'step-1',
+      next_step_key: '',
+      event: 'skip',
+      completed: true
+    };
+
+    await driver.client.registerEvent(event);
+    await person.client.registerEvent(event);
+
+    expect(sentRequest(driver.runOrSaveRequest).body.robin_fill).toBe(true);
+    expect(sentRequest(person.runOrSaveRequest).body).not.toHaveProperty(
+      'robin_fill'
+    );
   });
 
   it('rejects a failed event without leaving the event chain rejected', async () => {

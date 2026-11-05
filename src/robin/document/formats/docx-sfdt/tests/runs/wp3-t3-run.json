@@ -1,0 +1,386 @@
+{
+ "source": "rig79 browser run 2026-10-08, WP3 T3 (Premium tax column), the model's writes in order; between title and widths the title card was accepted",
+ "writes": [
+  {
+   "step": "title",
+   "input": {
+    "intent": "Change the cover title text to \"Commercial Combined Insurance Renewal Proposal\".",
+    "scope": {
+     "ids": [
+      "n5"
+     ]
+    },
+    "formats": {},
+    "changes": [
+     {
+      "kind": "replace",
+      "id": "n5",
+      "base": "d27845051bc91a52",
+      "node": {
+       "id": "n5",
+       "kind": "run",
+       "style": "f4",
+       "text": "Commercial Combined Insurance Renewal Proposal"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "step": "widths",
+   "input": {
+    "intent": "Set Property premium detail column widths to 200, 70, 90 and 100 points; the merged subtotal label cell spans the first three columns, so it gets 360.",
+    "scope": {
+     "ids": [
+      "n121",
+      "n134",
+      "n151",
+      "n170",
+      "n188",
+      "n205",
+      "n124",
+      "n138",
+      "n157",
+      "n175",
+      "n192",
+      "n210",
+      "n127",
+      "n142",
+      "n161",
+      "n179",
+      "n196",
+      "n214",
+      "n130",
+      "n146",
+      "n165",
+      "n183",
+      "n200",
+      "n218",
+      "n226",
+      "n223"
+     ]
+    },
+    "formats": {},
+    "changes": [
+     {
+      "kind": "set",
+      "target": {
+       "ids": [
+        "n121",
+        "n134",
+        "n151",
+        "n170",
+        "n188",
+        "n205"
+       ],
+       "shape": {
+        "n121": "9f4786473c7c28e4",
+        "n134": "db594ada3951ca7b",
+        "n151": "da8dae03a387aa87",
+        "n170": "6164341543695f72",
+        "n188": "537438e72ddbeb05",
+        "n205": "f874ee6efe082bd7"
+       }
+      },
+      "props": {
+       "preferredWidth": 200,
+       "preferredWidthType": "Point"
+      }
+     },
+     {
+      "kind": "set",
+      "target": {
+       "ids": [
+        "n124",
+        "n138",
+        "n157",
+        "n175",
+        "n192",
+        "n210"
+       ],
+       "shape": {
+        "n124": "e52302ee11f6eb90",
+        "n138": "8906842b1864bf6a",
+        "n157": "f72f2d8193948e0f",
+        "n175": "142a18aecb288011",
+        "n192": "26cec0264d3800db",
+        "n210": "5b1cf10d6993665c"
+       }
+      },
+      "props": {
+       "preferredWidth": 70,
+       "preferredWidthType": "Point"
+      }
+     },
+     {
+      "kind": "set",
+      "target": {
+       "ids": [
+        "n127",
+        "n142",
+        "n161",
+        "n179",
+        "n196",
+        "n214"
+       ],
+       "shape": {
+        "n127": "be03e636ac0deb95",
+        "n142": "58fb31562a79bfad",
+        "n161": "da962f6cc5a87798",
+        "n179": "175af3f0dca61f32",
+        "n196": "2fa0ce81eb1b35aa",
+        "n214": "1158df832f608c63"
+       }
+      },
+      "props": {
+       "preferredWidth": 90,
+       "preferredWidthType": "Point"
+      }
+     },
+     {
+      "kind": "set",
+      "target": {
+       "ids": [
+        "n130",
+        "n146",
+        "n165",
+        "n183",
+        "n200",
+        "n218",
+        "n226"
+       ],
+       "shape": {
+        "n130": "c1401f2cf9ac8ff9",
+        "n146": "c160d057a066e9b5",
+        "n165": "4fe253157a48a9d9",
+        "n183": "64e28872f76ccd9d",
+        "n200": "da2ab2d58be26d70",
+        "n218": "5ffe9443612054ef",
+        "n226": "3edf6027c2ffb1d2"
+       }
+      },
+      "props": {
+       "preferredWidth": 100,
+       "preferredWidthType": "Point"
+      }
+     },
+     {
+      "kind": "set",
+      "target": {
+       "ids": [
+        "n223"
+       ],
+       "shape": {
+        "n223": "1bfe747cfc6719e1"
+       }
+      },
+      "props": {
+       "preferredWidth": 360,
+       "preferredWidthType": "Point"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "step": "premiumTaxColumn",
+   "input": {
+    "intent": "Add a live \"Premium tax\" column at the end of the Property premium detail table, computing each row's line total times the insurance premium tax rate.",
+    "scope": {
+     "ids": [
+      "n120",
+      "n130",
+      "n133",
+      "n146",
+      "n150",
+      "n165",
+      "n169",
+      "n183",
+      "n187",
+      "n200",
+      "n204",
+      "n218",
+      "n222",
+      "n226"
+     ]
+    },
+    "formats": {},
+    "changes": [
+     {
+      "kind": "insert_after",
+      "anchor": "n130",
+      "container": "0e6c3a8e37ccc934",
+      "node": {
+       "kind": "cell",
+       "blocks": [
+        {
+         "inlines": [
+          {
+           "kind": "run",
+           "text": "Premium tax"
+          }
+         ],
+         "kind": "paragraph",
+         "style": "f6"
+        }
+       ],
+       "style": "f28"
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n146",
+      "container": "06e4e5c7a5e14b2c",
+      "node": {
+       "kind": "cell",
+       "blocks": [
+        {
+         "inlines": [
+          {
+           "binding": {
+            "expr": "mul(line_total,tax_rate)",
+            "name": "premium_tax",
+            "row": "property-r1",
+            "type": "currency"
+           },
+           "inlines": [],
+           "kind": "control"
+          }
+         ],
+         "kind": "paragraph",
+         "style": "f6"
+        }
+       ],
+       "style": "f32"
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n165",
+      "container": "4a9b4476be0e7e51",
+      "node": {
+       "kind": "cell",
+       "blocks": [
+        {
+         "inlines": [
+          {
+           "binding": {
+            "expr": "mul(line_total,tax_rate)",
+            "name": "premium_tax",
+            "row": "property-r2",
+            "type": "currency"
+           },
+           "inlines": [],
+           "kind": "control"
+          }
+         ],
+         "kind": "paragraph",
+         "style": "f6"
+        }
+       ],
+       "style": "f36"
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n183",
+      "container": "d463836ddb4e3e19",
+      "node": {
+       "kind": "cell",
+       "blocks": [
+        {
+         "inlines": [
+          {
+           "binding": {
+            "expr": "mul(line_total,tax_rate)",
+            "name": "premium_tax",
+            "row": "property-r3",
+            "type": "currency"
+           },
+           "inlines": [],
+           "kind": "control"
+          }
+         ],
+         "kind": "paragraph",
+         "style": "f6"
+        }
+       ],
+       "style": "f32"
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n200",
+      "container": "fc35b06454f32209",
+      "node": {
+       "kind": "cell",
+       "blocks": [
+        {
+         "inlines": [
+          {
+           "binding": {
+            "expr": "mul(line_total,tax_rate)",
+            "name": "premium_tax",
+            "row": "property-r4",
+            "type": "currency"
+           },
+           "inlines": [],
+           "kind": "control"
+          }
+         ],
+         "kind": "paragraph",
+         "style": "f6"
+        }
+       ],
+       "style": "f36"
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n218",
+      "container": "85f11240550759d2",
+      "node": {
+       "kind": "cell",
+       "blocks": [
+        {
+         "inlines": [
+          {
+           "binding": {
+            "expr": "mul(line_total,tax_rate)",
+            "name": "premium_tax",
+            "row": "property-r5",
+            "type": "currency"
+           },
+           "inlines": [],
+           "kind": "control"
+          }
+         ],
+         "kind": "paragraph",
+         "style": "f6"
+        }
+       ],
+       "style": "f32"
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n226",
+      "container": "0dd99febfdb75ffd",
+      "node": {
+       "kind": "cell",
+       "blocks": [
+        {
+         "inlines": [],
+         "kind": "paragraph",
+         "style": "f6"
+        }
+       ],
+       "style": "f32"
+      }
+     }
+    ],
+    "dryRun": false
+   }
+  }
+ ]
+}

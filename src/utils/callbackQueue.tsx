@@ -42,22 +42,36 @@ export default class CallbackQueue {
       });
 
       this.queue.push(promise);
+      // Drop settled promises so an old rejection can't fail every later all()
+      const forget = () => {
+        const idx = this.queue.indexOf(promise);
+        if (idx !== -1) this.queue.splice(idx, 1);
+      };
+      promise.then(forget, (error: unknown) => {
+        forget();
+        // Rethrown outside the queue so a throwing rule still reaches the
+        // console and Sentry
+        setTimeout(() => {
+          throw error;
+        });
+      });
 
       if (!this.awaiting) {
         this.awaiting = true;
-        this._clearQueueLoader(this.queue.length).then(
-          () => (this.awaiting = false)
-        );
+        this._clearQueueLoader().finally(() => (this.awaiting = false));
       }
     }
   }
 
-  _clearQueueLoader(oldLen: any) {
-    return this.all().then(async () => {
-      const newLen = this.queue.length;
-      if (newLen > oldLen) await this._clearQueueLoader(newLen);
-      else this.setLoaders({});
-    });
+  // Waits until the queue is empty; addCallback reports rejections, this only
+  // owns the loading indicator
+  _clearQueueLoader(): Promise<void> {
+    return this.all()
+      .catch(() => undefined)
+      .then(() => {
+        if (this.queue.length > 0) return this._clearQueueLoader();
+        this.setLoaders({});
+      });
   }
 
   all() {

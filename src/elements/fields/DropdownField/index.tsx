@@ -13,6 +13,7 @@ import { css, Global } from '@emotion/react';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { fieldValues } from '../../../utils/init';
 import { toAscii } from '../../../utils/ascii';
+import { isTakenByOtherRow } from '../../../utils/repeat';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
 
 export default function DropdownField({
@@ -45,7 +46,7 @@ export default function DropdownField({
   const servar = element.servar;
   const short = servar.metadata.store_abbreviation;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar, editMode, asciiOnly);
+    useSalesforceSync(servar, editMode, asciiOnly, formSettings?.formKey);
 
   useEffect(() => {
     if (servar.type === 'gmap_state') {
@@ -121,12 +122,8 @@ export default function DropdownField({
       options = servar.metadata.options.map((option: any, index: number) => {
         const label = labels && labels[index] ? labels[index] : option;
         const tooltip = tooltips?.[index] ?? '';
-        const allVals = (fieldValues[servar.key] ?? []) as string[];
         if (
-          servar.repeated &&
-          servar.metadata.unique_repeat_options &&
-          option !== fieldVal &&
-          allVals.includes(option)
+          isTakenByOtherRow(servar, option, fieldValues[servar.key], fieldVal)
         )
           return null;
         return (

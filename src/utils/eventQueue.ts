@@ -12,6 +12,7 @@ interface QueuedEvent {
 export class EventQueue {
   private queue: QueuedEvent[] = [];
   private isReplaying = false;
+  private idleWaiters: (() => void)[] = [];
 
   enqueue(eventData: any): Promise<any> {
     return new Promise((resolve, reject) => {
@@ -48,6 +49,12 @@ export class EventQueue {
     this.isReplaying = replaying;
   }
 
+  /** Resolves once nothing is queued or replaying */
+  whenIdle(): Promise<void> {
+    if (this.isEmpty() && !this.isReplaying) return Promise.resolve();
+    return new Promise((resolve) => this.idleWaiters.push(resolve));
+  }
+
   /**
    * Apply replay function to all queued events
    * @param replayFn Function to call for each event
@@ -74,6 +81,9 @@ export class EventQueue {
       }
     } finally {
       this.setReplayState(false);
+      const waiters = this.idleWaiters;
+      this.idleWaiters = [];
+      waiters.forEach((resolve) => resolve());
     }
   }
 }

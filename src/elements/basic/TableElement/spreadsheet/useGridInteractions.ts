@@ -5,6 +5,7 @@ import type {
   CellSelectionRangeOperation,
   CellSelectionState
 } from '@tanstack/react-table';
+import type { ScrollToOptions } from '@tanstack/react-virtual';
 import {
   buildFillPatches,
   cellValuesEqual,
@@ -50,7 +51,11 @@ type GridInteractionOptions = {
   redo: () => void;
   canEdit: boolean;
   onInsertRow?: (atIndex: number) => void;
-  scrollToCell: (rowId: string, columnId: string) => void;
+  scrollToCell: (
+    rowId: string,
+    columnId?: string,
+    scroll?: ScrollToOptions
+  ) => void;
   /** Hands the keyboard back to the grid once a cell editor closes. */
   restoreFocus?: () => void;
   /**
@@ -742,12 +747,21 @@ export function useGridInteractions(options: GridInteractionOptions) {
    * grid afterwards, while find-in-grid keeps it in the search input.
    */
   const focusCell = React.useCallback(
-    (rowId: string, columnId: string) => {
+    (rowId: string, columnId: string, scroll?: ScrollToOptions) => {
       setEditing(null);
       table.setFocusedCell(rowId, columnId);
-      scrollToCell(rowId, columnId);
+      scrollToCell(rowId, columnId, scroll);
     },
     [scrollToCell, table]
+  );
+
+  const focusRow = React.useCallback(
+    (rowId: string, scroll?: ScrollToOptions) => {
+      setEditing(null);
+      selectRowRange(rowId, rowId, [], 'include');
+      scrollToCell(rowId, undefined, scroll);
+    },
+    [scrollToCell, selectRowRange]
   );
 
   // Typed against HTMLElement rather than HTMLInputElement: a column with a
@@ -787,6 +801,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
       startEditingActive,
       enterActiveCell,
       focusCell,
+      focusRow,
       moveSelection,
       commitCellValue,
       commitEditing,
@@ -815,6 +830,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
       startEditingActive,
       enterActiveCell,
       focusCell,
+      focusRow,
       moveSelection,
       commitCellValue,
       commitEditing,

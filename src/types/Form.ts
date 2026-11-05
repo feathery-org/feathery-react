@@ -123,6 +123,13 @@ export interface Subgrid extends PositionedElement {
   repeated: boolean;
 }
 
+export interface ToolRuleParameter {
+  name: string;
+  type: 'string' | 'number' | 'boolean' | 'file';
+  description?: string;
+  required?: boolean;
+}
+
 interface LogicRuleBase {
   id: string;
   name: string;
@@ -131,6 +138,7 @@ interface LogicRuleBase {
   elements: string[];
   enabled: boolean;
   valid: boolean;
+  metadata?: { tool?: { parameters?: ToolRuleParameter[] } };
 }
 // the server_side code is not exposed to the form
 export type ServerSideLogicRule = LogicRuleBase & {

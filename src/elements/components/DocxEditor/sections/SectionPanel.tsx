@@ -7,7 +7,7 @@ import React, {
 } from 'react';
 import { readSections, SectionNode } from './outline';
 import { applyReorderTo, installReorderUndoBatching } from './applyReorder';
-import { isAssistantWriting } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
+import { isRobinEditing } from '../robinActivity';
 import { Diagnostic, SfdtDocument } from '../bindings/core/sfdtTypes';
 import {
   INK,
@@ -132,7 +132,7 @@ export default function SectionList({ editor, markDirty }: Props) {
   const [draggingSet, setDraggingSet] = useState<number[] | null>(null);
   const [order, setOrder] = useState<number[] | null>(null);
   // Reordering is disabled while the assistant is writing (it's mutating the
-  // same document). isAssistantWriting stays true for the whole editing turn.
+  // same document). isRobinEditing stays true for the whole editing turn.
   const [locked, setLocked] = useState(false);
   // The panel root; focused on card selection so keyboard undo/redo lands on our
   // handler (not the browser) even though the cards sit outside the editor.
@@ -187,7 +187,7 @@ export default function SectionList({ editor, markDirty }: Props) {
   // short poll catches the turn-end clear (which fires no editor event).
   useEffect(() => {
     if (!editor) return undefined;
-    const check = () => setLocked(!!isAssistantWriting(editor));
+    const check = () => setLocked(!!isRobinEditing(editor));
     check();
     guard(() => editor.addEventListener?.('contentChange', check));
     guard(() => editor.addEventListener?.('selectionChange', check));

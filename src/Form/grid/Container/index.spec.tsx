@@ -3,7 +3,7 @@ import { Container } from '.';
 
 // Records the props the real container would register dirty state under
 jest.mock(
-  '../../../elements/components/DocxEditor/DocumentEditorContainer',
+  '../../../elements/components/DocumentEditor/DocumentEditorContainer',
   () => ({
     __esModule: true,
     default: ({ containerId, formId }: any) => (
@@ -44,7 +44,6 @@ describe('Container document editor wiring', () => {
         viewport='desktop'
         form={{
           formInstanceId: 'internal-form-id',
-          activeStep: { id: 'step-1' },
           formSettings: { mobileBreakpoint: 480 }
         }}
       />
@@ -67,7 +66,6 @@ describe('Container DOM naming', () => {
         viewport='desktop'
         form={{
           formInstanceId: 'internal-form-id',
-          activeStep: { id: 'step-1' },
           formSettings: { mobileBreakpoint: 480 }
         }}
       />

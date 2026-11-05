@@ -372,9 +372,34 @@ export function removeFilePathMapEntry(key: any, index: number) {
   delete fileDeduplicationCount[key];
 }
 
+// Keep filePathMap lined up with a file value that was replaced wholesale, e.g.
+// `field.value = field.value.toSpliced(i, 1)` from a logic rule. Each stored
+// path follows the file reference it belonged to; a file that is new, moved
+// into a hole, or no longer present gets no path and is uploaded on submit.
+export function realignFilePathMap(
+  key: string,
+  prevValue: any,
+  nextValue: any
+) {
+  const paths = filePathMap[key];
+  if (paths === undefined || paths === null || prevValue === nextValue) return;
+
+  if (Array.isArray(nextValue) && Array.isArray(prevValue)) {
+    const prevPaths = Array.isArray(paths) ? paths : [];
+    filePathMap[key] = nextValue.map((file) => {
+      if (file === null || file === undefined || file === '') return null;
+      const prevIndex = prevValue.indexOf(file);
+      return prevIndex === -1 ? null : prevPaths[prevIndex] ?? null;
+    });
+  } else {
+    filePathMap[key] = null;
+  }
+  delete fileDeduplicationCount[key];
+}
+
 // Update the map we maintain to track files that have already been uploaded to S3
 // This means nulling the existing mapping because the user uploaded a new file
-export function clearFilePathMapEntry(key: any, index = null) {
+export function clearFilePathMapEntry(key: any, index: number | null = null) {
   if (index !== null) {
     if (!filePathMap[key]) filePathMap[key] = [];
     // @ts-ignore
@@ -457,12 +482,7 @@ export function mapFormSettingsResponse(res: any) {
     showFileUploadProgress: res.show_file_upload_progress ?? true,
     showDocumentProgress: res.show_document_progress ?? true,
     mobileBreakpoint: res.mobile_breakpoint ?? DEFAULT_MOBILE_BREAKPOINT,
-    assistantEnabled: res.ai_assistant_settings?.enabled,
-    assistantColor: res.ai_assistant_settings?.color
-      ? `#${res.ai_assistant_settings.color}`
-      : '#6b7280',
-    assistantWorkflowActions: res.ai_assistant_settings?.workflow_actions ?? [],
-    assistantStepSettings: res.ai_assistant_settings?.step_settings ?? {}
+    assistantEnabled: res.ai_assistant_settings?.enabled
   };
 }
 

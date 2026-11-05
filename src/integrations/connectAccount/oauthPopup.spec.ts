@@ -73,6 +73,59 @@ describe('runOAuthPopup', () => {
     }
   );
 
+  it('completes Salesforce only once using the initiating browser secret', async () => {
+    const client = {
+      startAccountConnect: jest.fn().mockResolvedValue({
+        ...authorization,
+        completion_secret: 'browser-secret'
+      }),
+      completeAccountConnect: jest
+        .fn()
+        .mockResolvedValue({ success: true, account_email: 'own@example.com' })
+    };
+    const popup = {
+      closed: false,
+      close: jest.fn(),
+      focus: jest.fn(),
+      location: { href: '' }
+    } as unknown as Window;
+    let handler: ((event: MessageEvent) => void) | undefined;
+    jest
+      .spyOn(featheryWindow(), 'addEventListener')
+      .mockImplementation((type, listener) => {
+        if (type === 'message')
+          handler = listener as (event: MessageEvent) => void;
+      });
+    const result = runOAuthPopup(
+      client,
+      'salesforce-client-credentials',
+      popup
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const event = {
+      source: popup,
+      origin: authorization.callback_origin,
+      data: {
+        type: 'feathery-account-connect',
+        state: authorization.state,
+        success: true,
+        requires_completion: true
+      }
+    } as MessageEvent;
+    handler?.(event);
+    handler?.(event);
+    await expect(result).resolves.toEqual({
+      success: true,
+      account_email: 'own@example.com'
+    });
+    expect(client.completeAccountConnect).toHaveBeenCalledTimes(1);
+    expect(client.completeAccountConnect).toHaveBeenCalledWith(
+      'salesforce-client-credentials',
+      authorization.state,
+      'browser-secret'
+    );
+  });
+
   it('surfaces provider errors from the callback', async () => {
     const client = {
       startAccountConnect: jest.fn().mockResolvedValue(authorization)

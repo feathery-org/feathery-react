@@ -1,0 +1,20 @@
+Native PowerPoint reference crops, captured October 19, 2026 with Computer Use.
+Source: presentation-2_5aD3Wgt (1).pptx, the same deck as marketing-fonts.pptx
+(SHA256 2d8838b1e0d9b05868296e61fa0b90552cc2fcaffd1c828b61bb6492f2b8a49f).
+
+Each PNG is a lossless crop of the recorded native PowerPoint screenshot.
+The input screenshots were JPEG; their SHA256s are in regions.json. The native
+slide canvas starts at screenshot (357,166) and measures 1140 x 641 pixels.
+Each region's rectangle is relative to that canvas. No resizing, recoloring,
+font substitution, or layout edits were applied to the reference images.
+
+PowerPoint is the source of truth. Source overlaps are deliberately excluded.
+The regression compares per-line ink centers at the same 1140px canvas width,
+not whole-slide pixel equality. The 1.75px tolerance accommodates the different
+CoreGraphics/JPEG and Chrome/PNG rasterization paths. Before the leading fix,
+slides 12 and 14 differed by about 2.9px. The slide 6 text-coverage check also
+guards against replacing regular text with artificial bold as a visual patch.
+
+Run: yarn test:pptx-fonts --runInBand
+Do not regenerate these images from browser output. New references must come
+from PowerPoint and the source/hash/region metadata must be updated with them.

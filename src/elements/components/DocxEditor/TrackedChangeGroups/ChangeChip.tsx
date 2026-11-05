@@ -52,7 +52,8 @@ interface Props {
    *  view. */
   rowRef: (el: HTMLDivElement | null) => void;
   onFocus: () => void;
-  onResolve: (isAccept: boolean) => void;
+  /** Absent for an edit only its whole card can resolve. */
+  onResolve?: (isAccept: boolean) => void;
 }
 
 // One edit (A2 layout): a type badge and its −/+ diff on the left, its own
@@ -155,30 +156,32 @@ export default function ChangeChip({
           ))}
         </div>
       </div>
-      <div css={{ display: 'flex', gap: 2, flex: 'none' }}>
-        <button
-          type='button'
-          aria-label='Accept this edit'
-          css={rowAcceptBtn}
-          onClick={(event) => {
-            event.stopPropagation();
-            onResolve(true);
-          }}
-        >
-          <CheckIcon width={14} height={14} />
-        </button>
-        <button
-          type='button'
-          aria-label='Reject this edit'
-          css={rowRejectBtn}
-          onClick={(event) => {
-            event.stopPropagation();
-            onResolve(false);
-          }}
-        >
-          <CloseIcon width={14} height={14} />
-        </button>
-      </div>
+      {onResolve && (
+        <div css={{ display: 'flex', gap: 2, flex: 'none' }}>
+          <button
+            type='button'
+            aria-label='Accept this edit'
+            css={rowAcceptBtn}
+            onClick={(event) => {
+              event.stopPropagation();
+              onResolve(true);
+            }}
+          >
+            <CheckIcon width={14} height={14} />
+          </button>
+          <button
+            type='button'
+            aria-label='Reject this edit'
+            css={rowRejectBtn}
+            onClick={(event) => {
+              event.stopPropagation();
+              onResolve(false);
+            }}
+          >
+            <CloseIcon width={14} height={14} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

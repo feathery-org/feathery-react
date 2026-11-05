@@ -27,19 +27,6 @@
 const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;
 const ID_RE = /^[A-Za-z0-9_-]+$/;
 
-export function canonicalBindingName(value: unknown): string {
-  const requested = String(value ?? '').trim();
-  if (NAME_RE.test(requested)) return requested;
-  const normalized = requested
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^A-Za-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .toLowerCase();
-  if (!normalized) return '';
-  return /^[A-Za-z_]/.test(normalized) ? normalized : `field_${normalized}`;
-}
-
 const KEYS = new Set([
   'v',
   'table',
@@ -173,7 +160,7 @@ export function encodeValue(value: string): string {
  * Tolerant: a "%" that does not start a valid %XX escape is taken literally, so
  * hand-authored values like "default=0%" work without writing "0%25".
  */
-function decodeValue(value: string): string {
+export function decodeValue(value: string): string {
   const safe = String(value).replace(/%(?![0-9A-Fa-f]{2})/g, '%25');
   try {
     return decodeURIComponent(safe);

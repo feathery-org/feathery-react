@@ -5,10 +5,11 @@ import {
   normalizeKnownAsciiValues
 } from '../init';
 import debounce from 'lodash.debounce';
-import { rerenderAllForms } from '../formHelperFunctions';
+import { realignFilePathMap, rerenderAllForms } from '../formHelperFunctions';
 import {
   FieldStyles,
   getDefaultFormFieldValue,
+  isRepeatedFileField,
   OptionType
 } from '../fieldHelperFunctions';
 import {
@@ -18,7 +19,6 @@ import {
 } from '../logic';
 import { dataURLToFile, isBase64Image } from '../image';
 import internalState from '../internalState';
-import { isSameFieldValue } from '../fieldValueEquality';
 
 /**
  * Represents a field in a form.  Part of the SDK coding model.
@@ -58,18 +58,17 @@ export default class Field {
 
   _runFieldUpdate() {
     debouncedFormRerender();
-    return defaultClient.submitCustom({
-      [this._fieldKey]: fieldValues[this._fieldKey]
-    });
-  }
-
-  // Store a new value and queue it for submission, unless it matches what the
-  // field already holds: a rule that writes the current value back (common
-  // for rules that run on every change) must not generate network traffic.
-  _setValue(newVal: any) {
-    if (isSameFieldValue(fieldValues[this._fieldKey], newVal)) return;
-    fieldValues[this._fieldKey] = newVal;
-    this._runFieldUpdate();
+    const source = internalState[this._formUuid]?.steps
+      ? this._getSourceField()
+      : null;
+    return defaultClient.submitCustom(
+      { [this._fieldKey]: fieldValues[this._fieldKey] },
+      {
+        repeatedFileKeys: isRepeatedFileField(source?.servar)
+          ? [this._fieldKey]
+          : []
+      }
+    );
   }
 
   clear() {
@@ -78,13 +77,12 @@ export default class Field {
       const field = this._getSourceField();
       newVal = getDefaultFormFieldValue(field);
     }
-    this._setValue(
-      parseUserVal(
-        newVal,
-        this._fieldKey,
-        internalState[this._formUuid]?.client.formKey
-      )
+    fieldValues[this._fieldKey] = parseUserVal(
+      newVal,
+      this._fieldKey,
+      internalState[this._formUuid]?.client.formKey
     );
+    this._runFieldUpdate();
   }
 
   // raw field value
@@ -103,7 +101,11 @@ export default class Field {
             this._fieldKey,
             internalState[this._formUuid]?.client.formKey
           );
-          if (isSameFieldValue(target[property], parsed)) return true;
+          if (Array.isArray(target) && isArrayIndex(property)) {
+            const next = [...target];
+            next[Number(property)] = parsed;
+            realignFilePathMap(this._fieldKey, target, next);
+          }
           target[property] = parsed;
           this._runFieldUpdate();
           return true;
@@ -115,11 +117,12 @@ export default class Field {
   // set raw field value
   set value(val: FeatheryFieldTypes) {
     const formKey = internalState[this._formUuid]?.client.formKey;
-    this._setValue(
-      Array.isArray(val)
-        ? val.map((entry) => parseUserVal(entry, this._fieldKey, formKey))
-        : parseUserVal(val, this._fieldKey, formKey)
-    );
+    const next = Array.isArray(val)
+      ? val.map((entry) => parseUserVal(entry, this._fieldKey, formKey))
+      : parseUserVal(val, this._fieldKey, formKey);
+    realignFilePathMap(this._fieldKey, fieldValues[this._fieldKey], next);
+    fieldValues[this._fieldKey] = next;
+    this._runFieldUpdate();
   }
 
   _getFormSpecificProps(): {
@@ -226,7 +229,10 @@ export default class Field {
       (option: string, index: number) => ({
         value: option,
         label: (meta.option_labels ?? [])[index],
-        image: (meta.option_images ?? [])[index]
+        image: (meta.option_images ?? [])[index],
+        ...(field.servar.type === 'button_group' && {
+          icon: meta.option_icons?.[index] ?? null
+        })
       })
     );
     if (!field.servar.repeated) return defaultOptions;
@@ -457,6 +463,11 @@ export default class Field {
   }
 }
 
+// Proxy set traps see every property name; only numeric keys are repeat rows.
+function isArrayIndex(property: unknown): boolean {
+  return typeof property === 'string' && /^\d+$/.test(property);
+}
+
 export function parseUserVal(
   userVal: FeatheryFieldTypes,
   key: string,
@@ -478,3 +489,6 @@ export function parseUserVal(
 // debounce is still needed for long running async logic rules that could
 // complete after the event handling is done.
 const debouncedFormRerender = debounce(() => rerenderAllForms(), 100);
+
+// Runs a pending rule-triggered rerender now
+export const flushFormRerender = () => debouncedFormRerender.flush();

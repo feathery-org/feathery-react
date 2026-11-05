@@ -127,6 +127,7 @@ type UseHubTableSourceProps = {
 };
 
 type UseHubTableSourceReturn = {
+  hubId?: string;
   hubColumns: Column[];
   hubFieldValues: Record<string, any[]>;
   entryIds: Array<string | null>;
@@ -946,6 +947,7 @@ export function useHubTableSource({
   );
 
   return {
+    hubId,
     hubColumns,
     hubFieldValues,
     entryIds,

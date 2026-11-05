@@ -18,7 +18,9 @@ import {
   Occurrence,
   scanBindings,
   setCalculatedValue,
-  setOccurrenceText
+  setOccurrenceText,
+  revisionIdsOfType,
+  wholeContentDeleted
 } from './sfdtAdapter';
 import { createPositionalGrid } from './positionalGrid';
 import {
@@ -274,6 +276,11 @@ export function applyRules(
   let index = scanBindings(next);
   const groupedRevisions = groupedRevisionIds(sfdt);
   const revisions = allRevisionIds(sfdt);
+  // a control whose text the user deleted, tracked, keeps its binding, but its deleted text is the
+  // user's: no value is written back into it until the deletion is resolved
+  const deletedRevisions = revisionIdsOfType(sfdt, 'Deletion');
+  const textDeleted = (occurrence: { path: SfdtPath }) =>
+    wholeContentDeleted(getAt(next, occurrence.path), deletedRevisions);
   const structuralMutations: NativeStructuralMutation[] = [];
 
   /* ---- 0. adopt rows the user inserted with native editor tools ----
@@ -395,6 +402,10 @@ export function applyRules(
     };
     for (const occurrence of parsed) {
       const rendered = renderDisplay(occurrence.def.fieldType, txValue);
+      if (textDeleted(occurrence)) {
+        values.set(occurrence.key, txValue);
+        continue;
+      }
       if (values.get(occurrence.key) !== txValue) {
         // A grouped tracked replacement serializes as old Deletion plus new
         // Insertion runs. scanBindings projects it to the visible new value;
@@ -429,6 +440,7 @@ export function applyRules(
         occurrence.def.fieldType,
         values.get(occurrence.key) as string
       );
+      if (textDeleted(occurrence)) continue;
       const node = getAt(next, occurrence.path);
       const hasPendingRevision = referencesRevisionId(node, revisions);
       const hasGroupedRevision = referencesRevisionId(node, groupedRevisions);
@@ -703,6 +715,7 @@ export function applyRules(
     const id = nodeId(occurrence);
     if (!results.has(id)) continue;
     const out = results.get(id) as string;
+    if (textDeleted(occurrence)) continue;
     // setCalculatedValue is identity-preserving when the rendered text already
     // matches, so `updated !== next` doubles as change detection. This also
     // silently reverts any user edit typed over a locked formula: the engine's

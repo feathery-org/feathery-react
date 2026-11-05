@@ -39,7 +39,8 @@ function renderValue(
 export function replaceTextVariables(
   text: string,
   repeat?: any,
-  useOptionLabels = false
+  useOptionLabels = false,
+  transformValue?: (key: string, value: unknown) => unknown
 ) {
   if (!text) return '';
 
@@ -47,7 +48,9 @@ export function replaceTextVariables(
     const pStr = pattern.slice(2, -2);
     if (pStr === 'feathery_user_id') return initInfo().userId;
     if (pStr in fieldValues) {
-      const pVal = fieldValues[pStr];
+      const pVal = transformValue
+        ? transformValue(pStr, fieldValues[pStr])
+        : fieldValues[pStr];
       if (Array.isArray(pVal)) {
         if (pVal.length === 0) {
           return '';
@@ -138,9 +141,15 @@ function TextNodes({
     ...textCallbacks
   });
 
+  // Empty labels stay mounted in the builder so they can be typed into, but
+  // take no space until selected so the canvas matches the published form.
+  const collapseEmptyLabel =
+    editMode === 'editable' && !focused && !element.properties.text;
+
   editableProps.css = {
     ...editableProps.css,
-    ...responsiveStyles.getTarget(cssTarget)
+    ...responsiveStyles.getTarget(cssTarget),
+    ...(collapseEmptyLabel ? { minWidth: 0, paddingBottom: 0 } : {})
   };
 
   // Not using jsonpath because of issues with NextJS

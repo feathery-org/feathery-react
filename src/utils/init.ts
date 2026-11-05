@@ -17,8 +17,12 @@ import {
   type LinkRedemption
 } from './accessLink';
 import { remountAllForms, rerenderAllForms } from './formHelperFunctions';
+import internalState from './internalState';
 import { parseUserVal } from './entities/Field';
-import { isSameFieldValue } from './fieldValueEquality';
+import {
+  recordSubmittedValues,
+  resetSubmittedValues
+} from './submittedFieldValues';
 import { authState } from '../auth/LoginForm';
 // mask.ts imports nothing, so this stays free of the import cycles the rest of
 // the elements tree would introduce here.
@@ -288,6 +292,7 @@ function handleNewUserSearchParams(newUserId: string) {
  */
 function resetSubmissionState(): void {
   fieldValues = {};
+  resetSubmittedValues();
   filePathMap = {};
   restoredFileKeys.clear();
   initState.formSessions = {};
@@ -309,6 +314,13 @@ async function updateUserId(newUserId?: string, merge = false): Promise<void> {
     // for by rerenderAllForms
     if (authState.authId) location.reload();
     else remountAllForms();
+  } else {
+    // A merge keeps the forms mounted, so hosts are told the submission identity changed
+    Object.values(internalState).forEach((formState) =>
+      formState?.runtimeListeners?.forEach((listener) =>
+        listener({ type: 'identity' })
+      )
+    );
   }
 }
 
@@ -367,19 +379,17 @@ function setFieldValues(
   rerender = true,
   skipServerSubmit = false
 ): void {
-  // Only keys whose value actually changes are stored and submitted, so
-  // writing a field's current value back doesn't trigger a network flush.
   const result: FieldValues = {};
   Object.entries(userVals).forEach(([key, value]) => {
-    const parsed = Array.isArray(value)
-      ? value.map((entry) => parseUserVal(entry, key))
-      : parseUserVal(value, key);
-    if (!isSameFieldValue(fieldValues[key], parsed)) result[key] = parsed;
+    if (Array.isArray(value))
+      result[key] = value.map((entry) => parseUserVal(entry, key));
+    else result[key] = parseUserVal(value, key);
   });
 
   Object.assign(fieldValues, result);
-  if (!skipServerSubmit && Object.keys(result).length)
-    defaultClient.submitCustom(result);
+  // Values set with skipServerSubmit are ones the server already has
+  if (skipServerSubmit) recordSubmittedValues(result);
+  else defaultClient.submitCustom(result);
 
   if (rerender) rerenderAllForms();
 }

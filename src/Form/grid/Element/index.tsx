@@ -81,8 +81,7 @@ const Element = ({ node, form }: any) => {
     focusRef,
     setCardElement,
     visiblePositions,
-    featheryContext,
-    assistantClient
+    featheryContext
   } = form;
 
   const readOnly =
@@ -128,7 +127,6 @@ const Element = ({ node, form }: any) => {
         updateFieldValues={updateFieldValues}
         submitCustom={submitCustom}
         buttonLoaders={buttonLoaders}
-        assistantClient={assistantClient}
         client={form.client}
       />
     );
