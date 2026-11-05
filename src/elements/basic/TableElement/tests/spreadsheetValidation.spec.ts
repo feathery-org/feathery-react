@@ -52,30 +52,41 @@ describe('validateCellValue', () => {
       options: ['gold', 'silver']
     };
     expect(validateCellValue('gold', rule)).toBeNull();
-    expect(validateCellValue('bronze', rule)).toBe(
-      'Must be gold or silver'
-    );
+    expect(validateCellValue('bronze', rule)).toBe('Must be gold or silver');
     expect(
       validateCellValue('ab', { label: 'Code', type: 'text', minLength: 3 })
     ).toBe('At least 3 characters');
   });
 
   test('format columns check their own shapes', () => {
-    expect(
-      validateCellValue('nope', { label: 'Email', type: 'email' })
-    ).toBe('Invalid email');
+    expect(validateCellValue('nope', { label: 'Email', type: 'email' })).toBe(
+      'Invalid email'
+    );
     expect(
       validateCellValue('a@b.com', { label: 'Email', type: 'email' })
     ).toBeNull();
-    expect(
-      validateCellValue('12345', { label: 'SSN', type: 'tax_id' })
-    ).toBe('Must be 9 digits, no dashes');
+    expect(validateCellValue('12345', { label: 'SSN', type: 'tax_id' })).toBe(
+      'Must be 9 digits, no dashes'
+    );
     expect(
       validateCellValue('123456789', { label: 'SSN', type: 'tax_id' })
     ).toBeNull();
     expect(
       validateCellValue('not-a-uuid', { label: 'Ref', type: 'uuid' })
     ).toBe('Invalid UUID');
+  });
+
+  test('location columns check the stored forms the hub accepts', () => {
+    const zip = { label: 'ZIP', type: 'zip_code' } as const;
+    expect(validateCellValue('02134', zip)).toBeNull();
+    expect(validateCellValue('02134-1234', zip)).toBeNull();
+    expect(validateCellValue('2134', zip)).toBe('Must be 12345 or 12345-6789');
+    const state = { label: 'State', type: 'us_state' } as const;
+    expect(validateCellValue('CA', state)).toBeNull();
+    expect(validateCellValue('XX', state)).toBe('Must be a valid US state');
+    const country = { label: 'Country', type: 'country_code' } as const;
+    expect(validateCellValue('US', country)).toBeNull();
+    expect(validateCellValue('ZZ', country)).toBe('Must be a valid country');
   });
 
   test('phone numbers are held to the hub rule: digits only', () => {
@@ -118,7 +129,9 @@ describe('validateCellValue', () => {
   });
 
   test('a column with no checkable rule accepts anything', () => {
-    expect(validateCellValue('whatever', { label: 'Notes', type: 'any' })).toBeNull();
+    expect(
+      validateCellValue('whatever', { label: 'Notes', type: 'any' })
+    ).toBeNull();
   });
 });
 
@@ -161,7 +174,9 @@ describe('validateGrid', () => {
     // New rows are inserted at the TOP, so a pasted copy has the LOWER index.
     // Row 0 was just changed and row 2 is the pre-existing original: the
     // original must stay clean.
-    const rules = { email: { label: 'Email', type: 'email' as const, unique: true } };
+    const rules = {
+      email: { label: 'Email', type: 'email' as const, unique: true }
+    };
     const errors = validateGrid({
       rowIndices: [0, 1, 2],
       fieldKeys: ['email'],
@@ -189,7 +204,9 @@ describe('validateGrid', () => {
     // The hub checks uniqueness against verified rows only, and not at all
     // for a staged write. Row 2 (verified) shares row 0's email: it would be
     // flagged if row 0 were verified, but row 0 is staged here, so it is not.
-    const rules = { email: { label: 'Email', type: 'email' as const, unique: true } };
+    const rules = {
+      email: { label: 'Email', type: 'email' as const, unique: true }
+    };
     const staged = validateGrid({
       rowIndices: [0, 1, 2],
       fieldKeys: ['email'],
@@ -256,6 +273,22 @@ describe('rule derivation', () => {
     expect(rules.k).toMatchObject({ minValue: 1, maxValue: 9 });
   });
 
+  test('state and country columns become code pickers', () => {
+    const rules = hubCellRules(
+      [
+        { field_key: 's', name: 'State', hub_field_key: 'state' },
+        { field_key: 'c', name: 'Country', hub_field_key: 'country' }
+      ],
+      [
+        { key: 'state', type: 'us_state' },
+        { key: 'country', type: 'country_code' }
+      ]
+    );
+    expect(rules.s.type).toBe('us_state');
+    expect(rules.s.options).toEqual(expect.arrayContaining(['CA', 'DC']));
+    expect(rules.c.options).toEqual(expect.arrayContaining(['US', 'GB']));
+  });
+
   test('field-backed columns only get format and storage-type rules', () => {
     const rules = fieldCellRules([
       { field_key: 'a', name: 'Email', field_type: 'email' },
@@ -281,9 +314,15 @@ describe('rule derivation', () => {
 
 describe('listChoices via option rules', () => {
   test('reads as a sentence for one, two and many options', () => {
-    const rule = (options: string[]) => ({ label: 'Status', type: 'text' as const, options });
+    const rule = (options: string[]) => ({
+      label: 'Status',
+      type: 'text' as const,
+      options
+    });
     expect(validateCellValue('x', rule(['A']))).toBe('Must be A');
     expect(validateCellValue('x', rule(['A', 'B']))).toBe('Must be A or B');
-    expect(validateCellValue('x', rule(['A', 'B', 'C']))).toBe('Must be A, B, or C');
+    expect(validateCellValue('x', rule(['A', 'B', 'C']))).toBe(
+      'Must be A, B, or C'
+    );
   });
 });
