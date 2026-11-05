@@ -139,9 +139,7 @@ export default function PptxChangesPanel() {
         ...current,
         [record.id]:
           outcome.reason === 'conflict'
-            ? 'The affected content changed since this suggestion; resolve it manually.'
-            : outcome.reason === 'unsupported'
-            ? 'This suggestion cannot be auto-reverted; adjust the slide manually.'
+            ? 'This slide changed since the suggestion. Reject newer suggestions first, or edit it by hand.'
             : 'This suggestion is no longer pending.'
       }));
     }

@@ -148,3 +148,33 @@ describe('PptxEditorStore instance isolation', () => {
     store.dispose();
   });
 });
+
+describe('PptxEditorStore after reviewed or assistant changes', () => {
+  it('keeps the view on a real slide when rejecting a suggested slide the person is viewing', () => {
+    const store = loadedStore();
+    store.transaction({ origin: 'assistant' }, () =>
+      store.engine.execute({ type: 'add-slide', atIndex: 9 })
+    );
+    store.setActiveSlide(9);
+    store.rejectChange(store.engine.changes()[0].id);
+    const { deck, activeSlide } = store.getState();
+    expect(deck!.slides).toHaveLength(9);
+    expect(activeSlide).toBe(8);
+  });
+
+  it('drops the selection and stays in range when an assistant change deletes the viewed slide', () => {
+    const store = loadedStore();
+    store.setActiveSlide(8);
+    store.select(store.getState().deck!.slides[8].shapes[0].id);
+    store.transaction({ origin: 'assistant' }, () =>
+      store.engine.execute({
+        type: 'delete-slide',
+        slideId: store.getState().deck!.slides[8].path
+      })
+    );
+    const { deck, activeSlide, selectedId } = store.getState();
+    expect(deck!.slides).toHaveLength(8);
+    expect(activeSlide).toBe(7);
+    expect(selectedId).toBeNull();
+  });
+});

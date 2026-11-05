@@ -1,13 +1,19 @@
 import { releaseEmbeddedFonts } from '../core/render/embeddedFontRegistry';
-import { ungroupShape } from '../core/model/groups';
+import { findGroupMember, ungroupShape } from '../core/model/groups';
 import { applySlideJSON } from '../core/model/applyJson';
-import { deepClone } from '../core/opc/deepClone';
 import { exportDeckBytes } from '../core/model/export';
 import { releaseObjectUrls } from '../core/opc/objectUrls';
 import {
   captureHistorySnapshot,
+  keepingOtherSlides,
   restoreHistorySnapshot,
+  restoreShapes,
+  restoreShapesInOrder,
+  restoreSourceSlide,
   sameHistoryDocument,
+  slideShapes,
+  slidesChangedBetween,
+  unchangedSince,
   type HistoryRestoreResult,
   type PptxHistoryEntry,
   type PptxHistorySnapshot
@@ -55,6 +61,7 @@ import {
   unmergeTableCells
 } from '../core/model/edit';
 import type { Deck, Shape, Slide } from '../core/model/types';
+import type { OTree } from '../core/opc/xml';
 import type { CommandMeta, EditorCommand, Invalidation } from './commands';
 import { deriveChangeRecord, type PptxChangeRecord } from './changes';
 
@@ -112,6 +119,43 @@ function historyInvalidations(result: HistoryRestoreResult): Invalidation[] {
   return invalidations;
 }
 
+// The slides before a pending suggestion, so a reader can reject it from its own data, like a revision's deleted text
+function slidesBefore(
+  record: PptxChangeRecord,
+  before: PptxHistorySnapshot
+): Record<string, OTree> {
+  const deckWide = record.targets.some((target) => target.slideId === '*');
+  const paths = deckWide
+    ? Object.keys(before.sourceSlides)
+    : [...new Set(record.targets.map((target) => target.slideId))];
+  const beforeSlides: Record<string, OTree> = {};
+  for (const path of paths)
+    if (before.sourceSlides[path])
+      beforeSlides[path] = before.sourceSlides[path];
+  return beforeSlides;
+}
+
+const shapeOrder = (raw: OTree) => slideShapes(raw).map((shape) => shape.id);
+
+// Whether a suggestion deleted the shape or moved it among the shapes it kept, which an in-place restore cannot undo
+function changedPlacement(
+  before: string[],
+  after: string[],
+  shapeId: string
+): boolean {
+  if (!before.includes(shapeId)) return false;
+  if (!after.includes(shapeId)) return true;
+  const kept = (ids: string[]) =>
+    ids.filter((id) => before.includes(id) && after.includes(id));
+  return kept(before).indexOf(shapeId) !== kept(after).indexOf(shapeId);
+}
+
+interface OpenTransaction {
+  labels: string[];
+  invalidations: Invalidation[];
+  createdShapeIds: string[];
+}
+
 function jsonInvalidations(
   slideId: string,
   result: ReturnType<typeof applySlideJSON>
@@ -138,6 +182,12 @@ export class PptxEditorEngine {
   private changeLog: PptxChangeRecord[] = [];
   // Records whose transactions are currently undone (they return on redo).
   private shelvedRecords = new Map<string, PptxChangeRecord>();
+  private pendingSnapshots = new Map<
+    string,
+    { before: PptxHistorySnapshot; after: PptxHistorySnapshot }
+  >();
+
+  private openTransaction: OpenTransaction | null = null;
 
   constructor(deck: Deck | null = null) {
     this.deck = deck;
@@ -166,6 +216,49 @@ export class PptxEditorEngine {
     this.revision += 1;
     const result = this.result(true, [{ kind: 'deck' }]);
     this.emit('load', result);
+  }
+
+  /** The loaded deck for reading, change it only through commands */
+  readDeck(): Readonly<Deck> | null {
+    return this.deck;
+  }
+
+  /**
+   * Run several commands as one undo entry and one change record, like Word's undo group: a nested
+   * call joins the open one, and what ran before a throw is still kept as that one entry
+   */
+  transaction(meta: CommandMeta, run: () => void): CommandResult {
+    if (this.openTransaction) {
+      run();
+      return this.result(false, []);
+    }
+    const deck = this.requireDeck();
+    const before = this.present || captureHistorySnapshot(deck);
+    const open: OpenTransaction = {
+      labels: [],
+      invalidations: [],
+      createdShapeIds: []
+    };
+    this.openTransaction = open;
+    const close = () => {
+      this.openTransaction = null;
+      return this.record(
+        before,
+        this.present || captureHistorySnapshot(deck, before),
+        meta.label || open.labels[0] || 'Edit',
+        open.invalidations,
+        'change',
+        open.createdShapeIds,
+        meta
+      );
+    };
+    try {
+      run();
+    } catch (error) {
+      close();
+      throw error;
+    }
+    return close();
   }
 
   snapshot(): EditorSnapshot {
@@ -491,7 +584,7 @@ export class PptxEditorEngine {
       }
       case 'set-shape-fill': {
         const slide = this.requireSlide(command.slideId);
-        const shape = this.requireShape(slide, command.shapeId);
+        const shape = this.requireShapeOrGroupMember(slide, command.shapeId);
         setShapeFillColor(deck, slide, shape, command.color);
         invalidations = [
           { kind: 'shapes', slideId: slide.path, shapeIds: [shape.id] }
@@ -501,7 +594,7 @@ export class PptxEditorEngine {
       }
       case 'set-line-color': {
         const slide = this.requireSlide(command.slideId);
-        const shape = this.requireShape(slide, command.shapeId);
+        const shape = this.requireShapeOrGroupMember(slide, command.shapeId);
         setShapeLineColor(deck, slide, shape, command.color);
         invalidations = [
           { kind: 'shapes', slideId: slide.path, shapeIds: [shape.id] }
@@ -694,111 +787,148 @@ export class PptxEditorEngine {
     if (!record || record.status !== 'pending') return false;
     this.changeLog = this.changeLog.map((candidate) =>
       candidate === record
-        ? { ...candidate, status: 'accepted' as const }
+        ? { ...candidate, status: 'accepted' as const, beforeSlides: undefined }
         : candidate
     );
+    this.pendingSnapshots.delete(id);
     this.revision += 1;
     return true;
   }
 
   /**
-   * Reject a pending suggestion by executing an inverse engine command - but
-   * only when its targets are unchanged since the suggestion. A target that
-   * moved on is a conflict; later work is never overwritten.
+   * Reject a pending suggestion by restoring its targets from the slide XML before it, refused as a
+   * conflict when a target changed since so later work is never overwritten
    */
   rejectChange(
     id: string
   ):
     | { ok: true; results: CommandResult[] }
-    | { ok: false; reason: 'not-pending' | 'conflict' | 'unsupported' } {
+    | { ok: false; reason: 'not-pending' | 'conflict' } {
     const record = this.changeLog.find((candidate) => candidate.id === id);
     if (!record || record.status !== 'pending')
       return { ok: false, reason: 'not-pending' };
-    const doc = this.present?.document;
-    if (!doc) return { ok: false, reason: 'conflict' };
-    const before = record.before as Record<string, unknown>;
-    const after = record.after as Record<string, unknown>;
+    const snapshots = this.pendingSnapshots.get(id);
+    if (!snapshots || !this.isUnchangedSince(record))
+      return { ok: false, reason: 'conflict' };
 
-    // Validate every target first: reject is all-or-nothing.
-    type SlidePlan = { slideId: string; draft: any; deletions: string[] };
-    const plans = new Map<string, SlidePlan>();
-    for (const target of record.targets) {
-      if (target.slideId === '*') return { ok: false, reason: 'unsupported' };
-      const slide = doc.slides.find((s) => s.path === target.slideId);
-      if (!slide) return { ok: false, reason: 'conflict' };
-      let plan = plans.get(target.slideId);
-      if (!plan) {
-        plan = {
-          slideId: target.slideId,
-          draft: deepClone(slide),
-          deletions: []
-        };
-        plans.set(target.slideId, plan);
-      }
-      if (target.shapeId) {
-        const key = `${target.slideId}#${target.shapeId}`;
-        const current = slide.shapes.find((s) => s.id === target.shapeId);
-        const expected = after[key];
-        if (JSON.stringify(current ?? null) !== JSON.stringify(expected))
-          return { ok: false, reason: 'conflict' };
-        const previous = before[key];
-        if (previous === null) {
-          // The suggestion created this shape; rejecting deletes it.
-          if (!current) return { ok: false, reason: 'conflict' };
-          plan.deletions.push(target.shapeId);
-        } else if (current) {
-          const index = plan.draft.shapes.findIndex(
-            (s: any) => s.id === target.shapeId
-          );
-          plan.draft.shapes[index] = deepClone(previous);
-        } else {
-          // The suggestion deleted the shape; restoring it needs raw XML we
-          // no longer hold in the public projection.
-          return { ok: false, reason: 'unsupported' };
-        }
-      } else {
-        const expected = after[target.slideId];
-        if (JSON.stringify(slide) !== JSON.stringify(expected))
-          return { ok: false, reason: 'conflict' };
-        plans.set(target.slideId, {
-          slideId: target.slideId,
-          draft: deepClone(before[target.slideId]),
-          deletions: []
-        });
-      }
-    }
-
-    const results: CommandResult[] = [];
-    for (const plan of plans.values()) {
-      if (plan.deletions.length) {
-        results.push(
-          this.execute(
-            {
-              type: 'delete-shapes',
-              slideId: plan.slideId,
-              shapeIds: plan.deletions
-            },
-            { label: 'Reject suggestion', authorLabel: 'Reject' }
-          )
-        );
-        plan.draft.shapes = plan.draft.shapes.filter(
-          (s: any) => !plan.deletions.includes(s.id)
-        );
-      }
-      results.push(
-        this.applySlideJson(plan.slideId, plan.draft, {
-          label: 'Reject suggestion',
-          authorLabel: 'Reject'
-        })
+    const deck = this.requireDeck();
+    let invalidations: Invalidation[];
+    if (record.targets.some((target) => target.slideId === '*')) {
+      // Only the slide order and the slides this suggestion changed go back, later edits elsewhere stay
+      restoreHistorySnapshot(
+        deck,
+        keepingOtherSlides(
+          snapshots.before,
+          this.present as PptxHistorySnapshot,
+          slidesChangedBetween(snapshots.before, snapshots.after)
+        )
       );
+      invalidations = [{ kind: 'deck' }];
+    } else {
+      const targetsBySlide = new Map<string, Array<string | undefined>>();
+      for (const target of record.targets)
+        targetsBySlide.set(target.slideId, [
+          ...(targetsBySlide.get(target.slideId) ?? []),
+          target.shapeId
+        ]);
+      // Decide every slide before touching any: a whole slide back exactly, shapes back in place, or a conflict
+      const plans = [...targetsBySlide].map(([slideId, shapeIds]) => {
+        const beforeRaw = snapshots.before.sourceSlides[slideId];
+        const afterRaw = snapshots.after.sourceSlides[slideId];
+        const currentRaw = this.requireSlide(slideId).raw;
+        const untouched =
+          JSON.stringify(currentRaw) === JSON.stringify(afterRaw);
+        const beforeOrder = shapeOrder(beforeRaw);
+        const afterOrder = shapeOrder(afterRaw);
+        const shapeTargetIds = shapeIds.filter(
+          (shapeId): shapeId is string => !!shapeId
+        );
+        const shapeTargets = shapeTargetIds.length === shapeIds.length;
+        const inPlace =
+          shapeTargets &&
+          shapeTargetIds.every(
+            (shapeId) => !changedPlacement(beforeOrder, afterOrder, shapeId)
+          );
+        const sameOrder =
+          shapeTargets &&
+          JSON.stringify(shapeOrder(currentRaw)) === JSON.stringify(afterOrder);
+        return {
+          slideId,
+          beforeRaw,
+          shapeIds: shapeTargetIds,
+          how: untouched
+            ? 'whole'
+            : inPlace
+            ? 'in-place'
+            : sameOrder
+            ? 'in-order'
+            : 'refused'
+        };
+      });
+      if (plans.some((plan) => plan.how === 'refused'))
+        return { ok: false, reason: 'conflict' };
+      invalidations = plans.map((plan): Invalidation => {
+        if (plan.how === 'whole') {
+          restoreSourceSlide(deck, plan.slideId, plan.beforeRaw);
+          return { kind: 'slide', slideId: plan.slideId };
+        }
+        (plan.how === 'in-order' ? restoreShapesInOrder : restoreShapes)(
+          deck,
+          this.requireSlide(plan.slideId),
+          plan.beforeRaw,
+          plan.shapeIds
+        );
+        return {
+          kind: 'structure',
+          slideId: plan.slideId,
+          shapeIds: plan.shapeIds
+        };
+      });
     }
+    const result = this.commit(
+      'Reject suggestion',
+      invalidations,
+      'change',
+      [],
+      {
+        label: 'Reject suggestion',
+        authorLabel: 'Reject'
+      }
+    );
     this.changeLog = this.changeLog.map((candidate) =>
       candidate.id === id
-        ? { ...candidate, status: 'rejected' as const }
+        ? { ...candidate, status: 'rejected' as const, beforeSlides: undefined }
         : candidate
     );
+    this.pendingSnapshots.delete(id);
     this.revision += 1;
-    return { ok: true, results };
+    return { ok: true, results: [result] };
+  }
+
+  // Every target's XML still looks the way the suggestion left it, wherever it sits now
+  private isUnchangedSince(record: PptxChangeRecord): boolean {
+    const present = this.present;
+    const snapshots = this.pendingSnapshots.get(record.id);
+    if (!present || !snapshots) return false;
+    return record.targets.every((target) => {
+      if (target.slideId === '*')
+        return unchangedSince(
+          present,
+          snapshots.after,
+          slidesChangedBetween(snapshots.before, snapshots.after)
+        );
+      const slide = this.deck?.slides.find((s) => s.path === target.slideId);
+      const afterRaw = snapshots.after.sourceSlides[target.slideId];
+      if (!slide || !afterRaw) return false;
+      if (!target.shapeId)
+        return JSON.stringify(slide.raw) === JSON.stringify(afterRaw);
+      const nodeOf = (raw: OTree) =>
+        JSON.stringify(
+          slideShapes(raw).find((shape) => shape.id === target.shapeId)?.node ??
+            null
+        );
+      return nodeOf(slide.raw) === nodeOf(afterRaw);
+    });
   }
 
   /** Cheap dirty check against the saved baseline (no snapshot cloning). */
@@ -845,6 +975,7 @@ export class PptxEditorEngine {
     this.redoStack = [];
     this.changeLog = [];
     this.shelvedRecords.clear();
+    this.pendingSnapshots.clear();
     this.historyRevision += 1;
   }
 
@@ -856,6 +987,7 @@ export class PptxEditorEngine {
     }
     this.changeLog = [];
     this.shelvedRecords.clear();
+    this.pendingSnapshots.clear();
     this.deck = null;
     this.present = null;
     this.baseline = null;
@@ -874,6 +1006,37 @@ export class PptxEditorEngine {
     const before = this.present || captureHistorySnapshot(deck);
     const after = captureHistorySnapshot(deck, before);
     this.present = after;
+    invalidations = this.groupOwnedInvalidations(invalidations);
+    const open = this.openTransaction;
+    if (!open)
+      return this.record(
+        before,
+        after,
+        label,
+        invalidations,
+        event,
+        createdShapeIds,
+        meta
+      );
+    const changed = !sameHistoryDocument(before, after);
+    if (changed) {
+      open.labels.push(label);
+      open.invalidations.push(...invalidations);
+      open.createdShapeIds.push(...createdShapeIds);
+    }
+    return this.result(changed, invalidations, createdShapeIds);
+  }
+
+  private record(
+    before: PptxHistorySnapshot,
+    after: PptxHistorySnapshot,
+    label: string,
+    invalidations: Invalidation[],
+    event: EditorEvent['kind'],
+    createdShapeIds: string[],
+    meta: CommandMeta
+  ): CommandResult {
+    this.present = after;
     if (sameHistoryDocument(before, after)) return this.result(false, []);
     const entryId = ++this.sequence;
     this.undoStack = [
@@ -882,22 +1045,49 @@ export class PptxEditorEngine {
     ].slice(-HISTORY_LIMIT);
     this.redoStack = [];
     // Redo is gone, so records shelved by undo can never come back.
+    for (const shelved of this.shelvedRecords.values())
+      this.pendingSnapshots.delete(shelved.id);
     this.shelvedRecords.clear();
-    this.changeLog = [
-      ...this.changeLog,
-      deriveChangeRecord({
-        transactionId: entryId,
-        label,
-        meta,
-        invalidations,
-        beforeDoc: before.document,
-        afterDoc: after.document
-      })
-    ];
+    const changeRecord = deriveChangeRecord({
+      transactionId: entryId,
+      label,
+      meta,
+      invalidations,
+      beforeDoc: before.document,
+      afterDoc: after.document
+    });
+    if (changeRecord.status === 'pending') {
+      this.pendingSnapshots.set(changeRecord.id, { before, after });
+      changeRecord.beforeSlides = slidesBefore(changeRecord, before);
+    }
+    this.changeLog = [...this.changeLog, changeRecord];
     this.revision += 1;
     const result = this.result(true, invalidations, createdShapeIds);
     this.emit(event, result);
     return result;
+  }
+
+  // A group member's edit repaints and records as a change to its top-level group
+  private groupOwnedInvalidations(
+    invalidations: Invalidation[]
+  ): Invalidation[] {
+    return invalidations.map((invalidation) => {
+      if (invalidation.kind !== 'shapes' && invalidation.kind !== 'structure')
+        return invalidation;
+      const slide = this.deck?.slides.find(
+        (candidate) => candidate.path === invalidation.slideId
+      );
+      if (!slide) return invalidation;
+      const ownerIds = invalidation.shapeIds.map((shapeId) => {
+        if (slide.shapes.some((shape) => shape.id === shapeId)) return shapeId;
+        const group = slide.shapes.find(
+          (shape) =>
+            shape.type === 'group' && !!findGroupMember([shape], shapeId)
+        );
+        return group?.id ?? shapeId;
+      });
+      return { ...invalidation, shapeIds: [...new Set(ownerIds)] };
+    });
   }
 
   private result(
@@ -931,7 +1121,7 @@ export class PptxEditorEngine {
   }
 
   private requireTextShape(slide: Slide, shapeId: string): Shape {
-    const shape = this.requireShape(slide, shapeId);
+    const shape = this.requireShapeOrGroupMember(slide, shapeId);
     if (!shape?.text)
       throw new Error(`Text shape ${shapeId} was not found on ${slide.path}`);
     return shape;
@@ -939,6 +1129,16 @@ export class PptxEditorEngine {
 
   private requireShape(slide: Slide, shapeId: string): Shape {
     const shape = slide.shapes.find((candidate) => candidate.id === shapeId);
+    if (!shape)
+      throw new Error(`Shape ${shapeId} was not found on ${slide.path}`);
+    return shape;
+  }
+
+  // Edits made in place may reach into groups, edits that move or remove a shape may not
+  private requireShapeOrGroupMember(slide: Slide, shapeId: string): Shape {
+    const shape =
+      slide.shapes.find((candidate) => candidate.id === shapeId) ??
+      findGroupMember(slide.shapes, shapeId);
     if (!shape)
       throw new Error(`Shape ${shapeId} was not found on ${slide.path}`);
     return shape;

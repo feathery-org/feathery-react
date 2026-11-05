@@ -86,3 +86,56 @@ it('keeps transformed groups intact rather than silently changing their appearan
   ).toThrow('cannot be ungrouped');
   expect(slide.shapes).toContain(group);
 });
+
+it('edits text inside a group in place and records it against the group', () => {
+  const engine = new PptxEditorEngine(load());
+  const slide = engine.readDeck()!.slides[1];
+  const group = slide.shapes.find((shape) => shape.type === 'group')!;
+  const member = childrenOf(group.node)
+    .map((node) => readShapeNode(node))
+    .find((shape) => shape?.text?.paragraphs.some((p) => p.runs.length))!;
+  const groupBefore = JSON.stringify(
+    engine
+      .snapshot()
+      .document!.slides[1].shapes.find((shape) => shape.id === group.id)
+  );
+  engine.execute(
+    {
+      type: 'replace-rich-text',
+      slideId: slide.path,
+      shapeId: member.id,
+      paragraphs: [{ runs: [{ text: 'Owner' }] }]
+    },
+    { origin: 'assistant' }
+  );
+  const edited = engine
+    .snapshot()
+    .document!.slides[1].shapes.find((shape) => shape.id === group.id)!;
+  const editedMember = edited.children!.find((shape) => shape.id === member.id)!;
+  expect(editedMember.text!.paragraphs[0].runs[0].text).toBe('Owner');
+  const record = engine.changes()[0];
+  expect(record.targets).toEqual([{ slideId: slide.path, shapeId: group.id }]);
+
+  expect(engine.rejectChange(record.id).ok).toBe(true);
+  expect(
+    JSON.stringify(
+      engine
+        .snapshot()
+        .document!.slides[1].shapes.find((shape) => shape.id === group.id)
+    )
+  ).toBe(groupBefore);
+});
+
+it('refuses to delete a group member on its own', () => {
+  const engine = new PptxEditorEngine(load());
+  const slide = engine.readDeck()!.slides[1];
+  const group = slide.shapes.find((shape) => shape.type === 'group')!;
+  const memberId = readShapeNode(childrenOf(group.node).find((node) => readShapeNode(node))!)!.id;
+  expect(() =>
+    engine.execute({
+      type: 'delete-shapes',
+      slideId: slide.path,
+      shapeIds: [memberId]
+    })
+  ).toThrow(/was not found/);
+});
