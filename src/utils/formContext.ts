@@ -415,6 +415,10 @@ export const getFormContext = (formUuid: string) => {
       // toolbar offers. 'draft' is DocuSign-only (it finalizes as a sign with
       // draft=true).
       toolbarActions?: ('sign' | 'download' | 'save' | 'draft')[];
+      // Only for envelopeAction 'open_in_editor': true locks the PDF fields in
+      // the review viewer, like the Generate Documents action's editor "Read
+      // only" setting. Has no effect on docx or pptx documents. Defaults to
+      // false.
       readOnly?: boolean;
       // Only for envelopeAction 'open_in_editor': false keeps the editor open
       // after a toolbar action, and the flow continues once the filler closes
@@ -655,7 +659,9 @@ export const getFormContext = (formUuid: string) => {
               })
             ),
             editor_toolbar_actions: toolbarActions,
-            ...(readOnly !== undefined ? { editor_read_only: readOnly } : {}),
+            ...(readOnly !== undefined
+              ? { editor_read_only: readOnly === true }
+              : {}),
             ...(closeOnAction !== undefined
               ? { editor_close_on_action: closeOnAction }
               : {}),
