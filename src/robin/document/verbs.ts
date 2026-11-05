@@ -21,6 +21,7 @@ import {
   ROOT_ID,
   ReadInput,
   ReadResult,
+  RefusedResult,
   Refusal,
   RefusalProblem,
   Warning,
@@ -29,15 +30,23 @@ import {
   isFormatId,
   isNodeId,
   makeRefusal,
+  refusedResult,
   stripReadOnlyKeys
 } from './envelope';
 import { IdTable, mintWritten, renameFormatRefs } from './ids';
 import { renderOutline } from './outline';
-import type { DocumentView, FormatTable, Pack, Residue } from './pack';
+import type {
+  DocumentView,
+  FormatTable,
+  Pack,
+  LaidOutPage,
+  Residue
+} from './pack';
 import {
   FormatEntry,
   NfNode,
   NormalForm,
+  ancestorsOf,
   baseOf,
   canonicalJson,
   clone,
@@ -78,9 +87,116 @@ export interface DocumentState {
 
 export function outlineVerb(
   state: DocumentState,
-  input: OutlineInput
-): OutlineResult {
-  return renderOutline(state.view, state.pack, input.depth);
+  input: OutlineInput,
+  readPages?: () => LaidOutPage[] | null
+): OutlineResult | RefusedResult {
+  const { view, pack } = state;
+  const { pageNumber, pagePosition } = input;
+  if (pageNumber === undefined && pagePosition === undefined)
+    return renderOutline(view, pack, input.depth);
+  const pages = readPages?.() ?? null;
+  const named = pages ? pagesNamed(pages, input) : [];
+  const at = named.length === 1 ? named[0] : -1;
+  if (!pages || !pages[at]?.paragraphs.length)
+    return refusedResult(makeRefusal([pageProblem(input, pages, named)]));
+
+  const { paragraphs, number } = pages[at];
+  const within = new Set<string>();
+  for (const { id } of paragraphs) {
+    for (const ancestor of ancestorsOf(id, { get: view.placement }))
+      within.add(ancestor);
+    const paragraph = view.get(id);
+    if (paragraph)
+      walk(paragraph, pack.tree, (p) => {
+        within.add(p.node.id);
+      });
+  }
+
+  const after = pages.findIndex((p, i) => i > at && p.paragraphs.length);
+  const shown =
+    number === null
+      ? 'it shows no page number'
+      : `it shows page number ${number}`;
+  const ends =
+    after < 0
+      ? 'It runs to the end of the document.'
+      : `Page ${after + 1} starts in ${pageStarts(pages[after])}.`;
+  return {
+    ...renderOutline(view, pack, input.depth, within),
+    page: `Page ${at + 1} of ${
+      pages.length
+    } by position (${shown}) starts in ${pageStarts(pages[at])}. ${ends}`
+  };
+}
+
+/** Where a page starts: its first paragraph and any other paragraph continued from the previous page */
+function pageStarts({ paragraphs }: LaidOutPage): string {
+  const seen = new Set<string>();
+  const starts = paragraphs.filter(({ id, offset }, i) => {
+    const isStart = i === 0 || (offset > 0 && !seen.has(id));
+    seen.add(id);
+    return isStart;
+  });
+  return starts
+    .map(({ id, offset }) => `${id} at character ${offset}`)
+    .join(' and ');
+}
+
+/** The laid-out pages an outline names, several when restarted numbering repeats a page number */
+function pagesNamed(pages: LaidOutPage[], input: OutlineInput): number[] {
+  const { pageNumber, pagePosition } = input;
+  if (pagePosition !== undefined) return [pagePosition - 1];
+  // A document that shows no page numbers is numbered by position
+  if (!pages.some((p) => p.number !== null)) return [(pageNumber ?? 0) - 1];
+  return pages.flatMap((p, i) => (p.number === pageNumber ? [i] : []));
+}
+
+function pageProblem(
+  input: OutlineInput,
+  pages: LaidOutPage[] | null | undefined,
+  named: number[]
+): RefusalProblem {
+  if (!pages)
+    return problem(
+      'page-layout-unavailable',
+      'No outline was rendered: the editor has not laid the document out into pages.',
+      { hint: 'Outline the whole document instead.' }
+    );
+  if (named.length > 1) {
+    const candidates = named.map(
+      (i) =>
+        `page ${i + 1} by position, starting in ${
+          pages[i].paragraphs[0]?.id ?? 'nothing addressable'
+        }`
+    );
+    return problem(
+      'page-ambiguous',
+      `No outline was rendered: ${named.length} pages show page number ${input.pageNumber}.`,
+      {
+        hint: `They are ${candidates.join(
+          '; '
+        )}. Ask the person which one they mean, describing each by what it holds, then outline it with pagePosition.`
+      }
+    );
+  }
+  const at = named.length === 1 ? named[0] : -1;
+  if (at < 0 || at >= pages.length) {
+    const shown = pages.flatMap((p) => (p.number === null ? [] : [p.number]));
+    const range =
+      input.pageNumber !== undefined && shown.length
+        ? `${Math.min(...shown)} to ${Math.max(...shown)}`
+        : `1 to ${pages.length}`;
+    return problem(
+      'page-range',
+      'No outline was rendered: the document has no such page.',
+      { hint: `Its pages run from ${range}.` }
+    );
+  }
+  return problem(
+    'page-layout',
+    'No outline was rendered: that page holds nothing the outline can address.',
+    { retry: 'do_not_retry' }
+  );
 }
 
 /** Every node id in an emitted subtree. */

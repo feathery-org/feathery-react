@@ -180,15 +180,6 @@ export function revisionIdsOfType(
   return ids;
 }
 
-export function hasOnlyRevisionIds(node: any, ids: Set<string>): boolean {
-  const revisionIds = node?.revisionIds;
-  return (
-    Array.isArray(revisionIds) &&
-    revisionIds.length > 0 &&
-    revisionIds.every((id) => ids.has(String(id)))
-  );
-}
-
 export function hasRevisionId(node: any, ids: Set<string>): boolean {
   return (
     Array.isArray(node?.revisionIds) &&
@@ -211,7 +202,8 @@ export function wholeContentDeleted(
       if (!inline) continue;
       if (typeof inline.text === 'string' && !inline.contentControlProperties) {
         text += 1;
-        if (!hasOnlyRevisionIds(inline, deletedRevisionIds)) live += 1;
+        // text any card deletes is gone, even text another card inserted
+        if (!hasRevisionId(inline, deletedRevisionIds)) live += 1;
       }
       if (Array.isArray(inline.inlines)) visit(inline.inlines);
     }
@@ -289,7 +281,7 @@ function ccText(node: any, deletedRevisionIds: Set<string>): string {
     node.inlines ||
     (node.blocks || []).flatMap((block: any) => block?.inlines || []);
   for (const inline of inlines) {
-    if (hasOnlyRevisionIds(inline, deletedRevisionIds)) continue;
+    if (hasRevisionId(inline, deletedRevisionIds)) continue;
     if (typeof inline.text === 'string' && !inline.contentControlProperties)
       out += inline.text;
     else if (inline.contentControlProperties)

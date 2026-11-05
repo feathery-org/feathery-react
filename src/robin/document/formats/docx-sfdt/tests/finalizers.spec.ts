@@ -9,8 +9,10 @@ import { DocumentSession } from '../../../session';
 import { NfNode, baseOf, shapeOf } from '../../../tree';
 import { docxTree } from '../tree';
 import { prepareWrite } from '../../../verbs';
+import { makeView } from '../../../view';
 import { docxPack } from '../index';
 import { setControlText } from '../finalizers/formulas';
+import { sectionTailFinalizer, tableIdentityFinalizer } from '../finalizers/structure';
 import { arr } from '../util';
 
 const flagship = fs.readFileSync(path.join(__dirname, 'corpus', 'flagship-v4b.sfdt.json'), 'utf8');
@@ -115,6 +117,21 @@ describe('a new table takes the look of the document\'s tables (Codex review D5)
   });
 });
 
+describe('section tail finalizer', () => {
+  it('ends a section that would end in a table with an empty paragraph, as the editor does on open (55dfaa75 t7)', () => {
+    const s = state();
+    const after = JSON.parse(JSON.stringify(s.view.nf));
+    const sections = arr<NfNode>(after.root.sections);
+    const table = arr<NfNode>(sections[1].blocks).find((b) => b.kind === 'table') as NfNode;
+    sections[0].blocks = [...arr<NfNode>(sections[0].blocks), table];
+    const untouched = arr<NfNode>(sections[2]?.blocks).length;
+    sectionTailFinalizer.run(after, { before: s.view, formats: after.formats, residue: s.residue });
+    const tail = arr<NfNode>(sections[0].blocks).at(-1) as NfNode;
+    expect([tail.kind, arr(tail.inlines).length]).toEqual(['paragraph', 0]);
+    expect(arr<NfNode>(sections[2]?.blocks).length).toBe(untouched);
+  });
+});
+
 describe('table identity finalizer', () => {
   it('a copied bound table gets its own table id; the original keeps its own', () => {
     const s = state();
@@ -136,6 +153,21 @@ describe('table identity finalizer', () => {
     expect(ids[1]).not.toBe(original);
     expect(typeof ids[1]).toBe('string');
     expect(r.facts).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'finalizer', name: 'tables' })]));
+  });
+});
+
+describe('table identity finalizer: copies the document already had', () => {
+  it("leaves a pending move's two bound copies alone in a later write (b592d997 t7)", () => {
+    const s = state();
+    const sections = arr<NfNode>(s.view.nf.root.sections);
+    const blocks = arr<NfNode>(sections[1].blocks);
+    const control = blocks[10];
+    blocks.splice(2, 0, { ...JSON.parse(JSON.stringify(control)), id: 'ghost' });
+    const before = makeView(s.view.nf, docxPack);
+    const after = JSON.parse(JSON.stringify(s.view.nf));
+    const r = tableIdentityFinalizer.run(after, { before, formats: s.view.nf.formats, residue: s.residue });
+    expect(r.ids).toEqual([]);
+    expect(r.facts).toEqual([]);
   });
 });
 

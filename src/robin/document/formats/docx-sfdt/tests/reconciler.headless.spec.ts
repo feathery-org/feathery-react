@@ -71,7 +71,7 @@ async function commitAndUndo(delta: string, pre: string, write: unknown, inspect
     const revisions = await lane.call<Array<{ group: string | null; author: string; title: string | null }>>('revisions');
     const ours = revisions.filter((r) => r.group === `turn-${turn}`);
     expect(ours.length).toBeGreaterThan(0);
-    expect(ours.every((r) => r.author === 'Robin')).toBe(true);
+    expect(ours.every((r) => r.author.replace(/[\u2060\u2061]/g, '') === 'Robin')).toBe(true);
     title = ours[0].title ?? undefined;
   }
   if (inspect) await inspect();
@@ -602,7 +602,7 @@ describe('WP1 delta by path, through the engine in the real editor', () => {
     const anchors = (native: string) => {
       const d = JSON.parse(native);
       const by: Record<string, string> = {};
-      for (const r of d.revisions ?? []) by[r.revisionId] = r.author;
+      for (const r of d.revisions ?? []) by[r.revisionId] = r.author.replace(/[\u2060\u2061]/g, '');
       const out: Record<string, Record<string, number>> = {};
       const walk = (n: any) => {
         if (Array.isArray(n)) return n.forEach(walk);

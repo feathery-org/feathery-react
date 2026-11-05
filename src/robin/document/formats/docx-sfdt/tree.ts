@@ -4,6 +4,8 @@
  */
 import type { PackTree } from '../../pack';
 import type { NfNode } from '../../tree';
+import { contentKey } from '../../tree';
+import { goneOnAccept } from './projections';
 import {
   BLOCK_KINDS,
   HEADER_FOOTER,
@@ -107,4 +109,21 @@ function identity(node: NfNode): string | null {
     : null;
 }
 
-export const docxTree: PackTree = { childLists, inferKind, accepts, identity };
+function continuesText(previous: NfNode, next: NfNode): boolean {
+  return (
+    previous.kind === KIND.run &&
+    next.kind === KIND.run &&
+    typeof previous.text === 'string' &&
+    typeof next.text === 'string' &&
+    contentKey({ ...previous, text: '' }) === contentKey({ ...next, text: '' })
+  );
+}
+
+export const docxTree: PackTree = {
+  childLists,
+  inferKind,
+  accepts,
+  identity,
+  continuesText,
+  goneOnAccept
+};

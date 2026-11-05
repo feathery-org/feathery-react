@@ -9,8 +9,10 @@ import type { DocumentView, FeatureMark } from '../../pack';
 import type { NfNode } from '../../tree';
 import { hasPendingInside } from '../../tree';
 import { HEADER_FOOTER, INLINE_KINDS, KIND } from './adapter/keys';
+import { revisionsIn } from './adapter/revisions';
 import { bindingMarks } from './features/formula';
 import { sectionMarkerMark } from './features/sectionMarker';
+import { SECTION_BREAKS } from './schema';
 import { viewToc } from './toc';
 import { docxTree } from './tree';
 import { arr } from './util';
@@ -70,8 +72,11 @@ const frameText = (node: NfNode): string =>
 const pendingTag = (n: NfNode): string => {
   if (!isObject(n.pending)) return '';
   const p = n.pending;
-  const parts = [p.kind, p.author && `by ${p.author}`].filter(Boolean);
-  return ` [pending ${parts.join(' ')}${
+  // A later card's deletion stacked on an insertion shows as both
+  const parts = revisionsIn(p).map((r) =>
+    [r.kind, r.author && `by ${r.author}`].filter(Boolean).join(' ')
+  );
+  return ` [pending ${parts.join(', then ')}${
     isObject(p.mark) ? `${parts.length ? ', ' : ''}mark ${p.mark.kind}` : ''
   }]`;
 };
@@ -137,10 +142,15 @@ export function detail(node: NfNode, view: DocumentView): string {
       const index = arr<NfNode>(view.nf.root.sections).findIndex(
         (s) => s.id === node.id
       );
-      const brk =
+      const written =
         typeof node.style === 'string'
           ? formats[node.style]?.breakCode
           : undefined;
+      // the editor lays out any break it does not know as a new page
+      const brk =
+        written === undefined || SECTION_BREAKS.includes(String(written))
+          ? written
+          : 'NewPage';
       return `${index + 1}${brk ? ` (break: ${brk})` : ''}${pendingTag(node)}`;
     }
     case KIND.paragraph: {

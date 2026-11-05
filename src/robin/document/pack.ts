@@ -106,6 +106,10 @@ export interface PackTree extends TreeShape {
    * pins nodes with equal identities before anything else when it re-anchors. Null when none.
    */
   identity?(node: NfNode): string | null;
+  /** Whether `next` continues the text of the sibling before it: the editor splits such pieces freely */
+  continuesText?(previous: NfNode, next: NfNode): boolean;
+  /** Whether accepting every pending change would remove the node (a deleted copy still on the page) */
+  goneOnAccept?(node: NfNode): boolean;
 }
 
 /**
@@ -334,6 +338,12 @@ export interface Projections {
 // Writing into the live editor
 // ---------------------------------------------------------------------------------------------
 
+/** A laid-out page: its paragraphs in layout order, each from where its part on the page starts, and the page number it shows, if any */
+export type LaidOutPage = {
+  paragraphs: Array<{ id: string; offset: number }>;
+  number: number | null;
+};
+
 /** The live editor as the core drives it. The pack builds one around its editor. */
 export interface EditorHost {
   serialize(): string;
@@ -346,6 +356,8 @@ export interface EditorHost {
   readOnly(): boolean;
   /** The person's selection as the editor reports it, opaque to the core; null when there is none. */
   selection?(): unknown;
+  /** Where each page the editor lays out starts, opaque to the core, null when it has no pages */
+  pages?(): unknown;
 }
 
 export interface SeamContext {
@@ -506,6 +518,8 @@ export interface Pack {
     end: { id: string; offset: number };
     text: string;
   } | null;
+  /** Each page the editor lays out (`EditorHost.pages`), in layout order */
+  pages?(view: DocumentView, native: unknown): LaidOutPage[] | null;
 }
 
 const REQUIRED_FUNCTIONS: Array<[string, (p: Pack) => unknown]> = [

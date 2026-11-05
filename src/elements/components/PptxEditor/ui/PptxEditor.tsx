@@ -4,7 +4,7 @@ import {
   usePptxEditorState,
   usePptxEditorStore
 } from '../state/PptxEditorContext';
-import { SvgSlide, ZOOM_MAX, ZOOM_MIN } from './SlideStage';
+import { SvgSlide, ZOOM_MAX, ZOOM_STEP_MIN } from './SlideStage';
 import { Toolbar } from './PptxToolbar';
 import DocumentSaveStatus from '../../DocumentEditor/DocumentSaveStatus';
 import InstantTooltips from './InstantTooltips';
@@ -40,6 +40,13 @@ import {
   SpinnerIcon
 } from '../../DocxEditor/icons';
 import type { PptxEditorProps } from '../types';
+import {
+  PresentationLoader,
+  releasePreparedDeck
+} from '../loading/PresentationLoader';
+import { importPreparedDeck } from '../core/model/import';
+import { OPCPackage } from '../core/opc/package';
+import { prepareInWorker } from '../loading/packageWorker';
 import { savePresentation } from '../persistence';
 import { withShortcut } from './shortcuts';
 import { onFontMetricsSettled } from '../core/render/fonts';
@@ -67,6 +74,7 @@ function PptxEditorInner({
   reviewChanges = false,
   openNonce = 0,
   onReady,
+  prepareSource,
   onChange,
   onError,
   onLoadError,
@@ -90,33 +98,56 @@ function PptxEditorInner({
   const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
   const downloadMenuRef = useRef<HTMLSpanElement>(null);
   const [activePanel, setActivePanel] = useState<PptxPanelKind | null>(null);
-  const [zoomPct, setZoomPct] = useState(75);
+  const [zoomPct, setZoomPct] = useState(100);
+  const [fitToContainer, setFitToContainer] = useState(true);
+  const setManualZoom = useCallback((next: number) => {
+    setFitToContainer(false);
+    setZoomPct(next);
+  }, []);
   const loadSeq = useRef(0);
+  const loadedSource = useRef<string | null>(null);
+  const [loader] = useState(() => new PresentationLoader());
+  useEffect(() => () => loader.dispose(), [loader]);
   const dirtyRef = useRef(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   // ---- source loading (url fetch or in-memory buffer) ----
   const key = sourceKey(source);
   useEffect(() => {
-    if (!source) return;
+    const identity = `${key}:${openNonce}`;
+    if (
+      !source ||
+      !visible ||
+      (loadedSource.current === identity && store.getState().deck)
+    )
+      return;
     const seq = ++loadSeq.current;
     let cancelled = false;
+    const controller = new AbortController();
     setLoading(true);
     setLoadError(null);
     (async () => {
       try {
-        let bytes: Uint8Array;
-        if ('url' in source) {
-          const response = await fetch(source.url);
-          if (!response.ok)
-            throw new Error(`Document fetch failed (${response.status})`);
-          bytes = new Uint8Array(await response.arrayBuffer());
-        } else {
-          bytes = new Uint8Array(source.buffer);
+        const deck = prepareSource
+          ? await prepareSource(controller.signal)
+          : 'url' in source
+          ? await loader.load(key, source.url, controller.signal)
+          : await (async () => {
+              const prepared = await prepareInWorker(
+                new Uint8Array(source.buffer),
+                controller.signal
+              );
+              return importPreparedDeck(
+                new OPCPackage(prepared.parts, prepared.trees)
+              );
+            })();
+        // A newer source owns the editor; discard prepared data, never edits.
+        if (cancelled || seq !== loadSeq.current) {
+          releasePreparedDeck(deck);
+          return;
         }
-        // A newer load (source replacement) supersedes this one.
-        if (cancelled || seq !== loadSeq.current) return;
-        store.loadFile(bytes, fileName);
+        store.loadDeck(deck, fileName);
+        loadedSource.current = identity;
         dirtyRef.current = false;
         setLoading(false);
         onReady?.();
@@ -130,8 +161,9 @@ function PptxEditorInner({
     })();
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [key, openNonce]);
+  }, [key, openNonce, visible]);
 
   // ---- dirty tracking -> host onChange ----
   useEffect(() => {
@@ -146,7 +178,23 @@ function PptxEditorInner({
   }, [store, onChange]);
 
   // Webfonts settling changes measured line metrics; re-render on fresh ones.
-  useEffect(() => onFontMetricsSettled(() => store.refreshRender()), [store]);
+  const activeRef = useRef(visible);
+  activeRef.current = visible;
+  const pendingFonts = useRef(false);
+  useEffect(
+    () =>
+      onFontMetricsSettled(() => {
+        if (activeRef.current) store.refreshRender();
+        else pendingFonts.current = true;
+      }),
+    [store]
+  );
+  useEffect(() => {
+    if (visible && pendingFonts.current) {
+      pendingFonts.current = false;
+      store.refreshRender();
+    }
+  }, [visible, store]);
 
   // ---- save / download ----
   const pendingSave = useRef<Promise<void> | null>(null);
@@ -249,26 +297,49 @@ function PptxEditorInner({
   );
 
   // ---- keyboard shortcuts, scoped to this editor instance ----
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (readOnly) return;
-    const meta = e.metaKey || e.ctrlKey;
-    if (!meta) return;
-    const inTextEdit = (e.target as HTMLElement).closest?.(
-      '[contenteditable="true"]'
-    );
-    const keyName = e.key.toLowerCase();
-    if (keyName === 'z' && !inTextEdit) {
-      e.preventDefault();
-      if (e.shiftKey) store.redo();
-      else store.undo();
-    } else if (keyName === 'y' && !inTextEdit) {
-      e.preventDefault();
-      store.redo();
-    } else if (keyName === 's' && onSave) {
-      e.preventDefault();
-      handleSave();
-    }
-  };
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent | KeyboardEvent) => {
+      if (readOnly) return;
+      const meta = e.metaKey || e.ctrlKey;
+      if (!meta) return;
+      const inTextEdit = (e.target as HTMLElement).closest?.(
+        '[contenteditable="true"]'
+      );
+      const keyName = e.key.toLowerCase();
+      if (keyName === 'z' && !inTextEdit) {
+        e.preventDefault();
+        if (e.shiftKey) store.redo();
+        else store.undo();
+      } else if (keyName === 'y' && !inTextEdit) {
+        e.preventDefault();
+        store.redo();
+      } else if (keyName === 's' && onSave) {
+        e.preventDefault();
+        handleSave();
+      }
+    },
+    [readOnly, store, onSave, handleSave]
+  );
+
+  useEffect(() => {
+    if (!visible || readOnly) return;
+    // Document tabs are siblings of the editor, so their key events never
+    // reach the editor wrapper. Only the selected tab for this panel may act.
+    const panel = wrapRef.current?.closest<HTMLElement>('[role="tabpanel"]');
+    if (!panel?.id) return;
+    const doc = panel.ownerDocument;
+    const onTabKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      const tab = target?.closest?.<HTMLElement>('[role="tab"]');
+      if (
+        tab?.getAttribute('aria-selected') === 'true' &&
+        tab.getAttribute('aria-controls') === panel.id
+      )
+        onKeyDown(event);
+    };
+    doc.addEventListener('keydown', onTabKeyDown);
+    return () => doc.removeEventListener('keydown', onTabKeyDown);
+  }, [visible, readOnly, onKeyDown, state.deck, loading]);
 
   const dirty = state.rev >= 0 ? store.engine.isDirty() : false;
   const historyEnabled = !!historyHost;
@@ -312,6 +383,7 @@ function PptxEditorInner({
       {(() => {
         const hostActions = (
           <>
+            {!readOnly && <DocumentSaveStatus dirty={dirty} />}
             {!hideDownload &&
               (onExportPdf || onDownloadAll ? (
                 <span
@@ -388,7 +460,6 @@ function PptxEditorInner({
                   Download
                 </button>
               ))}
-            {!readOnly && <DocumentSaveStatus dirty={dirty} />}
             {onSave && !readOnly && onSaveAll ? (
               <span
                 ref={saveMenuRef}
@@ -505,7 +576,7 @@ function PptxEditorInner({
           alignItems: 'stretch'
         }}
       >
-        <SlideNavigator readOnly={readOnly} />
+        <SlideNavigator readOnly={readOnly} active={visible} />
         <div
           css={{
             flex: 1,
@@ -519,7 +590,9 @@ function PptxEditorInner({
           <SvgSlide
             readOnly={readOnly}
             zoom={zoomPct}
-            onZoomChange={setZoomPct}
+            onZoomChange={setManualZoom}
+            fitToContainer={fitToContainer}
+            onFitZoomChange={setZoomPct}
           />
         </div>
         {devJsonPanel && state.showJson && <JsonPanel />}
@@ -607,8 +680,8 @@ function PptxEditorInner({
             type='button'
             css={statusButton}
             title='Zoom out'
-            disabled={zoomPct <= ZOOM_MIN}
-            onClick={() => setZoomPct((z) => Math.max(ZOOM_MIN, z - 25))}
+            disabled={zoomPct <= ZOOM_STEP_MIN && !fitToContainer}
+            onClick={() => setManualZoom(Math.max(ZOOM_STEP_MIN, zoomPct - 25))}
           >
             <MinusIcon width={14} height={14} />
           </button>
@@ -626,7 +699,7 @@ function PptxEditorInner({
             css={statusButton}
             title='Zoom in'
             disabled={zoomPct >= ZOOM_MAX}
-            onClick={() => setZoomPct((z) => Math.min(ZOOM_MAX, z + 25))}
+            onClick={() => setManualZoom(Math.min(ZOOM_MAX, zoomPct + 25))}
           >
             <PlusIcon width={14} height={14} />
           </button>
@@ -634,7 +707,7 @@ function PptxEditorInner({
             type='button'
             css={statusButton}
             title='Fit to container'
-            onClick={() => setZoomPct(100)}
+            onClick={() => setFitToContainer(true)}
           >
             <FitToPageIcon width={14} height={14} />
           </button>

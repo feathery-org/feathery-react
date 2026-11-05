@@ -278,3 +278,214 @@ describe('format references', () => {
     });
   });
 });
+
+describe('id table: a write read back', () => {
+  it("gives the siblings a write deleted their own ids, not a kept node's (tracked deletions still in the document)", () => {
+    const table = new IdTable();
+    const before = adopt(
+      table,
+      toyNative(para('a'), para('b'), para('c'), para('total'))
+    );
+    const intended = JSON.parse(JSON.stringify(before.nf)) as NormalForm;
+    const kids = intended.root.blocks as NfNode[];
+    intended.root.blocks = [kids[0], { ...kids[3], text: 'total 2' }];
+    const live = adopt(
+      table,
+      toyNative(para('a'), para('b gone'), para('c gone'), para('total 3')),
+      [intended, before.nf]
+    );
+    expect(ids(live.nf)).toEqual([
+      'root:doc:',
+      'n1:para:a',
+      'n2:para:b gone',
+      'n3:para:c gone',
+      'n4:para:total 3'
+    ]);
+  });
+});
+
+describe('id table: text the editor split again', () => {
+  const splitting = {
+    ...pack.tree,
+    continuesText: (previous: NfNode, next: NfNode) =>
+      previous.kind === 'para' && next.kind === 'para'
+  };
+  const adoptSplitting = (
+    table: IdTable,
+    native: string,
+    previous: NormalForm[] = []
+  ) =>
+    table.adopt(
+      pack.adapter.toNormalForm(native),
+      splitting,
+      pack.formatRefKeys,
+      previous
+    );
+  const boxIds = (nf: NormalForm) =>
+    (nf.root.blocks as NfNode[]).map(
+      (b) => `${b.id}:${(b.items as NfNode[]).map((p) => p.text).join('|')}`
+    );
+
+  it('keeps each container its id when its text comes back split, beside a sibling the write left behind', () => {
+    const table = new IdTable();
+    const before = adoptSplitting(
+      table,
+      toyNative(box([para('first row')]), box([para('total')]))
+    );
+    const live = adoptSplitting(
+      table,
+      toyNative(
+        box([para('moved away')]),
+        box([para('first '), para('row')]),
+        box([para('total')])
+      ),
+      [before.nf]
+    );
+    expect(boxIds(live.nf)).toEqual([
+      'n5:moved away',
+      'n1:first |row',
+      'n3:total'
+    ]);
+  });
+});
+
+describe('id table: a deleted copy still on the page', () => {
+  const tracking = {
+    ...pack.tree,
+    goneOnAccept: (n: NfNode) =>
+      JSON.stringify(n.pending ?? null).includes('deletion')
+  };
+  it("takes no id from a kept sibling in the gap: fees and total keep theirs beside a moved row's old copy (acd4ca62 #10)", () => {
+    const table = new IdTable();
+    const adoptTracking = (native: string, previous: NormalForm[] = []) =>
+      table.adopt(
+        pack.adapter.toNormalForm(native),
+        tracking,
+        pack.formatRefKeys,
+        previous
+      );
+    const before = adoptTracking(
+      toyNative(para('keep'), para('fees 1'), para('total 1'))
+    );
+    const live = adoptTracking(
+      toyNative(
+        para('keep'),
+        para('moved row', { rev: 'del', by: 't' }),
+        para('fees 1 2'),
+        para('total 1 2')
+      ),
+      [before.nf]
+    );
+    expect(ids(live.nf)).toEqual([
+      'root:doc:',
+      'n1:para:keep',
+      'n4:para:moved row',
+      'n2:para:fees 1 2',
+      'n3:para:total 1 2'
+    ]);
+  });
+
+  it('keeps the id on the moved copy, not the deleted copy a move down leaves behind (react#2001)', () => {
+    const cases = [
+      { node: para('b'), moved: 'n2:para:b' },
+      { node: box([para('b')], { name: 'k' }), moved: 'n2:box:k' }
+    ];
+    for (const { node, moved } of cases) {
+      const table = new IdTable();
+      const adoptTracking = (native: string, previous: NormalForm[] = []) =>
+        table.adopt(
+          pack.adapter.toNormalForm(native),
+          tracking,
+          pack.formatRefKeys,
+          previous
+        );
+      const pre = adoptTracking(
+        toyNative(para('a'), node, para('c'), para('d'))
+      ).nf;
+      const intended: NormalForm = JSON.parse(JSON.stringify(pre));
+      const blocks = intended.root.blocks as NfNode[];
+      blocks.splice(3, 0, ...blocks.splice(1, 1));
+      const live = adoptTracking(
+        toyNative(
+          para('a'),
+          { ...node, rev: 'del', by: 't' },
+          para('c'),
+          { ...node, rev: 'ins', by: 't' },
+          para('d')
+        ),
+        [intended, pre]
+      );
+      const blockIds = (live.nf.root.blocks as NfNode[]).map(
+        (b) => `${b.id}:${b.kind}:${b.text ?? b.name}`
+      );
+      expect(blockIds[3]).toBe(moved);
+      expect(blockIds[1]).not.toMatch(/^n2:/);
+    }
+  });
+
+  it('keeps the id on the moved copy when a move down changes container', () => {
+    const table = new IdTable();
+    const adoptTracking = (native: string, previous: NormalForm[] = []) =>
+      table.adopt(
+        pack.adapter.toNormalForm(native),
+        tracking,
+        pack.formatRefKeys,
+        previous
+      );
+    const pre = adoptTracking(
+      toyNative(para('a'), para('b'), box([para('x')], { name: 'k' }))
+    ).nf;
+    const intended: NormalForm = JSON.parse(JSON.stringify(pre));
+    const blocks = intended.root.blocks as NfNode[];
+    const [moved] = blocks.splice(1, 1);
+    (blocks[1].items as NfNode[]).push(moved);
+    const live = adoptTracking(
+      toyNative(
+        para('a'),
+        para('b', { rev: 'del', by: 't' }),
+        box([para('x'), para('b', { rev: 'ins', by: 't' })], { name: 'k' })
+      ),
+      [intended, pre]
+    );
+    expect(ids(live.nf)).toEqual([
+      'root:doc:',
+      'n1:para:a',
+      'n5:para:b',
+      'n3:box:k',
+      'n4:para:x',
+      'n2:para:b'
+    ]);
+  });
+
+  it('keeps a deleted empty paragraph its id beside an equal one the write kept', () => {
+    const table = new IdTable();
+    const adoptTracking = (native: string, previous: NormalForm[] = []) =>
+      table.adopt(
+        pack.adapter.toNormalForm(native),
+        tracking,
+        pack.formatRefKeys,
+        previous
+      );
+    const pre = adoptTracking(
+      toyNative(para('a'), para(''), para(''), para('b'))
+    ).nf;
+    const intended: NormalForm = JSON.parse(JSON.stringify(pre));
+    (intended.root.blocks as NfNode[]).splice(1, 1);
+    const live = adoptTracking(
+      toyNative(
+        para('a'),
+        para('', { rev: 'del', by: 't' }),
+        para(''),
+        para('b')
+      ),
+      [intended, pre]
+    );
+    expect(ids(live.nf)).toEqual([
+      'root:doc:',
+      'n1:para:a',
+      'n2:para:',
+      'n3:para:',
+      'n4:para:b'
+    ]);
+  });
+});
