@@ -902,14 +902,26 @@ export default class ResponsiveStyles {
     );
   }
 
-  getRichFontStyles(attrs: any) {
-    const fontStyles = this._getRichFontScreenStyles(attrs);
+  // `inherit` emits only the attributes a run sets, so the run falls back to
+  // its container's styles (e.g. a field label's label_* typography) instead
+  // of resetting them. `fallbackKey` names the style holding the font fallback.
+  getRichFontStyles(
+    attrs: any,
+    {
+      inherit = false,
+      fallbackKey = 'font_fallback'
+    }: { inherit?: boolean; fallbackKey?: string } = {}
+  ) {
+    const opts = { inherit, fallbackKey };
+    const fontStyles = this._getRichFontScreenStyles(attrs, false, opts);
     if (this.handleMobile) {
       fontStyles[this.mobileBreakpointKey] = this._getRichFontScreenStyles(
         attrs,
-        true
+        true,
+        opts
       );
     }
+    if (inherit) return fontStyles;
     if (!('letterSpacing' in fontStyles))
       (fontStyles as any).letterSpacing = 'normal';
     if (!('textTransform' in fontStyles))
@@ -918,7 +930,11 @@ export default class ResponsiveStyles {
     return fontStyles;
   }
 
-  _getRichFontScreenStyles(attrs: any, isMobile = false) {
+  _getRichFontScreenStyles(
+    attrs: any,
+    isMobile = false,
+    { inherit = false, fallbackKey = 'font_fallback' } = {}
+  ) {
     const styles: Record<string, any> = {};
 
     const p = isMobile ? 'mobile_' : '';
@@ -929,14 +945,17 @@ export default class ResponsiveStyles {
     if (attr)
       styles.fontFamily = this.transformFontFamilies(
         attr,
-        (isMobile ? this.mobileStyles?.font_fallback : '') ||
-          this.styles?.font_fallback
+        (isMobile ? this.mobileStyles?.[fallbackKey] : '') ||
+          this.styles?.[fallbackKey]
       );
     attr = attrs[`${p}font_color`];
     if (attr) styles.color = `#${attr}`;
     attr = attrs[`${p}font_weight`];
     if (attr) styles.fontWeight = attr;
-    if (attrs[`${p}font_italic`]) styles.fontStyle = 'italic';
+    attr = attrs[`${p}font_italic`];
+    if (attr) styles.fontStyle = 'italic';
+    // An explicit false must undo italics the container applies
+    else if (inherit && attr === false) styles.fontStyle = 'normal';
     attr = attrs[`${p}text_transform`];
     if (attr) styles.textTransform = attr;
     attr = attrs[`${p}letter_spacing`];
@@ -945,8 +964,11 @@ export default class ResponsiveStyles {
     const lines = [];
     if (attrs[`${p}font_strike`]) lines.push('line-through');
     if (attrs[`${p}font_underline`]) lines.push('underline');
+    const decorationSet =
+      `${p}font_strike` in attrs || `${p}font_underline` in attrs;
     if (lines.length > 0) styles.textDecoration = lines.join(' ');
-    else if (!isMobile) styles.textDecoration = 'none';
+    else if (inherit ? decorationSet : !isMobile)
+      styles.textDecoration = 'none';
 
     return styles;
   }
