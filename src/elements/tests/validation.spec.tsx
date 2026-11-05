@@ -315,15 +315,15 @@ const controlCases = [
   ['DropdownMultiField', 'dropdown_multi', '[role="combobox"]'],
   ['DateSelectorField', 'date_selector', 'input'],
   ['CheckboxField', 'checkbox', 'input[type="checkbox"]'],
-  ['CheckboxGroupField', 'multiselect', 'input[type="checkbox"]'],
-  ['RadioButtonGroupField', 'select', 'input[type="radio"]'],
-  ['MatrixField', 'matrix', 'input[type="radio"]'],
+  ['CheckboxGroupField', 'multiselect', '[role="group"]'],
+  ['RadioButtonGroupField', 'select', '[role="radiogroup"]'],
+  ['MatrixField', 'matrix', '[role="radiogroup"]'],
   ['PinInputField', 'pin_input', 'input'],
   ['SliderField', 'slider', '[role="slider"]'],
   ['ButtonGroupField', 'button_group', '[role="button"]'],
-  ['FileUploadField', 'file_upload', 'input[type="file"]'],
+  ['FileUploadField', 'file_upload', '[role="button"], input[type="file"]'],
   ['ColorPickerField', 'hex_color', '[role="button"]'],
-  ['RatingField', 'rating', '[role="button"]'],
+  ['RatingField', 'rating', '[role="radiogroup"]'],
   ['SignatureField', 'signature', '[role="button"]']
 ];
 
@@ -389,6 +389,15 @@ describe('accessible field errors', () => {
         );
       });
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      // Composite fields describe their error once at the named group.
+      container
+        .querySelectorAll('[role="group"], [role="radiogroup"]')
+        .forEach((group) => {
+          expect(group).toHaveAccessibleName();
+          expect(
+            group.querySelector('[aria-invalid], [aria-describedby]')
+          ).toBeNull();
+        });
 
       rerender(renderField('html5'));
       expect(screen.queryByText('Required')).not.toBeInTheDocument();
@@ -409,4 +418,102 @@ describe('accessible field errors', () => {
       });
     }
   );
+});
+
+describe('composite field validation', () => {
+  it.each([false, true])(
+    'marks only unanswered matrix questions (multiple=%s)',
+    async (multiple) => {
+      const element = {
+        ...fields[0],
+        servar: {
+          ...fields[0].servar,
+          type: 'matrix',
+          metadata: {
+            multiple,
+            options: ['Yes', 'No'],
+            questions: [
+              { id: 'answered', label: 'Answered question' },
+              { id: 'missing', label: 'Missing question' }
+            ]
+          }
+        }
+      };
+      await preloadStepFields({ servar_fields: [element] }, { '0': [true] });
+      const renderMatrix = (value: Record<string, string[]>) => (
+        <>
+          <span id='matrix-hint'>Choose an answer for each question</span>
+          <Elements.MatrixField
+            element={element}
+            componentOnly={false}
+            inlineError='Required'
+            formSettings={{ errorType: 'inline' }}
+            fieldVal={value}
+            elementProps={{ 'aria-describedby': 'matrix-hint' }}
+          />
+        </>
+      );
+      const { rerender } = render(
+        renderMatrix({ answered: ['Yes'], missing: [] })
+      );
+      const role = multiple ? 'group' : 'radiogroup';
+      const answered = screen.getByRole(role, { name: 'Answered question' });
+      const missing = screen.getByRole(role, { name: 'Missing question' });
+      expect(answered).not.toHaveAttribute('aria-invalid');
+      expect(answered).toHaveAttribute('aria-describedby', 'matrix-hint');
+      expect(missing).toHaveAttribute('aria-invalid', 'true');
+      expect(missing.getAttribute('aria-describedby')).toContain(
+        screen.getByText('Required').id
+      );
+      expect(missing.querySelector('[aria-invalid]')).toBeNull();
+
+      rerender(renderMatrix({ answered: ['Yes'], missing: ['No'] }));
+      expect(missing).not.toHaveAttribute('aria-invalid');
+      expect(missing).toHaveAttribute('aria-describedby', 'matrix-hint');
+    }
+  );
+
+  it('uses one rating Tab stop and arrow keys to select and wrap between stars', async () => {
+    const element = {
+      ...fields[0],
+      servar: { ...fields[0].servar, type: 'rating', max_length: 10 }
+    };
+    await preloadStepFields({ servar_fields: [element] }, { '0': [true] });
+    function Rating() {
+      const [value, setValue] = useState(10);
+      return (
+        <>
+          <Elements.RatingField
+            element={element}
+            componentOnly={false}
+            fieldVal={value}
+            onChange={setValue}
+          />
+          <button>Continue</button>
+        </>
+      );
+    }
+    const user = userEvent.setup();
+    render(<Rating />);
+    const first = screen.getByRole('radio', { name: '1' });
+    const last = screen.getByRole('radio', { name: '10' });
+    await user.tab();
+    expect(last).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Continue' })).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(last).toHaveFocus();
+
+    await user.keyboard('{ArrowRight}');
+    expect(first).toHaveFocus();
+    expect(first).toHaveAttribute('aria-checked', 'true');
+    expect(last).toHaveAttribute('tabindex', '-1');
+    await user.keyboard('{ArrowUp}');
+    expect(last).toHaveFocus();
+    expect(last).toHaveAttribute('aria-checked', 'true');
+    await user.keyboard('{ArrowLeft}');
+    expect(screen.getByRole('radio', { name: '9' })).toHaveFocus();
+    await user.keyboard('{ArrowDown}');
+    expect(last).toHaveFocus();
+  });
 });

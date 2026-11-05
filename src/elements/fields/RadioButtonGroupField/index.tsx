@@ -96,6 +96,9 @@ function RadioButtonGroupField({
       {children}
       {fieldLabel}
       <div
+        role='radiogroup'
+        aria-label={element.properties.aria_label || servar.name}
+        {...errorAttributes}
         css={{
           display: 'flex',
           flexWrap: 'wrap',
@@ -117,7 +120,6 @@ function RadioButtonGroupField({
             >
               <label style={{ display: 'contents' }}>
                 <input
-                  {...errorAttributes}
                   type='radio'
                   id={`${servar.key}-${i}`}
                   name={
@@ -130,7 +132,6 @@ function RadioButtonGroupField({
                   disabled={disabled || loadingDynamicOptions}
                   onChange={onChange}
                   onFocus={iosScrollOnFocus}
-                  aria-label={element.properties.aria_label}
                   value={value}
                   style={{
                     padding: 0,
@@ -167,7 +168,6 @@ function RadioButtonGroupField({
         {servar.metadata.other && (
           <div style={{ display: 'flex', flexGrow: 1 }}>
             <input
-              {...errorAttributes}
               type='radio'
               id={`${servar.key}-`}
               key={`${servar.key}-`}
@@ -204,7 +204,6 @@ function RadioButtonGroupField({
               {otherLabel}
             </label>
             <FormControl
-              {...errorAttributes}
               type='text'
               // Paired with flex grow, will not expand parent width
               htmlSize={1}

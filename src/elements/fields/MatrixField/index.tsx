@@ -85,12 +85,19 @@ function MatrixField({
         })}
       </div>
       {servar.metadata.questions.map((q: any, i: number) => {
+        const questionVal = fieldVal[q.id];
+        const isUnanswered = !questionVal?.length;
         const highlight = q.highlight_color
           ? `#${q.highlight_color}`
           : backgroundColor;
         return (
           <div
             key={i}
+            role={allowMultiple ? 'group' : 'radiogroup'}
+            aria-label={replaceTextVariables(q.label, repeatIndex, true)}
+            {...(isUnanswered
+              ? errorAttributes
+              : { 'aria-describedby': elementProps['aria-describedby'] })}
             style={{
               display: 'flex',
               flexDirection: 'row',
@@ -107,7 +114,6 @@ function MatrixField({
               </div>
             </TextHoverTooltip>
             {options.map((opt: any, j: number) => {
-              const questionVal = fieldVal[q.id];
               const questionName =
                 repeatIndex !== null
                   ? `${servar.key}-${i}-${repeatIndex}`
@@ -126,13 +132,12 @@ function MatrixField({
                   }}
                 >
                   <input
-                    {...errorAttributes}
                     type={inputType}
                     name={questionName}
                     // Each option is identifiable on its own, not only
                     // through the group name it shares with its siblings
                     id={`${questionName}-${j}`}
-                    aria-label={element.properties.aria_label}
+                    aria-label={replaceTextVariables(opt, repeatIndex, true)}
                     data-question-id={q.id}
                     value={opt}
                     disabled={disabled || q.read_only}
