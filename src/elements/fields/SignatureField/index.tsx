@@ -13,6 +13,7 @@ function SignatureField({
   editMode,
   repeatIndex,
   elementProps = {},
+  errorAttributes = {},
   disabled = false,
   onEnd = () => {},
   onClear = () => {},
@@ -85,8 +86,20 @@ function SignatureField({
             }
           >
             <div
+              role='button'
+              {...errorAttributes}
+              aria-label={
+                element.properties.aria_label || servar.name || t.label
+              }
+              tabIndex={disabled || editMode ? -1 : 0}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  event.currentTarget.click();
+                }
+              }}
               onClick={() => {
-                if (!disabled) setShowSignatureModal(true);
+                if (!disabled && !editMode) setShowSignatureModal(true);
               }}
               css={{
                 position: 'absolute',

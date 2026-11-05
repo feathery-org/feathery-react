@@ -32,6 +32,7 @@ function PhoneField({
   fieldLabel,
   fullNumber,
   elementProps = {},
+  errorAttributes = {},
   required = false,
   disabled = false,
   repeatIndex = null,
@@ -316,6 +317,7 @@ function PhoneField({
             disabled={disabled}
             placeholder=''
             aria-label={element.properties.aria_label}
+            {...errorAttributes}
             value={formattedNumber}
             ref={(ref) => {
               inputRef.current = ref;

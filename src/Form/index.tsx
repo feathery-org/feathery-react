@@ -547,6 +547,8 @@ function Form({
   // collaboration, business email). Gated until the form payload says otherwise
   const sessionGated = useRef(true);
   const [inlineErrors, setInlineErrors] = useState<InlineErrors>({});
+  const [shouldScrollToError, setShouldScrollToError] = useState(false);
+  const [errorAnnouncement, setErrorAnnouncement] = useState('');
   const [, setRepeatChanged] = useState(false);
 
   const [integrations, setIntegrations] = useState<null | Record<string, any>>(
@@ -927,6 +929,7 @@ function Form({
   // Logic to run every time step changes
   useEffect(() => {
     if (!activeStep) return;
+    setErrorAnnouncement('');
 
     setAutoValidate(false); // Each step to initially not auto validate
 
@@ -954,6 +957,29 @@ function Form({
       listener({ type: 'step', stepId: activeStep.id, stepKey: activeStep.key })
     );
   }, [activeStep?.id]);
+
+  useEffect(() => {
+    if (!shouldScrollToError) return;
+    setShouldScrollToError(false);
+    const firstInvalidField = formRef.current?.querySelector(
+      '[data-feathery-error-id]'
+    );
+    const errorId = firstInvalidField?.getAttribute('data-feathery-error-id');
+    const errorLabel = errorId
+      ? firstInvalidField?.ownerDocument.getElementById(errorId)
+      : null;
+    setErrorAnnouncement(
+      [
+        errorLabel?.getAttribute('data-feathery-error-label'),
+        errorLabel?.textContent
+      ]
+        .filter(Boolean)
+        .join(': ')
+    );
+    if (firstInvalidField && !isElementInViewport(firstInvalidField)) {
+      firstInvalidField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [shouldScrollToError, inlineErrors]);
 
   // viewElements state
   const [viewElements, setViewElements] = useState<string[]>([]);
@@ -1150,17 +1176,18 @@ function Form({
   const debouncedValidate = useCallback(
     debounce((setInlineErrors: any) => {
       // default form validation
-      visiblePositions &&
+      activeStep &&
         validateElements({
           step: activeStep,
-          visiblePositions,
+          visiblePositions: getVisiblePositions(activeStep, _internalId),
           triggerErrors: true,
+          reportNativeErrors: false,
           errorType: formSettings.errorType,
           formRef,
           setInlineErrors
         });
     }, 750),
-    [activeStep?.id, formRef]
+    [activeStep, formSettings.errorType, _internalId]
   );
 
   // Debouncing the rerender due to changing values of referenced fields in hide if rules.
@@ -1243,6 +1270,7 @@ function Form({
     );
 
     Object.assign(fieldValues, transformedFieldValues);
+    setErrorAnnouncement('');
 
     // Always rerender from empty state for display purposes
     // If any fields involved in a hideIf have changed, then rerender if
@@ -2342,6 +2370,8 @@ function Form({
         trigger
       });
       if (latestValuesInvalid) {
+        setErrorAnnouncement('');
+        setShouldScrollToError(formSettings.errorType === 'inline');
         setAutoValidate(true);
         return;
       }
@@ -2955,6 +2985,8 @@ function Form({
       });
 
       if (invalid) {
+        setErrorAnnouncement('');
+        setShouldScrollToError(formSettings.errorType === 'inline');
         setAutoValidate(true);
         elementClicks[id] = false;
         clearButtonActionState();
@@ -4212,6 +4244,7 @@ function Form({
     <ReactPortal options={popupOptions}>
       <form
         {...formProps}
+        noValidate={formSettings.errorType === 'inline' || formProps.noValidate}
         autoComplete={formSettings.autocomplete}
         className={`feathery ${className || ''}`}
         ref={formRef}
@@ -4226,6 +4259,23 @@ function Form({
         }}
         dir={formSettings.rightToLeft ? 'rtl' : 'ltr'}
       >
+        {formSettings.errorType === 'inline' && (
+          <span
+            role='status'
+            aria-live='polite'
+            aria-atomic='true'
+            css={{
+              position: 'absolute',
+              width: 1,
+              height: 1,
+              overflow: 'hidden',
+              clipPath: 'inset(50%)',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {errorAnnouncement}
+          </span>
+        )}
         {stepLoader}
         {children}
         {showQuikFormViewer && (

@@ -270,6 +270,7 @@ function CheckboxField({
   fieldVal = true,
   onChange = () => {},
   elementProps = {},
+  errorAttributes = {},
   disabled = false,
   children
 }: any) {
@@ -314,6 +315,7 @@ function CheckboxField({
           onChange={onChange}
           onFocus={iosScrollOnFocus}
           aria-label={element.properties.aria_label}
+          {...errorAttributes}
           css={{
             ...composeCheckableInputStyle(styles, disabled),
             ...(!fieldLabel ? { marginRight: 5 } : {}),

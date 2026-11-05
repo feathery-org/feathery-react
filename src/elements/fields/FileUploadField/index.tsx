@@ -27,6 +27,7 @@ function FileUploadField({
   onChange: customOnChange = () => {},
   initialFiles = [],
   elementProps = {},
+  errorAttributes = {},
   children
 }: any) {
   const servar = element.servar;
@@ -77,7 +78,7 @@ function FileUploadField({
 
   const onClick = () => {
     if (!allowMoreFiles && !hidePreview) return;
-    if (disabled) return;
+    if (disabled || editMode) return;
     fileInput.current?.click();
   };
 
@@ -312,7 +313,18 @@ function FileUploadField({
       {(allowMoreFiles || hidePreview) && (
         <div
           id={`${servar.key}-add`}
+          role='button'
+          tabIndex={disabled || editMode ? -1 : 0}
+          aria-label={element.properties.aria_label || servar.name}
+          aria-disabled={disabled || editMode || undefined}
+          {...errorAttributes}
           onClick={onClick}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onClick();
+            }
+          }}
           css={{
             position: 'relative',
             pointerEvents: disabled ? 'none' : 'auto',
@@ -342,11 +354,13 @@ function FileUploadField({
         name={servar.key}
         ref={fileInput}
         type='file'
+        tabIndex={-1}
         onChange={handleChange}
         required={required && !hasFiles}
         accept={allowedFileTypes.join(',') || undefined}
         disabled={disabled}
         aria-label={element.properties.aria_label}
+        {...errorAttributes}
         multiple={isMultiple}
         onFocus={iosScrollOnFocus}
         style={{

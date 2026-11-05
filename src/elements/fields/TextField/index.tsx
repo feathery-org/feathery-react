@@ -141,6 +141,7 @@ function TextField({
   responsiveStyles,
   fieldLabel,
   elementProps = {},
+  errorAttributes = {},
   required = false,
   disabled = false,
   autoComplete,
@@ -301,6 +302,7 @@ function TextField({
             placeholder=''
             value={rawValue}
             aria-label={element.properties.aria_label}
+            {...errorAttributes}
             // Not on focus because if error is showing, it will
             // keep triggering dropdown after blur
             onKeyDown={(e: any) => {

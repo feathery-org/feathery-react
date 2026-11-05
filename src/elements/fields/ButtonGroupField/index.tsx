@@ -24,6 +24,7 @@ function ButtonGroupField({
   formSettings,
   onClick = () => {},
   elementProps = {},
+  errorAttributes = {},
   disabled = false,
   children
 }: any) {
@@ -117,6 +118,15 @@ function ButtonGroupField({
           return (
             <div
               role='button'
+              {...errorAttributes}
+              tabIndex={editMode || disabled || loadingDynamicOptions ? -1 : 0}
+              aria-pressed={!!selectedOptMap[value]}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  event.currentTarget.click();
+                }
+              }}
               onClick={() => {
                 if (!editMode && !disabled && !loadingDynamicOptions) {
                   onClick(value);

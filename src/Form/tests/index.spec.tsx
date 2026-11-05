@@ -19,6 +19,7 @@ import {
 import { JSForm } from '..';
 import FeatheryClient from '../../utils/featheryClient';
 import internalState from '../../utils/internalState';
+import { fieldValues } from '../../utils/init';
 import {
   _clearDocxDirtyRegistry,
   hasDirtyDocxEditors,
@@ -64,6 +65,95 @@ afterEach(() => {
 
   // Restore FeatheryClient prototype if a test overrode it
   FeatheryClient.prototype.fetchForm = originalFetchForm;
+});
+
+describe('validation feedback navigation', () => {
+  const originalValidate =
+    ValidationMod.validateElements.getMockImplementation();
+
+  afterEach(() => {
+    ValidationMod.validateElements
+      .mockReset()
+      .mockImplementation(originalValidate);
+    jest.restoreAllMocks();
+    delete (internalState as any)['iid-validation-feedback'];
+    delete fieldValues.edited;
+  });
+
+  it.each(['inline', 'html5'])(
+    'honors %s validation when scrolling and revalidating current visibility',
+    async (errorType) => {
+      jest
+        .spyOn(FormHelperMod, 'mapFormSettingsResponse')
+        .mockReturnValue({ errorType });
+      const expectedScrolls = errorType === 'inline' ? 1 : 0;
+      jest.spyOn(FormHelperMod, 'isElementInViewport').mockReturnValue(false);
+      const publishErrors = ({ setInlineErrors }: any) => {
+        const inlineErrors = { missing: { message: 'Required' } };
+        setInlineErrors(inlineErrors);
+        return { invalid: true, inlineErrors };
+      };
+      ValidationMod.validateElements
+        .mockImplementationOnce(publishErrors)
+        .mockImplementationOnce(publishErrors);
+      const instanceId = 'iid-validation-feedback';
+      (internalState as any)[instanceId] = { inlineErrors: {} };
+
+      render(
+        <JSForm formId='f1' _internalId={instanceId}>
+          <input data-testid='missing' data-feathery-error-id='missing-error' />
+          <span id='missing-error' data-feathery-error-label='Name'>
+            Required
+          </span>
+          <input data-testid='typing' />
+        </JSForm>
+      );
+      await screen.findByTestId('btn');
+      // Finish the initial step effects before attempting submission.
+      await act(async () => {});
+      const missingField = screen.getByTestId('missing');
+      missingField.scrollIntoView = jest.fn();
+
+      await act(async () => {
+        await GridMod._spies.form.runElementActions({
+          actions: [],
+          element: { id: 'b1', properties: {} },
+          elementType: 'button',
+          submit: true
+        });
+      });
+      expect(missingField.scrollIntoView).toHaveBeenCalledTimes(
+        expectedScrolls
+      );
+      expect(missingField.closest('form')?.noValidate).toBe(
+        errorType === 'inline'
+      );
+      expect(ClientMod._spies.submitStep).not.toHaveBeenCalled();
+      const announcement =
+        errorType === 'inline' ? screen.getByRole('status') : null;
+      if (announcement) {
+        expect(announcement).toHaveAttribute('aria-live', 'polite');
+        expect(announcement).toHaveTextContent('Name: Required');
+      } else expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      const typingField = screen.getByTestId('typing');
+      typingField.focus();
+      const currentVisibility = { missing: [false] };
+      HideAndRepeatsMod._spies.visiblePositions = currentVisibility;
+      act(() => GridMod._spies.form.updateFieldValues({ edited: 'filled' }));
+
+      expect(ValidationMod.validateElements).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          visiblePositions: currentVisibility,
+          reportNativeErrors: false
+        })
+      );
+      expect(missingField.scrollIntoView).toHaveBeenCalledTimes(
+        expectedScrolls
+      );
+      expect(typingField).toHaveFocus();
+      if (announcement) expect(announcement).toBeEmptyDOMElement();
+    }
+  );
 });
 
 describe('submit field snapshot', () => {
