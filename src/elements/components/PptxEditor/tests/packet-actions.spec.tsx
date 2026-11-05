@@ -25,6 +25,14 @@ it('offers separate current/all actions on the actual presentation toolbar', asy
     />
   );
   const saveButton = await screen.findByRole('button', { name: 'Save' });
+  const downloadButton = screen.getByRole('button', { name: 'Download' });
+  const saveStatus = screen.getByRole('status', { hidden: true });
+  // The status may reserve room before Download, but must not separate the
+  // adjacent Download and Save actions when the deck is clean.
+  expect(
+    saveStatus.compareDocumentPosition(downloadButton) &
+      Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy();
   expect(screen.queryByText('All documents saved')).toBeNull();
   fireEvent.click(saveButton);
   expect(
@@ -94,4 +102,89 @@ it('persists edits made during a background save before marking the deck clean',
   await waitFor(() => expect(save).not.toBeDisabled());
   expect(onChange).toHaveBeenLastCalledWith(false);
   expect(screen.queryByRole('status', { name: 'Unsaved changes' })).toBeNull();
+});
+
+it('retains edits and undo history when a loaded editor is hidden and shown again', async () => {
+  const ready = jest.fn();
+  const bytes = sampleBytes();
+  const source = {
+    buffer: bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength
+    ) as ArrayBuffer
+  };
+  const { rerender } = render(<PptxEditor source={source} onReady={ready} />);
+  await waitFor(() => expect(ready).toHaveBeenCalledTimes(1));
+  const newSlide = (
+    await screen.findAllByRole('button', {
+      name: 'New slide'
+    })
+  )[0];
+  fireEvent.click(newSlide);
+  expect(screen.getByRole('button', { name: 'Slide 10' })).toBeInTheDocument();
+  rerender(<PptxEditor source={source} onReady={ready} visible={false} />);
+  rerender(<PptxEditor source={source} onReady={ready} visible />);
+  expect(ready).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('button', { name: 'Slide 10' })).toBeInTheDocument();
+  fireEvent.keyDown(screen.getAllByRole('button', { name: 'New slide' })[0], {
+    key: 'z',
+    ctrlKey: true
+  });
+  expect(screen.queryByRole('button', { name: 'Slide 10' })).toBeNull();
+});
+
+it('uses the active presentation shortcuts while its document tab has focus', async () => {
+  const bytes = sampleBytes();
+  render(
+    <>
+      <div role='tablist' aria-label='Documents'>
+        <button
+          role='tab'
+          aria-selected='true'
+          aria-controls='pptx-panel'
+          type='button'
+        >
+          presentation.pptx
+        </button>
+        <button
+          role='tab'
+          aria-selected='false'
+          aria-controls='pptx-panel'
+          type='button'
+        >
+          other.pptx
+        </button>
+      </div>
+      <div role='tabpanel' id='pptx-panel'>
+        <PptxEditor
+          source={{
+            buffer: bytes.buffer.slice(
+              bytes.byteOffset,
+              bytes.byteOffset + bytes.byteLength
+            ) as ArrayBuffer
+          }}
+        />
+      </div>
+    </>
+  );
+  const tab = screen.getByRole('tab', { name: 'presentation.pptx' });
+  const newSlide = await screen.findByRole('button', { name: 'New slide' });
+  fireEvent.click(newSlide);
+  expect(screen.getByRole('button', { name: 'Slide 10' })).toBeInTheDocument();
+  expect(
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'other.pptx' }), {
+      key: 'z',
+      ctrlKey: true
+    })
+  ).toBe(true);
+  expect(screen.getByRole('button', { name: 'Slide 10' })).toBeInTheDocument();
+  fireEvent.click(tab);
+  expect(fireEvent.keyDown(tab, { key: 'z', ctrlKey: true })).toBe(false);
+  expect(screen.queryByRole('button', { name: 'Slide 10' })).toBeNull();
+  expect(
+    fireEvent.keyDown(tab, { key: 'z', ctrlKey: true, shiftKey: true })
+  ).toBe(false);
+  expect(screen.getByRole('button', { name: 'Slide 10' })).toBeInTheDocument();
+  expect(fireEvent.keyDown(tab, { key: 'z', metaKey: true })).toBe(false);
+  expect(screen.queryByRole('button', { name: 'Slide 10' })).toBeNull();
 });

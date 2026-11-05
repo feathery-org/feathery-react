@@ -621,11 +621,15 @@ describe('enableFormTools', () => {
     render(<JSForm formId='f1' _internalId='iid-tools-on' enableFormTools />);
     await screen.findByTestId('btn');
 
-    expect(registerTool.mock.calls.map(([tool]: any) => tool.name)).toEqual([
-      'feathery_get_step',
-      'feathery_fill_step',
-      'feathery_next_step'
-    ]);
+    // Registration runs in FormWebMCPTools' effect, which can fire after the
+    // button appears, so wait for it rather than asserting on the first tick.
+    await waitFor(() =>
+      expect(registerTool.mock.calls.map(([tool]: any) => tool.name)).toEqual([
+        'feathery_get_step',
+        'feathery_fill_step',
+        'feathery_next_step'
+      ])
+    );
   });
 
   it('does not register tools when enableFormTools is left off', async () => {
