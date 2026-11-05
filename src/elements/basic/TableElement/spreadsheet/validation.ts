@@ -1,4 +1,6 @@
 import { validators } from '../../../../utils/validation';
+import countryData from '../../../components/data/countries';
+import usStates from '../../../components/data/states/us';
 import { CellValue } from './model';
 import {
   CellConstraint,
@@ -31,7 +33,11 @@ export type CellValueType =
   | 'tax_id'
   | 'text'
   | 'url'
-  | 'uuid';
+  | 'uuid'
+  | 'zip_code'
+  // Offered as a fixed list of codes (`options`), the same lists the hub checks.
+  | 'us_state'
+  | 'country_code';
 
 export type CellRule = {
   /** Column name, used in messages. */
@@ -108,6 +114,9 @@ export const parseCellErrorKey = (key: string) => {
 };
 
 const TAX_ID_PATTERN = /^\d{9}$/;
+const ZIP_PATTERN = /^\d{5}(-\d{4})?$/;
+const US_STATE_CODES = usStates.map(({ code }) => code);
+const COUNTRY_CODES = countryData.map(({ countryCode }) => countryCode);
 const UUID_PATTERN =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 // Exactly the hub's `_PHONE_RE`: digits only, no punctuation and no leading
@@ -216,6 +225,12 @@ export function validateCellValue(
       return TAX_ID_PATTERN.test(text) ? null : 'Must be 9 digits, no dashes';
     case 'uuid':
       return UUID_PATTERN.test(text) ? null : 'Invalid UUID';
+    case 'zip_code':
+      return ZIP_PATTERN.test(text) ? null : 'Must be 12345 or 12345-6789';
+    case 'us_state':
+      return US_STATE_CODES.includes(text) ? null : 'Must be a valid US state';
+    case 'country_code':
+      return COUNTRY_CODES.includes(text) ? null : 'Must be a valid country';
     case 'date':
     case 'datetime': {
       const parsed = parseDate(text);
@@ -354,7 +369,15 @@ const HUB_TYPES: Record<string, CellValueType> = {
   phone_number: 'phone_number',
   tax_id: 'tax_id',
   text: 'text',
-  uuid: 'uuid'
+  uuid: 'uuid',
+  zip_code: 'zip_code',
+  us_state: 'us_state',
+  country_code: 'country_code'
+};
+
+const HUB_TYPE_OPTIONS: Record<string, string[]> = {
+  us_state: US_STATE_CODES,
+  country_code: COUNTRY_CODES
 };
 
 /**
@@ -387,7 +410,7 @@ export function hubCellRules(
       type: HUB_TYPES[field.type] ?? 'any',
       required: field.required,
       unique: field.unique,
-      options: metadata.options,
+      options: HUB_TYPE_OPTIONS[field.type] ?? metadata.options,
       minLength: metadata.min_length,
       maxLength: metadata.max_length,
       minValue: metadata.min_value,
