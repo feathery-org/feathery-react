@@ -81,7 +81,14 @@ describe('runsFromNodes', () => {
     ).toEqual([{ insert: 'ac', attributes: bold }]);
   });
 
-  it('treats bare text nodes as the first run', () => {
+  it('continues the previous run for nodes without an index', () => {
+    const old = [{ insert: 'a' }, { insert: 'b', attributes: bold }];
+    expect(
+      runsFromNodes([span(0, 'a'), span(1, 'b'), span(null, 'x')], old)
+    ).toEqual([{ insert: 'a' }, { insert: 'bx', attributes: bold }]);
+  });
+
+  it('treats leading bare text as the first run', () => {
     const old = [{ insert: 'a', attributes: bold }];
     expect(runsFromNodes([featheryDoc().createTextNode('typed')], old)).toEqual(
       [{ insert: 'typed', attributes: bold }]

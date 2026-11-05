@@ -32,19 +32,21 @@ export function trimLabelRuns(runs: LabelRun[]): LabelRun[] {
 
 /**
  * Rebuilds runs from an edited label's DOM. Each run renders as a span with
- * `data-index`, so typed text keeps the attributes of the run it landed in;
- * text outside any span (e.g. after deleting everything) takes the first
- * run's attributes.
+ * `data-index`, so typed text keeps the attributes of the run it landed in.
+ * Nodes the browser creates without one (bare text, split spans) continue the
+ * run before them, or the first run at the start.
  */
 export function runsFromNodes(
   nodes: NodeListOf<ChildNode> | ChildNode[],
   oldRuns: LabelRun[]
 ): LabelRun[] {
   const runs: LabelRun[] = [];
+  let index = 0;
   Array.from(nodes).forEach((node) => {
     const insert = node.textContent ?? '';
     if (!insert) return;
-    const index = Number((node as HTMLElement).dataset?.index ?? 0);
+    const ownIndex = (node as HTMLElement).dataset?.index;
+    if (ownIndex !== undefined) index = Number(ownIndex);
     const attributes = oldRuns[index]?.attributes;
     const prev = runs[runs.length - 1];
     // Merge neighbours with identical formatting to keep the delta compact
