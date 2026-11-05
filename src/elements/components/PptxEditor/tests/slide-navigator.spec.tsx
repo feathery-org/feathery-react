@@ -54,9 +54,8 @@ it('keeps visible thumbnails painted while undo and redo queue refreshed preview
   await waitFor(() => expect(thumbnail.querySelector('svg')).not.toBeNull());
   const beforeUndo = thumbnail.querySelector('svg');
   await act(async () => store.undo());
-  // The thumbnail must stay painted (never blank) while the preview refreshes;
-  // that refresh may land inside this act or on a later tick, so assert it's
-  // still there, then that it eventually repaints to a new node.
+  // The previous preview stays painted (never blanks) until the queued
+  // refresh swaps it in; wait for that settle instead of a one-tick identity.
   expect(thumbnail.querySelector('svg')).not.toBeNull();
   await waitFor(() =>
     expect(thumbnail.querySelector('svg')).not.toBe(beforeUndo)
@@ -64,6 +63,9 @@ it('keeps visible thumbnails painted while undo and redo queue refreshed preview
   const beforeRedo = thumbnail.querySelector('svg');
   await act(async () => store.redo());
   expect(thumbnail.querySelector('svg')).not.toBeNull();
+  await waitFor(() =>
+    expect(thumbnail.querySelector('svg')).not.toBe(beforeRedo)
+  );
 });
 
 it('walks slides with Up/Down from a focused thumbnail, even read-only', async () => {
