@@ -21,6 +21,24 @@ export function canUngroup(shape: Shape | undefined): boolean {
   );
 }
 
+/** A shape inside one of these groups, at any depth, read live from its group */
+export function findGroupMember(
+  shapes: Shape[],
+  shapeId: string
+): Shape | undefined {
+  for (const group of shapes) {
+    if (group.type !== 'group') continue;
+    const members = childrenOf(group.node)
+      .map((node) => readShapeNode(node))
+      .filter((shape): shape is Shape => !!shape);
+    const member =
+      members.find((candidate) => candidate.id === shapeId) ??
+      findGroupMember(members, shapeId);
+    if (member) return member;
+  }
+  return undefined;
+}
+
 export function ungroupShape(deck: Deck, slide: Slide, group: Shape): string[] {
   const geometry = group.xfrm;
   const xfrm = group.spPr && child(group.spPr, 'a:xfrm');

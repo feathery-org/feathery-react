@@ -177,4 +177,5 @@ export interface CommandMeta {
   origin?: 'editor' | 'json' | 'binding' | 'assistant';
   /** Display name for the tracked-edits log (defaults to the author kind). */
   authorLabel?: string;
+  authorId?: string;
 }

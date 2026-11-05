@@ -21,7 +21,11 @@ import {
   type EditorSnapshot,
   type PptxSavePoint
 } from '../engine/PptxEditorEngine';
-import type { EditorCommand, Invalidation } from '../engine/commands';
+import type {
+  CommandMeta,
+  EditorCommand,
+  Invalidation
+} from '../engine/commands';
 
 export interface HistorySummary {
   id: number;
@@ -251,6 +255,31 @@ export class PptxEditorStore {
     return result;
   };
 
+  /** Several engine commands as one undo step and one change record, refreshed once at the end */
+  transaction = (
+    meta: CommandMeta,
+    run: () => void
+  ): CommandResult | undefined => {
+    // The person's in-progress text edit lands first, as its own undo step
+    this.commitSvgTextEdit?.({ render: false });
+    if (!this.state.deck) return undefined;
+    let result: CommandResult;
+    try {
+      result = this.engine.transaction(meta, run);
+    } catch (error) {
+      // What ran before the failure is kept as one entry, so settle on it like any other change
+      this.afterHistoryRestore({
+        changed: true,
+        invalidations: [{ kind: 'deck' }],
+        createdShapeIds: [],
+        snapshot: this.engine.snapshot()
+      });
+      throw error;
+    }
+    if (result.changed) this.afterHistoryRestore(result);
+    return result;
+  };
+
   applyActiveSlideJSON = (value: unknown): CommandResult | undefined => {
     const slide = this.state.deck?.slides[this.state.activeSlide];
     if (!slide) return undefined;
@@ -344,13 +373,9 @@ export class PptxEditorStore {
 
   rejectChange = (id: string): ReturnType<PptxEditorEngine['rejectChange']> => {
     const outcome = this.engine.rejectChange(id);
-    if (outcome.ok) {
-      for (const result of outcome.results) this.refreshEngineView(result);
-    }
-    this.set({
-      ...historyFields(this.engine.snapshot()),
-      rev: this.state.rev + 1
-    });
+    if (outcome.ok)
+      for (const result of outcome.results) this.afterHistoryRestore(result);
+    else this.set({ rev: this.state.rev + 1 });
     return outcome;
   };
 
