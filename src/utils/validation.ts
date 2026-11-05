@@ -62,14 +62,7 @@ function validateElements({
   ).reduce((errors: any, { element, repeat, last, type: elementType }) => {
     let key, type;
     if (elementType === 'servar_fields') {
-      if (element.servar.repeat_trigger === 'set_value' && last && repeat) {
-        // Skip validation on last repeat since it might be default value
-        return errors;
-      }
-      // A state field disabled for want of states can never be filled in
-      if (stateFieldHasNoOptions(element, step, fieldValues, repeat)) {
-        return errors;
-      }
+      if (isExemptFromValidation(element, step, repeat, last)) return errors;
       type = element.servar.type;
       key = element.servar.key;
     } else {
@@ -143,6 +136,52 @@ function validateElements({
     });
   }
   return { errors, inlineErrors, invalid };
+}
+
+/**
+ * Rows a submit never validates: the trailing auto-added repeat row, which may
+ * still hold its default value, and a state field with no states to pick.
+ */
+function isExemptFromValidation(
+  element: any,
+  step: any,
+  repeat: any,
+  last: boolean
+): boolean {
+  if (element.servar.repeat_trigger === 'set_value' && last && repeat)
+    return true;
+  return stateFieldHasNoOptions(element, step, fieldValues, repeat);
+}
+
+/**
+ * Whether one field would pass a submit's validation right now, across every
+ * visible row, without touching the DOM or inline errors. Drives autosave: a
+ * field is only flushed once it is in a state the step could be submitted in.
+ */
+function isFieldValid({
+  step,
+  visiblePositions,
+  fieldKey
+}: {
+  step: any;
+  visiblePositions: any;
+  fieldKey: string;
+}): boolean {
+  const elements = getVisibleElements(
+    step,
+    visiblePositions,
+    ['servar_fields'],
+    true
+  ).filter(({ element }) => element.servar.key === fieldKey);
+  // A field with nothing visible (hidden, or on another step) isn't saved
+  return (
+    elements.length > 0 &&
+    elements.every(
+      ({ element, repeat, last }) =>
+        isExemptFromValidation(element, step, repeat, last) ||
+        !validateElement(element, repeat)
+    )
+  );
 }
 
 /**
@@ -379,6 +418,7 @@ function getStandardFieldError(value: any, servar: any, repeat: any) {
 export {
   validateElement,
   validateElements,
+  isFieldValid,
   getStandardFieldError,
   isFieldValueEmpty,
   emailPatternStr,

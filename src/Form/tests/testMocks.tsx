@@ -73,12 +73,13 @@ jest.mock('../../utils/hideAndRepeats', () => {
 
 // Validation
 jest.mock('../../utils/validation', () => {
-  const state = { invalid: false };
+  const state = { invalid: false, fieldValid: true };
   return {
     validateElements: jest.fn(() => ({
       invalid: state.invalid,
       inlineErrors: {}
     })),
+    isFieldValid: jest.fn(() => state.fieldValid),
     validators: { phone: () => true, email: () => true },
     _spies: state
   };
@@ -129,7 +130,8 @@ jest.mock('../../utils/formHelperFunctions', () => ({
   isElementInViewport: () => true,
   lookUpTrigger: () => ({}),
   mapFormSettingsResponse: (res: any) => ({
-    authSensitiveActionsOnly: res.auth_sensitive_actions_only ?? false
+    authSensitiveActionsOnly: res.auth_sensitive_actions_only ?? false,
+    autosave: res.autosave ?? false
   }),
   prioritizeActions: (a: any) => a,
   registerRenderCallback: () => {},
@@ -386,6 +388,8 @@ jest.mock('../../utils/featheryClient', () => {
   const redeemLinkSpy = jest.fn();
   const registerEventSpy = jest.fn().mockResolvedValue(undefined);
   const submitStepSpy = jest.fn().mockResolvedValue(undefined);
+  const submitCustomSpy = jest.fn().mockResolvedValue(undefined);
+  const submitFilesSpy = jest.fn().mockResolvedValue(undefined);
   // Lets a test answer the session fetch with something other than a loadable
   // step (e.g. the access link flags that carry no form data), turn the form
   // off, or fail the session outright.
@@ -399,7 +403,9 @@ jest.mock('../../utils/featheryClient', () => {
     sessionGated: false as boolean | undefined,
     // Lets a test give the single step its own elements (e.g. a button whose
     // action gates the step) instead of the empty default.
-    steps: null as any[] | null
+    steps: null as any[] | null,
+    // The form-level autosave setting
+    autosave: false
   };
 
   class MockClient {
@@ -423,7 +429,8 @@ jest.mock('../../utils/featheryClient', () => {
         formOff: state.formOff,
         logic_rules: [],
         shared_codes: [],
-        track_hashes: false
+        track_hashes: false,
+        autosave: state.autosave
       };
     };
 
@@ -445,6 +452,8 @@ jest.mock('../../utils/featheryClient', () => {
     };
 
     submitStep = submitStepSpy;
+    submitCustom = submitCustomSpy;
+    submitFiles = submitFilesSpy;
     registerEvent = registerEventSpy;
     runAIExtraction = jest.fn();
     forwardInboxEmail = jest.fn();
@@ -465,6 +474,8 @@ jest.mock('../../utils/featheryClient', () => {
       redeemLink: redeemLinkSpy,
       registerEvent: registerEventSpy,
       submitStep: submitStepSpy,
+      submitCustom: submitCustomSpy,
+      submitFiles: submitFilesSpy,
       state
     }
   };

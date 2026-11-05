@@ -1191,12 +1191,23 @@ export default class FeatheryClient extends IntegrationClient {
         .catch((error) =>
           console.warn('Error resetting saved answer retries', error)
         );
+      const settledEarlier = earlierSubmissions.catch(() => undefined);
+      // Field saves still in flight land before the step's values replace them,
+      // and an earlier upload finishes first so its files aren't sent twice.
+      // A failed flush still surfaces below, but never withholds the step's
+      // answers, which can otherwise queue for a retry
+      const customFlush = this.submitCustom(hiddenFields, {
+        shouldFlush: true
+      });
+      const settledFlush = customFlush.catch(() => undefined);
       return Promise.all([
-        earlierSubmissions.catch(() => undefined),
-        this.submitCustom(hiddenFields, { shouldFlush: true }),
-        this._submitJSONData(jsonServars, step.key, hasNext),
+        settledEarlier,
+        customFlush,
+        settledFlush.then(() =>
+          this._submitJSONData(jsonServars, step.key, hasNext)
+        ),
         ...fileServars.map((servar: any) =>
-          this._submitFileData(servar, step.key)
+          settledEarlier.then(() => this._submitFileData(servar, step.key))
         )
       ]);
     })();
