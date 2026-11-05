@@ -366,6 +366,7 @@ export const getFormContext = (formUuid: string) => {
       closeOnAction,
       emailSubject,
       emailBlurb,
+      ccRecipients,
       customFields,
       repeatable,
       download,
@@ -419,6 +420,9 @@ export const getFormContext = (formUuid: string) => {
       // signing email, as sendDocusignEnvelope takes them.
       emailSubject?: string;
       emailBlurb?: string;
+      // Completion copies added to the integration's configured recipients.
+      // excludedDocuments uses 0-based positions in the generated packet.
+      ccRecipients?: SendDocusignParams['ccRecipients'];
       // DocuSign envelope metadata (not PDF fields), e.g. account_submission_id.
       customFields?: Record<
         string,
@@ -433,6 +437,24 @@ export const getFormContext = (formUuid: string) => {
       // Where the signing page sends the filler when they finish.
       redirect?: boolean | string;
     }) => {
+      if (ccRecipients !== undefined && signMethod !== 'docusign') {
+        return Promise.reject(
+          new Error(
+            "generateDocuments: ccRecipients require signMethod 'docusign'"
+          )
+        );
+      }
+      const ccCopies = ccRecipients?.map((cc) =>
+        typeof cc === 'string'
+          ? cc
+          : {
+              email: cc.email,
+              name: cc.name,
+              excluded_documents: cc.excludedDocuments
+                ? [...cc.excludedDocuments]
+                : undefined
+            }
+      );
       if (customFields !== undefined && signMethod !== 'docusign') {
         return Promise.reject(
           new Error(
@@ -631,6 +653,7 @@ export const getFormContext = (formUuid: string) => {
               : {}),
             email_subject: emailSubject,
             email_blurb: emailBlurb,
+            cc_recipients: ccCopies,
             custom_fields: customFields,
             repeatable,
             merge_docs: merge,
@@ -660,6 +683,13 @@ export const getFormContext = (formUuid: string) => {
         return Promise.reject(
           new Error(
             'generateDocuments: per-role signers require a mounted <Form />.'
+          )
+        );
+      }
+      if (ccRecipients !== undefined) {
+        return Promise.reject(
+          new Error(
+            'generateDocuments: ccRecipients require a mounted <Form />.'
           )
         );
       }
