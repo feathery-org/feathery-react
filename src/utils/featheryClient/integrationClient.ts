@@ -1307,8 +1307,11 @@ export default class IntegrationClient {
       false
     );
     if (!response) throw new Error('Upload failed');
-    const data = await response.json();
-    if (!response.ok) throw new Error(parseAPIError(data));
+    // A proxy rejecting the upload (e.g. a 413) answers with HTML, not JSON.
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data) {
+      throw new Error(data ? parseAPIError(data) : 'Upload failed');
+    }
     return data;
   }
 

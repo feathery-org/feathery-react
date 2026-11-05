@@ -86,6 +86,13 @@ export const moveItem = <T,>(items: T[], from: number, to: number): T[] => {
   return next;
 };
 
+// Mirrors the backend's cap, so an oversized file fails before it uploads.
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+// The viewer covers the page, so a file dropped anywhere outside the documents
+// list lands here instead of making the browser open it in place of the form.
+const keepFileDropInViewer = (e: React.DragEvent) => e.preventDefault();
+
 const MAX_PAGE_WIDTH = 900;
 const CONTAINER_PADDING = 48;
 const VIEWER_TITLE = 'Review Your Forms';
@@ -311,6 +318,9 @@ export default function DocumentViewer({
   // `documents` in the order shown.
   const canEditPacket =
     !!action.editor_allow_attachments && !!onUploadAttachment;
+  // Fixed once DocuSign may hold a draft of the packet or it was sent: a draft
+  // refresh must name exactly the documents already in that draft.
+  const isPacketLocked = session.draftAttempted || session.sent;
   const [documents, setDocuments] = useState(payload.documents);
   // Read by the once-bound Escape handler, which must see the live value.
   const busyKeyRef = useRef(busyKey);
@@ -527,6 +537,10 @@ export default function DocumentViewer({
     // Each file stands alone: one failing doesn't drop the rest.
     const failures: string[] = [];
     for (const file of files) {
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        failures.push(`${file.name}: Attachments can be at most 20MB.`);
+        continue;
+      }
       try {
         const attachment = await onUploadAttachment(file);
         setDocuments((prev) => [...prev, attachment]);
@@ -542,7 +556,8 @@ export default function DocumentViewer({
   const moveDocument = (from: number, to: number) =>
     setDocuments((prev) => moveItem(prev, from, to));
 
-  // The upload's envelope is left behind in storage.
+  // Its envelope stays behind, pending: only a finalize adds an attachment to
+  // the submission's documents.
   const removeAttachment = (index: number) =>
     setDocuments((prev) => prev.filter((_, i) => i !== index));
 
@@ -636,6 +651,8 @@ export default function DocumentViewer({
       aria-modal='true'
       aria-label={VIEWER_TITLE}
       tabIndex={-1}
+      onDragOver={keepFileDropInViewer}
+      onDrop={keepFileDropInViewer}
       css={{
         position: 'fixed',
         inset: 0,
@@ -667,7 +684,7 @@ export default function DocumentViewer({
           packetEditor={
             canEditPacket
               ? {
-                  disabled: busyKey !== null,
+                  disabled: busyKey !== null || isPacketLocked,
                   onAddFiles: addAttachments,
                   onMove: moveDocument,
                   onRemove: removeAttachment

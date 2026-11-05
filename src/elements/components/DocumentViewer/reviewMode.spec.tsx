@@ -5,6 +5,7 @@ import DocumentViewer, {
   deferCompletion,
   finalizeOutcome,
   isToolbarActionDisabled,
+  MAX_ATTACHMENT_BYTES,
   needsDraftRefresh,
   recordAttempt,
   ReviewSession
@@ -798,6 +799,73 @@ describe('DocumentViewer — packet editing (editor_allow_attachments)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       "Couldn't attach big.zip: Attachments can be at most 20MB."
     );
+  });
+
+  it('rejects an oversized file without uploading it', async () => {
+    const { onUploadAttachment } = renderViewer();
+    const big = new File(['x'], 'huge.zip');
+    Object.defineProperty(big, 'size', { value: MAX_ATTACHMENT_BYTES + 1 });
+
+    fireEvent.change(screen.getByTestId('attachment-input'), {
+      target: { files: [big] }
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Couldn't attach huge.zip: Attachments can be at most 20MB."
+    );
+    expect(onUploadAttachment).not.toHaveBeenCalled();
+  });
+
+  it('keeps a file dropped outside the documents list from leaving the form', () => {
+    renderViewer();
+    // fireEvent returns false once a handler prevented the default.
+    expect(fireEvent.dragOver(screen.getByRole('dialog'))).toBe(false);
+    expect(fireEvent.drop(screen.getByRole('dialog'))).toBe(false);
+  });
+
+  describe('with editor_close_on_action false', () => {
+    const keepOpen = (toolbarActions: string[]) => ({
+      ...action,
+      editor_toolbar_actions: toolbarActions,
+      sign_method: 'docusign',
+      editor_close_on_action: false
+    });
+    const settle = () =>
+      waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled()
+      );
+
+    it('finalizes the edited packet on a second press', async () => {
+      const { onFinalize } = renderViewer({ action: keepOpen(['download']) });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+      await settle();
+      await attach();
+      fireEvent.click(screen.getByRole('button', { name: 'Move bundle up' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+      await settle();
+
+      expect(
+        onFinalize.mock.calls[1][0].envelopes.map((e: any) => e.envelopeId)
+      ).toEqual(['env-1', 'att-1', 'env-2']);
+    });
+
+    it('locks the packet once DocuSign holds a draft of it', async () => {
+      renderViewer({
+        action: keepOpen(['sign', 'draft']),
+        onFinalize: jest.fn().mockResolvedValue({ status: 'created' })
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Create Draft' }));
+      await settle();
+
+      expect(
+        screen.getByRole('button', { name: 'Add attachment' })
+      ).toBeDisabled();
+      expect(
+        screen.getByRole('button', { name: 'Move A down' })
+      ).toBeDisabled();
+    });
   });
 
   it('keeps the files that uploaded when another fails', async () => {
