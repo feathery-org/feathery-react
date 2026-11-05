@@ -51,6 +51,7 @@ import {
   signsViaDocusign
 } from '../document';
 import { withLinkRequestHeaders } from '../accessLinkRequest';
+import { trackRequest } from '../networkDebug';
 
 // A configured Generate Documents entry in the ordered `documents` array: a
 // template UUID string, an explicit template, one Quik source, or a file
@@ -243,7 +244,9 @@ export default class IntegrationClient {
       return Promise.resolve(undefined);
     }
     const requestOptions = withLinkRequestHeaders(url, options);
-    return apiFetch(sdkKey, url, requestOptions, parseResponse).catch((e) => {
+    return trackRequest(url, requestOptions, () =>
+      apiFetch(sdkKey, url, requestOptions, parseResponse)
+    ).catch((e) => {
       if (e instanceof FormConflictError) {
         handleFormConflict();
         return;

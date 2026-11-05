@@ -75,6 +75,7 @@ import {
 } from '../utils/hideAndRepeats';
 import {
   ensurePhoneValidator,
+  isFieldValid,
   isFieldValueEmpty,
   validateElements,
   validators
@@ -112,6 +113,12 @@ import {
   trackEvent
 } from '../integrations/utils';
 import DevNavBar from './components/DevNavBar';
+import NetworkDebugPanel from './components/NetworkDebugPanel';
+import {
+  enableNetworkDebug,
+  isNetworkDebugEnabled,
+  setNetworkDebugStep
+} from '../utils/networkDebug';
 import FeatherySpinner from '../elements/components/Spinner';
 import CallbackQueue from '../utils/callbackQueue';
 import {
@@ -369,6 +376,8 @@ interface InternalProps {
   _isAuthLoading?: boolean; // Flag to show the loader for auth purposes
   _bypassCDN?: boolean; // Fetch form directly from API if true
   _pollFuserData?: boolean; // Poll for updated fuser data on BE. Used by audio AI.
+  // Shows the network debug panel; the feathery_network_debug URL param also does
+  _networkDebug?: boolean;
 }
 
 export interface ClickActionElement {
@@ -446,6 +455,7 @@ function Form({
   _bypassCDN = false,
   _draft = false,
   _pollFuserData = false,
+  _networkDebug = false,
   formId: formIdProp, // The 'live' env slug
   onChange = null,
   onLoad = null,
@@ -517,6 +527,7 @@ function Form({
     saveUrlParams: false,
     saveHideIfFields: false,
     clearHideIfFields: false,
+    autosave: false,
     asciiOnly: false,
     showFileUploadProgress: true,
     showDocumentProgress: true,
@@ -915,6 +926,14 @@ function Form({
   }, [formSettings]);
 
   useTrackUserInteraction(formRef, activeStep, stepKey, formName);
+
+  // Enabled during render so the form fetch itself is recorded
+  if (_networkDebug) enableNetworkDebug();
+  const showNetworkDebug = isNetworkDebugEnabled();
+  useEffect(() => {
+    if (showNetworkDebug && activeStep?.key)
+      setNetworkDebugStep(activeStep.key);
+  }, [showNetworkDebug, activeStep?.key]);
 
   useEffect(() => {
     const oldLanguage = curLanguage.current;
@@ -2267,9 +2286,30 @@ function Form({
         : justInsert(fieldValues[servar.key] || [], value, index, field);
 
     const change = updateFieldValues(updateValues, { rerender, triggerErrors });
+    if (change) autosaveField(field);
     if (repeatRowOperation === 'add' && repeatContainer)
       addRepeatedRow(repeatContainer);
     return change;
+  };
+
+  // Autosave: persist a field as soon as the user leaves it in a state the
+  // step could be submitted in. Runs the same per-field checks a submit would
+  // (required, format, custom validations) but never surfaces errors, so an
+  // in-progress value just waits for the next edit. Submit buttons still
+  // validate and submit the whole step as before; this only moves the moment
+  // a valid value reaches the server. Goes through the debounced custom
+  // submit, which batches keystrokes and is flushed ahead of any step submit.
+  const autosaveField = (field: any) => {
+    const servar = field.servar;
+    if (!formSettings.autosave || !visiblePositions) return;
+    // A payment method only exists once Stripe sets it up on step submit
+    if (servar.type === 'payment_method') return;
+    const fieldKey = servar.key;
+    if (!isFieldValid({ step: activeStep, visiblePositions, fieldKey })) return;
+    // Files go through the file endpoint, which dedupes the later step submit
+    if (FILE_FIELD_TYPES.includes(servar.type))
+      client?.submitFiles([fileSubmitEntry(servar, activeStep)]);
+    else client?.submitCustom({ [fieldKey]: fieldValues[fieldKey] });
   };
 
   const getNextStepKey = (metadata: any) =>
@@ -4338,6 +4378,7 @@ function Form({
             onClick={() => popupOptions.onHide && popupOptions.onHide()}
           />
         )}
+        {showNetworkDebug && <NetworkDebugPanel />}
         {initState.isTestEnv && (
           <DevNavBar
             allSteps={steps}
