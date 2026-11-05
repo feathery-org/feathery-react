@@ -177,6 +177,22 @@ const trackStepAnswers = (answers: Promise<unknown>) => {
 };
 
 export default class FeatheryClient extends IntegrationClient {
+  private submissionResults = new WeakMap<
+    Promise<unknown>,
+    Promise<PromiseSettledResult<unknown>[]>
+  >();
+
+  async hasRecoveredSubmission(submission: Promise<unknown>, error: unknown) {
+    if (!this.offlineRequestHandler.hasRecoveredWrite(error)) return false;
+    const results = this.submissionResults.get(submission);
+    if (!results) return false;
+    return (await results).every(
+      (result) =>
+        result.status === 'fulfilled' ||
+        this.offlineRequestHandler.hasRecoveredWrite(result.reason)
+    );
+  }
+
   /**
    * Used to aggregate field value updates for successive calls to
    * submitCustom within the debounce window
@@ -1219,7 +1235,7 @@ export default class FeatheryClient extends IntegrationClient {
       })
     );
     let answersStarted = false;
-    const submission = (async () => {
+    const runSubmission = async (): Promise<unknown[]> => {
       // A step submission is the user's manual retry for answers still queued
       // from earlier steps, including a confirmation step with no fields.
       await this.offlineRequestHandler
@@ -1237,12 +1253,15 @@ export default class FeatheryClient extends IntegrationClient {
       // A failed request must not release custom writes while a sibling upload
       // can still finish and overwrite them. Keep submission rejection separate.
       Promise.allSettled(answerRequests).then(answersSent);
-      return Promise.all([
+      const tasks = [
         earlierSubmissions.catch(() => undefined),
         this.submitCustom(hiddenFields, { shouldFlush: true }),
-        Promise.all(answerRequests)
-      ]);
-    })();
+        ...answerRequests
+      ];
+      this.submissionResults.set(submission, Promise.allSettled(tasks));
+      return Promise.all([tasks[0], tasks[1], Promise.all(answerRequests)]);
+    };
+    const submission = runSubmission();
     submission.catch(() => {
       // Setup can fail before any answer requests exist; those failures must
       // release the gate too, without bypassing the all-settled wait above.
@@ -1269,12 +1288,14 @@ export default class FeatheryClient extends IntegrationClient {
     if (!fileEntries.length) return;
 
     this.releaseHeldEvents();
-    const submission = Promise.all([
+    const tasks = [
       this.submitQueue.catch(() => undefined),
       ...fileEntries.map(({ servar, stepKey }) =>
         this._submitFileData(servar, stepKey)
       )
-    ]);
+    ];
+    const submission = Promise.all(tasks);
+    this.submissionResults.set(submission, Promise.allSettled(tasks));
     this.submitQueue = submission;
     return submission;
   }

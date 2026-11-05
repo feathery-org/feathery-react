@@ -714,7 +714,7 @@ describe('step save and completion ordering', () => {
   it('waits for step submissions that start while a custom flush is waiting', async () => {
     const { client: formClient } = createClientWithStorage();
     const ruleClient: any = new FeatheryClient('form');
-    const stepResolvers: Array<(value: {}) => void> = [];
+    const stepResolvers: Array<(value: Record<string, unknown>) => void> = [];
     const stepStarted: Array<() => void> = [];
     const stepSignals = [0, 1].map(
       () => new Promise<void>((resolve) => stepStarted.push(resolve))

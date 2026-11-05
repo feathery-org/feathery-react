@@ -83,7 +83,14 @@ const formHasDocumentElement = (steps: any): boolean =>
 export const waitForPendingStepSubmission = async (client: any) => {
   let submission = client.submitQueue;
   while (submission) {
-    await submission;
+    try {
+      await submission;
+    } catch (error) {
+      // A reconnect can acknowledge a failed save without replacing its promise.
+      // Only the original write's acknowledgement can recover that rejection.
+      if (!(await client.hasRecoveredSubmission?.(submission, error)))
+        throw error;
+    }
     if (submission === client.submitQueue) return;
     submission = client.submitQueue;
   }
