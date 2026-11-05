@@ -66,6 +66,23 @@ export function layoutOnly(a: string, b: string): boolean {
   return a.replace(LAID_OUT, '') === b.replace(LAID_OUT, '');
 }
 
+/** The paragraphs laid out in a block, past the header rows a continued table repeats */
+function laidOutParagraphs(block: Obj, into: Obj[]): void {
+  // The editor's classes come from its own script, so a block is told apart by its format
+  if (block.paragraphFormat) {
+    into.push(block);
+    return;
+  }
+  if (!block.tableFormat) return;
+  const continued = !!block.previousSplitWidget;
+  for (const row of block.childWidgets as Obj[]) {
+    if (continued && row.rowFormat?.isHeader) continue;
+    for (const cell of row.childWidgets as Obj[])
+      for (const inner of cell.childWidgets as Obj[])
+        laidOutParagraphs(inner, into);
+  }
+}
+
 export function createHost(editor: LiveEditor): DocxHost {
   return {
     editor,
@@ -119,6 +136,44 @@ export function createHost(editor: LiveEditor): DocxHost {
         end: selection.endOffset,
         text: typeof selection.text === 'string' ? selection.text : ''
       };
+    },
+    pages: () => {
+      const pages = editor.documentHelper?.pages as Obj[] | undefined;
+      const selection = editor.selection as Obj | undefined;
+      if (editor.layoutType === 'Continuous' || !pages?.length || !selection)
+        return null;
+      const printsNumber = (widget: Obj | undefined): boolean =>
+        !!widget &&
+        ((widget.fieldType === 0 &&
+          /^\s*PAGE\b/i.test(String(selection.getFieldCode(widget)))) ||
+          [
+            ...(widget.childWidgets ?? []),
+            ...(widget.children ?? []),
+            widget.textFrame
+          ].some(printsNumber));
+      return pages.map((page) => {
+        const number =
+          printsNumber(page.headerWidget) || printsNumber(page.footerWidget)
+            ? (page.currentPageNum as number)
+            : null;
+        const laidOut: Obj[] = [];
+        for (const body of (page.bodyWidgets ?? []) as Obj[])
+          for (const block of body.childWidgets as Obj[])
+            laidOutParagraphs(block, laidOut);
+        const paragraphs = laidOut.flatMap((paragraph) => {
+          const line = paragraph.childWidgets?.[0];
+          if (!line) return [];
+          // A paragraph continued from the previous page counts from its first part
+          const start = selection.getParagraphInfoInternal(line, 0);
+          return [
+            selection.getHierarchicalIndex(
+              start.paragraph,
+              String(start.offset)
+            ) as string
+          ];
+        });
+        return { paragraphs, number };
+      });
     }
   };
 }

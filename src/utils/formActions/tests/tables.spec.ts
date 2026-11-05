@@ -335,6 +335,28 @@ describe('table form actions', () => {
         ]
       });
     });
+
+    it('masks the sensitive values a table issue group reports', () => {
+      makeState(
+        makeHandlers(liveState({ showsGrid: true }), {
+          getRow: (rowIndex) => SSN_ROWS[rowIndex] ?? null,
+          getIssues: jest.fn(() => [
+            {
+              rowIndex: 0,
+              fieldKey: 'ssn',
+              message: 'Invalid',
+              severity: 'error' as const,
+              source: 'rule' as const
+            }
+          ])
+        }),
+        { steps }
+      );
+
+      expect(getTableIssues(formUuid, TABLE, { scope: 'table' })).toMatchObject(
+        { groups: [{ fieldKey: 'ssn', rows: [{ rowIndex: 0, value: '••••6789' }] }] }
+      );
+    });
   });
 
   describe('addTableRow', () => {
@@ -580,7 +602,7 @@ describe('table form actions', () => {
       }
     ];
 
-    it('reads one row cell by cell, or the whole table grouped by what is wrong with its rows capped', () => {
+    it('reads one row cell by cell, or the whole table grouped by what is wrong with its rows capped, each with its flagged value', () => {
       const handlers = makeHandlers(
         liveState({ showsGrid: true, rowCount: 60 }),
         {
@@ -605,7 +627,8 @@ describe('table form actions', () => {
             columnName: 'Email',
             message: 'Must be a number',
             severity: 'error',
-            source: 'rule'
+            source: 'rule',
+            value: 1
           },
           { message: 'Row looks wrong', severity: 'warning', source: 'assistant' }
         ]
@@ -620,11 +643,12 @@ describe('table form actions', () => {
         message: 'Must be a number',
         count: 60
       });
-      expect(groups[0].rowIndexes).toHaveLength(50);
+      expect(groups[0].rows).toHaveLength(50);
+      expect(groups[0].rows[2]).toEqual({ rowIndex: 2, value: 2 });
       expect(groups[1]).toMatchObject({
         message: 'Row looks wrong',
         count: 1,
-        rowIndexes: [1]
+        rows: [{ rowIndex: 1 }]
       });
 
       expect(

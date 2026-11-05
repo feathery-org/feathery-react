@@ -242,16 +242,23 @@ export function stripReadOnlyKeys<T>(
 // Section 3. outline
 // ---------------------------------------------------------------------------------------------
 
-export const outlineInputSchema = z.strictObject({
-  depth: z.int().min(1).max(6).optional()
-});
+export const outlineInputSchema = z
+  .strictObject({
+    depth: z.int().min(1).max(6).optional(),
+    pageNumber: z.int().min(1).optional(),
+    pagePosition: z.int().min(1).optional()
+  })
+  .refine((o) => o.pageNumber === undefined || o.pagePosition === undefined, {
+    message: 'give pageNumber or pagePosition, not both'
+  });
 export type OutlineInput = z.output<typeof outlineInputSchema>;
 
 export const outlineResultSchema = z.looseObject({
   ok: z.literal(true),
   outlineHash: z.string().min(1),
   depth: z.int().min(1).max(6),
-  lines: z.string()
+  lines: z.string(),
+  page: z.string().optional()
 });
 export type OutlineResult = z.output<typeof outlineResultSchema>;
 
@@ -920,6 +927,12 @@ export const writeSuccessResultSchema = z.looseObject({
     z.string().refine((v) => isNodeId(v) || isFormatId(v))
   ),
   touched: z.array(nodeIdSchema.or(z.literal(ROOT_ID))),
+  fingerprints: z
+    .record(
+      nodeIdSchema.or(z.literal(ROOT_ID)),
+      z.looseObject({ base: z.string().min(1), shape: z.string().min(1) })
+    )
+    .optional(),
   finalizerScope: z.array(finalizerScopeSchema),
   facts: z.array(factSchema),
   warnings: z.array(warningSchema),
@@ -1166,7 +1179,8 @@ export const descriptorSchema = z.looseObject({
   readOnly: z.boolean(),
   outlineHash: z.string().min(1),
   outline: z.string(),
-  selection: selectionSchema.optional()
+  selection: selectionSchema.optional(),
+  pageCount: z.int().min(1).optional()
 });
 export type Descriptor = {
   protocolVersion: number;
@@ -1178,6 +1192,7 @@ export type Descriptor = {
   /** The block-level outline at the pack's default depth, as the `outline` verb returns it. */
   outline: string;
   selection?: Selection;
+  pageCount?: number;
 };
 
 // ---------------------------------------------------------------------------------------------

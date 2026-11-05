@@ -19,6 +19,7 @@ import { cardCollections } from './card';
 import {
   copiedBookmarksFinalizer,
   rowIdentityFinalizer,
+  sectionTailFinalizer,
   tableIdentityFinalizer
 } from './finalizers/structure';
 import { bindingConsistency } from './invariants/bindings';
@@ -55,7 +56,7 @@ import { textSeam } from './seams/text';
 import { tocSeam } from './seams/toc';
 import { tocAnnotations, tocField } from './toc';
 import { derivedContent } from './invariants/derived';
-import { selectionOf } from './selection';
+import { pagesOf, selectionOf } from './selection';
 import { docxTree } from './tree';
 import VOCABULARY from './vocabulary';
 
@@ -103,6 +104,7 @@ export const docxPack: Pack = {
     restripeFinalizer,
     columnFitFinalizer,
     widthUnitsFinalizer,
+    sectionTailFinalizer,
     tableGeometryReport
   ],
   projections: {
@@ -127,6 +129,7 @@ export const docxPack: Pack = {
   },
   featureKeys: FEATURE_KEYS,
   selection: selectionOf,
+  pages: pagesOf,
   // the server's card for how to edit a document (what it attached to these refusals on the rig)
   methodCards: ['edit-document'],
   residueKeys: {
