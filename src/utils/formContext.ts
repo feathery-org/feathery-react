@@ -415,9 +415,6 @@ export const getFormContext = (formUuid: string) => {
       // toolbar offers. 'draft' is DocuSign-only (it finalizes as a sign with
       // draft=true).
       toolbarActions?: ('sign' | 'download' | 'save' | 'draft')[];
-      // Only for envelopeAction 'open_in_editor': true shows the documents
-      // without letting the filler edit them, like the Generate Documents
-      // action's editor "Read only" setting. Defaults to false.
       readOnly?: boolean;
       // Only for envelopeAction 'open_in_editor': false keeps the editor open
       // after a toolbar action, and the flow continues once the filler closes
