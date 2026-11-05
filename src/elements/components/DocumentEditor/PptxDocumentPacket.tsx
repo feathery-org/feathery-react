@@ -17,6 +17,7 @@ import {
 } from '../DocxEditor/docxDirtyRegistry';
 import type { DocumentTab, EditorEnvelope } from './documentPacket';
 import { envelopeSourceUrl } from './documentPacket';
+import { envelopeDownloadName } from './downloadFileName';
 
 const PptxEditor = React.lazy(
   () => import(/* webpackChunkName: "PptxEditor" */ '../PptxEditor')
@@ -129,7 +130,11 @@ function PresentationSession({
             visible={active}
             prepareSource={prepareSource}
             onReady={() => onReady(tab.id)}
-            fileName={tab.label.replace(/\.pptx$/i, '') + '.pptx'}
+            fileName={`${
+              initial.file
+                ? envelopeDownloadName(initial.file)
+                : tab.label.replace(/\.pptx$/i, '')
+            }.pptx`}
             readOnly={readOnly || initial.signed}
             hideDownload={!offersDownload}
             onSave={save}
