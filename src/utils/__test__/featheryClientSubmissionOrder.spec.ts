@@ -749,13 +749,58 @@ describe('step save and completion ordering', () => {
     await stepSignals[1];
 
     stepResolvers[0]({});
-    await Promise.resolve();
+    await waitUntil(() => sent.includes('custom fields'));
     expect(sent).toEqual(['step 1', 'step 2']);
 
     stepResolvers[1]({});
     await Promise.all([firstStep, secondStep, customFlush]);
     expect(sent).toEqual(['step 1', 'step 2', 'custom fields']);
   });
+
+  it.each(['JSON', 'file'])(
+    'keeps custom writes behind a pending file when another %s answer fails',
+    async (failedAnswer) => {
+      const { client } = createClientWithStorage();
+      const failure = new Error('Answer save failed');
+      let finishFile!: () => void;
+      const pendingFile = new Promise<void>((resolve) => {
+        finishFile = resolve;
+      });
+      jest.spyOn(client, '_submitJSONData').mockImplementation(async () => {
+        if (failedAnswer === 'JSON') throw failure;
+      });
+      jest
+        .spyOn(client, '_submitFileData')
+        .mockImplementation(async (field: any) => {
+          if (field.key === 'failed') throw failure;
+          return pendingFile;
+        });
+      const customSend = jest.spyOn(client, '_fetch').mockResolvedValue({});
+      const submission = client.submitStep(
+        [
+          ...(failedAnswer === 'file'
+            ? [{ key: 'failed', file_upload: new File(['old'], 'failed.pdf') }]
+            : []),
+          { key: 'document', file_upload: new File(['old'], 'old.pdf') }
+        ],
+        { key: 'first', buttons: [], subgrids: [] },
+        true
+      );
+      const rejectedSubmission = expect(submission).rejects.toBe(failure);
+      const customFlush = client.submitCustom(
+        { document: '' },
+        { shouldFlush: true }
+      );
+      await rejectedSubmission;
+      await waitUntil(() => customSend.mock.calls.length > 0);
+      const prematureSends = customSend.mock.calls.length;
+
+      finishFile();
+      await customFlush;
+      expect(prematureSends).toBe(0);
+      expect(customSend).toHaveBeenCalledTimes(1);
+    }
+  );
 
   it('keeps concurrent flushes pending through the delayed custom request', async () => {
     const { client: formClient } = createClientWithStorage();

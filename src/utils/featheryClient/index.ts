@@ -1210,7 +1210,7 @@ export default class FeatheryClient extends IntegrationClient {
 
     this.releaseHeldEvents();
     const earlierSubmissions = this.submitQueue;
-    // Resolved once this step's own answers are sent. Registered before
+    // Resolved once every answer request for this step settles. Registered before
     // anything is awaited so a rule that runs right after this call sees it.
     let answersSent: () => void = () => {};
     trackStepAnswers(
@@ -1218,6 +1218,7 @@ export default class FeatheryClient extends IntegrationClient {
         answersSent = resolve;
       })
     );
+    let answersStarted = false;
     const submission = (async () => {
       // A step submission is the user's manual retry for answers still queued
       // from earlier steps, including a confirmation step with no fields.
@@ -1226,20 +1227,27 @@ export default class FeatheryClient extends IntegrationClient {
         .catch((error) =>
           console.warn('Error resetting saved answer retries', error)
         );
-      const answers = Promise.all([
+      const answerRequests = [
         this._submitJSONData(jsonServars, step.key, hasNext),
         ...fileServars.map((servar: any) =>
           this._submitFileData(servar, step.key)
         )
-      ]);
-      answers.then(answersSent, answersSent);
+      ];
+      answersStarted = true;
+      // A failed request must not release custom writes while a sibling upload
+      // can still finish and overwrite them. Keep submission rejection separate.
+      Promise.allSettled(answerRequests).then(answersSent);
       return Promise.all([
         earlierSubmissions.catch(() => undefined),
         this.submitCustom(hiddenFields, { shouldFlush: true }),
-        answers
+        Promise.all(answerRequests)
       ]);
     })();
-    submission.then(answersSent, answersSent);
+    submission.catch(() => {
+      // Setup can fail before any answer requests exist; those failures must
+      // release the gate too, without bypassing the all-settled wait above.
+      if (!answersStarted) answersSent();
+    });
 
     // Maintain submitQueue semantics so downstream consumers (like registerEvent)
     // still see actual success/failure while preventing previous rejections
