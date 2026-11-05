@@ -182,6 +182,64 @@ describe('step save and completion ordering', () => {
     }
   });
 
+  it('sends the step answers only after an in-flight field save lands', async () => {
+    const { client } = createClientWithStorage();
+    let finishFieldSave: () => void = () => {};
+    const order: string[] = [];
+    jest.spyOn(client, '_fetch').mockImplementation(async (url: any) => {
+      const path = String(url);
+      order.push(`start ${path.includes('custom') ? 'field' : 'step'}`);
+      if (path.includes('custom'))
+        await new Promise<void>((resolve) => (finishFieldSave = resolve));
+      order.push(`end ${path.includes('custom') ? 'field' : 'step'}`);
+      return { ok: true };
+    });
+
+    const fieldSave = client.submitCustom(
+      { profile: 'older answer' },
+      { shouldFlush: true }
+    );
+    await waitUntil(() => order.length === 1);
+    const step = client.submitStep(
+      [{ key: 'profile', text_field: 'newer answer' }],
+      { key: 'Insurance', buttons: [], subgrids: [] },
+      true
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    finishFieldSave();
+    await Promise.all([fieldSave, step]);
+
+    expect(order).toEqual([
+      'start field',
+      'end field',
+      'start step',
+      'end step'
+    ]);
+  });
+
+  it('sends the step answers when the field save flush is rejected', async () => {
+    const { client } = createClientWithStorage();
+    jest
+      .spyOn(client, 'submitCustom')
+      .mockRejectedValue(new FetchError('"Invalid value"'));
+    const send = jest.spyOn(client, '_fetch').mockResolvedValue({ ok: true });
+
+    await expect(
+      client.submitStep(
+        [{ key: 'profile', text_field: 'synthetic answer' }],
+        { key: 'Insurance', buttons: [], subgrids: [] },
+        true
+      )
+    ).rejects.toThrow('Invalid value');
+
+    // The submission reports the failure at once; the answers go out behind it
+    await waitUntil(() => send.mock.calls.length === 1);
+    expect(JSON.parse(send.mock.calls[0][1].body)).toMatchObject({
+      step_key: 'Insurance',
+      servars: [{ key: 'profile', text_field: 'synthetic answer' }]
+    });
+  });
+
   it('sends the step answers when resetting stored retry budgets fails', async () => {
     const { client } = createClientWithStorage();
     jest
