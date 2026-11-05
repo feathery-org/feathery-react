@@ -275,6 +275,23 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(flow.mock.calls[1][0]).not.toHaveProperty('editor_close_on_action');
   });
 
+  it('maps readOnly to editor_read_only and omits it when unset', async () => {
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1'],
+      envelopeAction: 'open_in_editor',
+      toolbarActions: ['download'],
+      readOnly: true
+    });
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1'],
+      envelopeAction: 'open_in_editor',
+      toolbarActions: ['download']
+    });
+
+    expect(flow.mock.calls[0][0].editor_read_only).toBe(true);
+    expect(flow.mock.calls[1][0]).not.toHaveProperty('editor_read_only');
+  });
+
   it('captures independent Quik copies before flushing saved fields', async () => {
     const signerIds = { '1own': 'person-first' };
     const source = {
