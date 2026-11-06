@@ -1159,7 +1159,7 @@ describe('IntegrationClient', () => {
       // A rejected number comes back as the field's own message, not the
       // nested error object.
       const message =
-        'SMS authentication is on, but a signer has an unusable mobile number (123).';
+        "The mobile number for SMS verification isn't valid (123). Enter the full number with the country code, for example 15555550100 or +1 555 555 0100.";
       global.fetch.mockResolvedValue({
         ok: false,
         status: 400,
