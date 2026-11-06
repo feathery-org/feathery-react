@@ -47,7 +47,8 @@ import {
 import {
   editorContainerId,
   isDocusignSignAction,
-  signsViaDocusign
+  signsViaDocusign,
+  signerPhone
 } from '../document';
 import { withLinkRequestHeaders } from '../accessLinkRequest';
 
@@ -103,6 +104,27 @@ const documentRefCacheKey = (doc: GenerateDocumentRef) => {
   if (doc.kind === 'file_upload') return `file_upload:${doc.field_id}`;
   return String(doc.document_id);
 };
+
+const firstErrorMessage = (value: any): string | undefined => {
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object') return undefined;
+  for (const item of Object.values(value)) {
+    const message = firstErrorMessage(item);
+    if (message) return message;
+  }
+  return undefined;
+};
+
+// A field error nests under its path (e.g. {signers: [{phone: [...]}]}),
+// which parseAPIError would render as "[object Object]".
+const envelopeErrorMessage = (payload: any) =>
+  payload &&
+  typeof payload === 'object' &&
+  !Array.isArray(payload) &&
+  !payload.message &&
+  !payload.error
+    ? firstErrorMessage(payload) ?? parseAPIError(payload)
+    : parseAPIError(payload);
 
 const QUIK_DYNAMIC_ATTACHMENTS_OPTION = '__quik_dynamic_attachments__';
 // Backend 400s meaning another tab closed, superseded or finalized the session.
@@ -789,6 +811,7 @@ export default class IntegrationClient {
         // both the email and the flag outright.
         const email =
           (entry.email ?? fieldValues[entry.field_key])?.toString() ?? '';
+        const phone = signerPhone(entry, action, fieldValues);
         return {
           document_id: entry.document_id,
           // Omitted rather than nulled: the backend's role_id rejects an
@@ -806,7 +829,7 @@ export default class IntegrationClient {
           // Omitted rather than blanked: a present phone is the request to
           // challenge that recipient by SMS, so an empty one must not read as
           // one.
-          ...(entry.phone ? { phone: entry.phone.toString() } : {}),
+          ...(phone ? { phone } : {}),
           filler: entry.filler ?? isFiller(email)
         };
       })
@@ -1137,7 +1160,7 @@ export default class IntegrationClient {
       // against an unfinalized envelope.
       if (!response) throw Error('Document finalization failed');
       if (response.ok) return await response.json();
-      throw Error(parseAPIError(await response.json()));
+      throw Error(envelopeErrorMessage(await response.json()));
     });
   }
 
@@ -1268,7 +1291,8 @@ export default class IntegrationClient {
     const response = await this._fetch(url, options, false);
     if (!response) return;
     const data = await response.json();
-    if (!response.ok) return { status: 'error', message: parseAPIError(data) };
+    if (!response.ok)
+      return { status: 'error', message: envelopeErrorMessage(data) };
     if (!runAsync || data.documents) return data;
 
     // Interpolating the raw array would stringify an object entry to
@@ -1348,7 +1372,8 @@ export default class IntegrationClient {
     const response = await this._fetch(url, options, false);
     if (!response) return;
     const data = await response.json();
-    if (!response.ok) return { status: 'error', message: parseAPIError(data) };
+    if (!response.ok)
+      return { status: 'error', message: envelopeErrorMessage(data) };
     // The sync response is already the final `{ files: [...] }` payload.
     // The async response is always `{}` immediately, regardless of the
     // requested envelope_action (sign/fill/download/save) — completion is

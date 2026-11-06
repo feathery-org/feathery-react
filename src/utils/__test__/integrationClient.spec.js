@@ -1093,6 +1093,106 @@ describe('IntegrationClient', () => {
       delete fieldValues.buyer_field;
     });
 
+    it('challenges a docusign signer by SMS only when their mapped phone has a value', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      Object.assign(fieldValues, {
+        buyer_field: 'buyer@example.com',
+        buyer_phone: '15551234567',
+        empty_phone: '',
+        // An emptied repeating field: truthy as an array, but no number.
+        empty_repeat_phone: ['']
+      });
+      const signer = {
+        document_id: 'doc1',
+        role_id: 'role-1',
+        field_key: 'buyer_field'
+      };
+      const cases = [
+        [
+          { sms_authentication: true, phone_field_key: 'buyer_phone' },
+          '15551234567'
+        ],
+        [
+          { sms_authentication: true, phone_field_key: 'empty_phone' },
+          undefined
+        ],
+        [
+          { sms_authentication: true, phone_field_key: 'empty_repeat_phone' },
+          undefined
+        ],
+        [
+          { sms_authentication: false, phone_field_key: 'buyer_phone' },
+          undefined
+        ],
+        // A logic-rule phone wins over the mapped field.
+        [
+          {
+            sms_authentication: true,
+            phone_field_key: 'buyer_phone',
+            phone: '+447911123456'
+          },
+          '+447911123456'
+        ],
+        // A stale mapping on an action that never reaches DocuSign signing.
+        [
+          { sms_authentication: true, phone_field_key: 'buyer_phone' },
+          undefined,
+          { envelope_action: 'open_in_editor', editor_toolbar_actions: [] }
+        ]
+      ];
+
+      for (const [sms, phone, actionOverrides] of cases) {
+        global.fetch.mockResolvedValue({
+          ok: true,
+          json: jest
+            .fn()
+            .mockResolvedValue({ docusign_envelope_id: 'ds-1', status: 'sent' })
+        });
+
+        await integrationClient.generateEnvelopes({
+          documents: ['doc1'],
+          run_async: false,
+          sign_method: 'docusign',
+          envelope_signers: [{ ...signer, ...sms }],
+          ...actionOverrides
+        });
+
+        const calls = global.fetch.mock.calls;
+        const body = JSON.parse(calls[calls.length - 1][1].body);
+        expect(body.signers[0].phone).toBe(phone);
+      }
+
+      // A rejected number comes back as the field's own message, not the
+      // nested error object.
+      const message =
+        'SMS authentication is on, but a signer has an unusable mobile number (123).';
+      global.fetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: jest.fn().mockResolvedValue({ signers: [{ phone: [message] }] })
+      });
+      const result = await integrationClient
+        .generateEnvelopes({
+          documents: ['doc1'],
+          run_async: false,
+          sign_method: 'docusign',
+          envelope_signers: [
+            {
+              ...signer,
+              sms_authentication: true,
+              phone_field_key: 'buyer_phone'
+            }
+          ]
+        })
+        .catch((error) => error);
+      expect(result?.message ?? result).toBe(message);
+
+      delete fieldValues.buyer_field;
+      delete fieldValues.buyer_phone;
+      delete fieldValues.empty_phone;
+      delete fieldValues.empty_repeat_phone;
+    });
+
     it('sends sign_method alongside the editor action when both are present', async () => {
       const formKey = 'test_form_key';
       const integrationClient = new IntegrationClient(formKey);
