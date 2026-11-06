@@ -106,7 +106,7 @@ type DocusignLibraryDocuments = {
 };
 // Reminder + expiration schedule (day counts). Omit either block to leave that
 // part on the DocuSign account default.
-type DocusignNotification = {
+export type DocusignNotification = {
   reminders?: { enabled?: boolean; delay?: number; frequency?: number };
   expirations?: { enabled?: boolean; after?: number; warn?: number };
 };

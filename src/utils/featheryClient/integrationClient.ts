@@ -5,6 +5,7 @@ import { OfflineRequestHandler } from '../offlineRequestHandler';
 import {
   AlloyEntities,
   CreateEgnyteFolderParams,
+  DocusignNotification,
   GetDocusignEnvelopeParams,
   LoanProCustomerObject,
   SendDocusignParams,
@@ -908,6 +909,7 @@ export default class IntegrationClient {
         draft: action.draft,
         emailSubject: action.email_subject,
         emailBlurb: action.email_blurb,
+        notification: action.notification,
         ccRecipients: action.cc_recipients,
         customFields: action.custom_fields
       });
@@ -1215,6 +1217,7 @@ export default class IntegrationClient {
     draft,
     emailSubject,
     emailBlurb,
+    notification,
     ccRecipients,
     customFields
   }: {
@@ -1233,6 +1236,8 @@ export default class IntegrationClient {
     // DocuSign sign only: subject and body of the envelope's signing email.
     emailSubject?: string;
     emailBlurb?: string;
+    // DocuSign sign only: reminder and expiration schedule.
+    notification?: DocusignNotification;
     ccRecipients?: (
       | string
       | { email: string; name?: string; excluded_documents?: number[] }
@@ -1276,6 +1281,7 @@ export default class IntegrationClient {
     if (signMethod) payload.sign_method = signMethod;
     if (emailSubject) payload.email_subject = emailSubject;
     if (emailBlurb) payload.email_blurb = emailBlurb;
+    if (notification) payload.notification = notification;
     if (ccRecipients !== undefined) payload.cc_recipients = ccRecipients;
     if (customFields !== undefined) payload.custom_fields = customFields;
     if (signers.length) payload.signers = signers;
@@ -1357,6 +1363,7 @@ export default class IntegrationClient {
     // DocuSign envelope until the filler presses Sign.
     if (action.email_subject) payload.email_subject = action.email_subject;
     if (action.email_blurb) payload.email_blurb = action.email_blurb;
+    if (action.notification) payload.notification = action.notification;
     if (action.cc_recipients !== undefined)
       payload.cc_recipients = action.cc_recipients;
     if (action.custom_fields !== undefined)
