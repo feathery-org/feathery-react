@@ -150,7 +150,7 @@ function PptxEditorInner({
         loadedSource.current = identity;
         dirtyRef.current = false;
         setLoading(false);
-        onReady?.();
+        onReady?.(store);
       } catch (err: any) {
         if (cancelled || seq !== loadSeq.current) return;
         setLoading(false);

@@ -53,6 +53,8 @@ export class OPCPackage {
   private trees = new Map<string, OTree>(); // parsed & possibly-mutated XML trees
   private dirty = new Set<string>();
   private mutationSeqs = new Map<string, number>();
+  // A slide's path is its identity, so a removed slide's path is never handed out again
+  private highestRemovedSlide = 0;
 
   constructor(parts: ZipParts, trees = new Map<string, OTree>()) {
     this.parts = parts;
@@ -238,6 +240,12 @@ export class OPCPackage {
 
   /** Remove a part entirely (text/binary/tree/order/dirty). */
   removePart(path: string): void {
+    const slideNumber = /ppt\/slides\/slide(\d+)\.xml$/.exec(path)?.[1];
+    if (slideNumber)
+      this.highestRemovedSlide = Math.max(
+        this.highestRemovedSlide,
+        Number(slideNumber)
+      );
     this.parts.text.delete(path);
     this.parts.binary.delete(path);
     this.trees.delete(path);
@@ -249,7 +257,7 @@ export class OPCPackage {
 
   /** A free slide part path (ppt/slides/slideN.xml). */
   nextSlidePath(): string {
-    let max = 0;
+    let max = this.highestRemovedSlide;
     for (const p of this.parts.text.keys()) {
       const m = /ppt\/slides\/slide(\d+)\.xml$/.exec(p);
       if (m) max = Math.max(max, Number(m[1]));

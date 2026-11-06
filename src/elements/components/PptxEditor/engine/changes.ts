@@ -4,6 +4,7 @@
 
 import type { CommandMeta, Invalidation } from './commands';
 import type { DeckJSON, SlideJSON, ShapeJSON } from '../core/model/json';
+import type { OTree } from '../core/opc/xml';
 
 export interface PptxChangeTarget {
   slideId: string;
@@ -28,6 +29,7 @@ export interface PptxChangeRecord {
   summary: string;
   before: unknown;
   after: unknown;
+  beforeSlides?: Readonly<Record<string, OTree>>;
 }
 
 function slideOf(doc: DeckJSON, path: string): SlideJSON | undefined {
@@ -59,7 +61,13 @@ export function deriveChangeRecord(input: {
   const targets: PptxChangeTarget[] = [];
   const before: Record<string, unknown> = {};
   const after: Record<string, unknown> = {};
-  for (const invalidation of invalidations) {
+  // A deck-wide change is checked and restored whole, so it is the only target
+  const scoped: Invalidation[] = invalidations.some(
+    (invalidation) => invalidation.kind === 'deck'
+  )
+    ? [{ kind: 'deck' }]
+    : invalidations;
+  for (const invalidation of scoped) {
     if (invalidation.kind === 'deck') {
       targets.push({ slideId: '*' });
       before['*'] = beforeDoc;
@@ -70,11 +78,13 @@ export function deriveChangeRecord(input: {
     if (invalidation.kind === 'shapes' || invalidation.kind === 'structure') {
       for (const shapeId of invalidation.shapeIds) {
         const key = `${slideId}#${shapeId}`;
+        if (key in after) continue;
         targets.push({ slideId, shapeId });
         before[key] = shapeOf(slideOf(beforeDoc, slideId), shapeId) ?? null;
         after[key] = shapeOf(slideOf(afterDoc, slideId), shapeId) ?? null;
       }
     } else {
+      if (slideId in after) continue;
       targets.push({ slideId });
       before[slideId] = slideOf(beforeDoc, slideId) ?? null;
       after[slideId] = slideOf(afterDoc, slideId) ?? null;
@@ -90,7 +100,11 @@ export function deriveChangeRecord(input: {
   return {
     id: `change-${transactionId}`,
     transactionId: String(transactionId),
-    author: { kind: authorKind, label: meta.authorLabel ?? authorKind },
+    author: {
+      kind: authorKind,
+      id: meta.authorId,
+      label: meta.authorLabel ?? authorKind
+    },
     origin,
     // User edits are accepted immediately; assistant suggestions are pending.
     status: origin === 'assistant' ? 'pending' : 'accepted',
