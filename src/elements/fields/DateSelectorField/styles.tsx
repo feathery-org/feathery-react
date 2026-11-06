@@ -610,6 +610,13 @@ export default function SelectorStyles() {
         .react-datepicker__day {
           cursor: default;
         }
+        /* Mutes the neighboring-month days that pad the fixed six-week grid.
+           Opacity rather than a color, so the days stay muted when form
+           custom CSS recolors .react-datepicker__day; selected, in-range and
+           disabled days keep their own styling */
+        .react-datepicker__day--outside-month:not(.react-datepicker__day--selected, .react-datepicker__day--keyboard-selected, .react-datepicker__day--in-range, .react-datepicker__day--disabled) {
+          opacity: 0.54;
+        }
 
         .react-datepicker__month-text,
         .react-datepicker__quarter-text,
