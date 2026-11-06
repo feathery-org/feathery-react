@@ -14,6 +14,8 @@ export interface PopupOptions {
 
 export type Trigger = {
   id: string;
+  // The user-defined key of a non-field element, when one is set
+  key?: string;
   _servarId?: string;
   // Other servars changed by the same interaction, e.g. the city/state/country
   // an address autocomplete fills alongside the address line.
