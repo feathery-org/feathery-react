@@ -19,6 +19,7 @@ import {
   maskFieldValues
 } from './sensitiveFieldValues';
 import { getImageAltText } from './accessibility';
+import { customFileTypeToken } from '../elements/fields/FileUploadField/validation';
 import type { TableRowRead, TableSelection } from './formActions/tables';
 
 export type PanelRuntimeFieldEntry = {
@@ -463,7 +464,7 @@ export const getPanelRuntimeSnapshot = (
     const fileTypes = [
       ...(Array.isArray(meta.file_types) ? meta.file_types : []),
       ...(Array.isArray(meta.custom_file_types)
-        ? meta.custom_file_types.map((t: string) => `.${t}`)
+        ? meta.custom_file_types.map(customFileTypeToken)
         : [])
     ];
     const sliderLabels =
