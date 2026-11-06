@@ -153,20 +153,33 @@ export function signsViaDocusign(action: Record<string, any>): boolean {
   );
 }
 
+function isPhoneNumberField(formKey: string, key: string): boolean {
+  const steps = initState.formSchemas?.[formKey]?.steps ?? {};
+  return Object.values(steps).some((step: any) =>
+    (step?.servar_fields ?? []).some(
+      ({ servar }: any) => servar?.key === key && servar.type === 'phone_number'
+    )
+  );
+}
+
 // A phone passed in code wins; else the mapped field, when SMS auth is on.
 export function signerPhone(
   entry: Record<string, any>,
   action: Record<string, any>,
-  values: Record<string, any>
+  values: Record<string, any>,
+  formKey = ''
 ): string | undefined {
-  const phone =
-    entry.phone ??
-    (entry.sms_authentication && signsViaDocusign(action)
-      ? values[entry.phone_field_key]
-      : undefined);
+  if (entry.phone != null) return entry.phone.toString() || undefined;
+  if (!entry.sms_authentication || !signsViaDocusign(action)) return undefined;
   // An emptied repeating field ([] or ['']) stringifies to ''
-  const text = phone == null ? '' : phone.toString();
-  return text || undefined;
+  const text = (values[entry.phone_field_key] ?? '').toString();
+  if (!text) return undefined;
+  // The phone field stores the country code without a '+', which the backend
+  // would read as a US number when the whole value is 10 digits.
+  return isPhoneNumberField(formKey, entry.phone_field_key) &&
+    !text.startsWith('+')
+    ? `+${text}`
+    : text;
 }
 
 /**

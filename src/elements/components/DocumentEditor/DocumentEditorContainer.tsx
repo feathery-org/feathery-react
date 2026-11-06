@@ -451,7 +451,12 @@ export default function DocumentEditorContainer({
       .map((entry: any) => {
         const email =
           (entry.email ?? fieldValues[entry.field_key])?.toString() ?? '';
-        const phone = signerPhone(entry, targetAction ?? {}, fieldValues);
+        const phone = signerPhone(
+          entry,
+          targetAction ?? {},
+          fieldValues,
+          formKey
+        );
         return {
           document_id: entry.document_id,
           ...(entry.role_id ? { role_id: entry.role_id } : {}),
@@ -484,7 +489,7 @@ export default function DocumentEditorContainer({
             }
           ]
     ).filter((entry: any) => entry.email);
-  }, [targetAction, activeDocumentId]);
+  }, [targetAction, activeDocumentId, formKey]);
 
   const runSigningAction = useCallback(
     async (draft: boolean) => {

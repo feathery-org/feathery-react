@@ -115,16 +115,15 @@ const firstErrorMessage = (value: any): string | undefined => {
   return undefined;
 };
 
-// A field error nests under its path (e.g. {signers: [{phone: [...]}]}),
-// which parseAPIError would render as "[object Object]".
-const envelopeErrorMessage = (payload: any) =>
-  payload &&
-  typeof payload === 'object' &&
-  !Array.isArray(payload) &&
-  !payload.message &&
-  !payload.error
-    ? firstErrorMessage(payload) ?? parseAPIError(payload)
-    : parseAPIError(payload);
+// A field error nests under its path ({signers: [{phone: [...]}]} from generate,
+// [{phone: [...]}] from finalize), which parseAPIError renders as
+// "[object Object]" or "Invalid".
+const envelopeErrorMessage = (payload: any) => {
+  const ownMessage = Array.isArray(payload)
+    ? payload[0]?.message
+    : payload?.message || payload?.error;
+  return (!ownMessage && firstErrorMessage(payload)) || parseAPIError(payload);
+};
 
 const QUIK_DYNAMIC_ATTACHMENTS_OPTION = '__quik_dynamic_attachments__';
 // Backend 400s meaning another tab closed, superseded or finalized the session.
@@ -811,7 +810,7 @@ export default class IntegrationClient {
         // both the email and the flag outright.
         const email =
           (entry.email ?? fieldValues[entry.field_key])?.toString() ?? '';
-        const phone = signerPhone(entry, action, fieldValues);
+        const phone = signerPhone(entry, action, fieldValues, this.formKey);
         return {
           document_id: entry.document_id,
           // Omitted rather than nulled: the backend's role_id rejects an
