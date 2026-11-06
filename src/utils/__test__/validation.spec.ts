@@ -166,7 +166,7 @@ describe('validation', () => {
       };
       const step = { servar_fields: [field], buttons: [], subgrids: [] };
 
-      const { invalid } = validateElements({
+      const { invalid, inlineErrors } = validateElements({
         step,
         visiblePositions: { '0': [true] },
         triggerErrors: true,
@@ -175,6 +175,8 @@ describe('validation', () => {
         setInlineErrors: jest.fn()
       });
 
+      expect(inlineErrors.matrix?.message).toBe('This is a required field');
+      expect(inlineErrors['matrix-0']).toBeUndefined();
       expect(questionInput.validationMessage).toBe('This is a required field');
       expect(invalid).toBe(true);
       form.remove();

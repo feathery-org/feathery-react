@@ -1,7 +1,11 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { PptxEditorEngine } from '../engine/PptxEditorEngine';
-import { tableCellBorderEdge, tableCells, tableRows } from '../core/model/table';
+import {
+  tableCellBorderEdge,
+  tableCells,
+  tableRows
+} from '../core/model/table';
 import { child, childrenOf, tagOf } from '../core/opc/xml';
 import { renderSlideSvg } from '../core/render/svg';
 
@@ -134,9 +138,7 @@ describe('table borders', () => {
       operations: [{ kind: 'add-column', index: 0 }]
     });
     expect(tableCells(tableRows(shape)[0])).toHaveLength(3);
-    expect(JSON.stringify(tableCells(tableRows(shape)[0])[1])).toContain(
-      'top'
-    );
+    expect(JSON.stringify(tableCells(tableRows(shape)[0])[1])).toContain('top');
     engine.execute({
       type: 'edit-table',
       slideId: slide.path,

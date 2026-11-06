@@ -1,4 +1,4 @@
-import { releaseEmbeddedFonts } from '../core/render/embeddedFonts';
+import { releaseEmbeddedFonts } from '../core/render/embeddedFontRegistry';
 import { ungroupShape } from '../core/model/groups';
 import { applySlideJSON } from '../core/model/applyJson';
 import { deepClone } from '../core/opc/deepClone';
@@ -34,6 +34,7 @@ import {
   setParagraphBullet,
   setPictureCrop,
   setShapeFillColor,
+  setShapeLineColor,
   setShapeGeometry,
   setShapeRichText,
   setSlideBackground,
@@ -496,6 +497,16 @@ export class PptxEditorEngine {
           { kind: 'shapes', slideId: slide.path, shapeIds: [shape.id] }
         ];
         defaultLabel = 'Change fill color';
+        break;
+      }
+      case 'set-line-color': {
+        const slide = this.requireSlide(command.slideId);
+        const shape = this.requireShape(slide, command.shapeId);
+        setShapeLineColor(deck, slide, shape, command.color);
+        invalidations = [
+          { kind: 'shapes', slideId: slide.path, shapeIds: [shape.id] }
+        ];
+        defaultLabel = 'Change line color';
         break;
       }
       case 'toggle-deck-slide-numbers': {

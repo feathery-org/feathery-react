@@ -18,6 +18,7 @@ import { installRevisionHighlightRendering } from '../../../useDocxEditor';
 import { colorForRevisionAuthor } from '../../authorColors';
 import { versionPreviewHarness } from './versionPreviewHarness';
 import { historyReviewHarness } from './historyReviewHarness';
+import { frozenTurnHarness } from './frozenTurnHarness';
 
 declare const __SYNCFUSION_LICENSE_KEY__: string;
 
@@ -56,6 +57,7 @@ const frame = (): Promise<void> =>
 const api = {
   ...versionPreviewHarness,
   ...historyReviewHarness,
+  ...frozenTurnHarness,
   async open(sfdt: string): Promise<void> {
     api.close();
     const host = document.createElement('div');

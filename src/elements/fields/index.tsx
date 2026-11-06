@@ -1,6 +1,7 @@
 import React, { memo, useMemo } from 'react';
 import { isFit } from '../../utils/hydration';
 import { isNum } from '../../utils/primitives';
+import { getImageColorStyles } from '../../utils/styles';
 import {
   DEFAULT_CHEVRON_GAP,
   DROPDOWN_CHEVRON_CLEARANCE,
@@ -10,6 +11,7 @@ import {
   INNER_PADDING_RIGHT,
   INPUT_BOX_FIELDS,
   MULTISELECT_FIELD,
+  nativeIconGapStyles,
   RESET_INLINE_PADDING_CSS
 } from '../styles';
 import {
@@ -232,6 +234,10 @@ function applyLabelFontStyles(styles: any) {
   styles.applyFontStyles('fieldLabel', false, true, 'label_', true);
 }
 
+// Option icons follow an explicit state font color, like button icons do.
+const optionIconStateColor = (color: string) =>
+  color ? { '[data-feathery-option-icon]': { color: `#${color}` } } : {};
+
 export function applyFieldStyles(field: any, styles: any) {
   const type = field.servar.type;
   styles.addTargets(
@@ -352,6 +358,7 @@ export function applyFieldStyles(field: any, styles: any) {
       styles.applyWidth('img', 'image_');
       styles.applyMargin('img', 'image_');
       styles.applyFlexDirection('ac');
+      styles.applyColor('img', 'icon_color', 'color');
       styles.applyColor('bar', 'bar_color', 'backgroundColor');
       break;
     case 'file_upload':
@@ -374,6 +381,7 @@ export function applyFieldStyles(field: any, styles: any) {
       styles.applyFlexDirection('ac');
       styles.applyWidth('img', 'image_');
       styles.applyMargin('img', 'image_');
+      styles.applyColor('img', 'icon_color', 'color');
       styles.apply(
         'ac',
         [
@@ -478,27 +486,24 @@ export function applyFieldStyles(field: any, styles: any) {
       );
       styles.applyWidth('img', 'image_');
       styles.applyMargin('img', 'image_');
+      styles.applyColor('img', 'icon_color', 'color');
+      styles.apply('img', 'image_color', getImageColorStyles);
+      styles.apply('iconGap', 'flex_direction', nativeIconGapStyles);
       styles.apply('hover', 'hover_image_color', (a: string) => {
         if (!a) return {};
-        const level = a === 'black' ? 0 : 100;
         return {
-          img: {
-            webkitFilter: `brightness(${level}%)`,
-            filter: `brightness(${level}%)`
-          }
+          'img, [data-feathery-option-icon]': getImageColorStyles(a)
         };
       });
       styles.applyColor('hover', 'hover_font_color', 'color');
+      styles.apply('hover', 'hover_font_color', optionIconStateColor);
       styles.applyColor('active', 'selected_font_color', 'color');
+      styles.apply('active', 'selected_font_color', optionIconStateColor);
 
       styles.apply('active', 'selected_image_color', (a: string) => {
         if (!a) return {};
-        const level = a === 'black' ? 0 : 100;
         return {
-          img: {
-            webkitFilter: `brightness(${level}%)`,
-            filter: `brightness(${level}%)`
-          }
+          'img, [data-feathery-option-icon]': getImageColorStyles(a)
         };
       });
       break;

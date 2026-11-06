@@ -32,6 +32,7 @@ export default function DropdownField({
   onChange = () => {},
   setRef = () => {},
   elementProps = {},
+  errorAttributes = {},
   children
 }: any) {
   const asciiOnly = formSettings?.asciiOnly ?? false;
@@ -46,7 +47,7 @@ export default function DropdownField({
   const servar = element.servar;
   const short = servar.metadata.store_abbreviation;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar, editMode, asciiOnly);
+    useSalesforceSync(servar, editMode, asciiOnly, formSettings?.formKey);
 
   useEffect(() => {
     if (servar.type === 'gmap_state') {
@@ -219,6 +220,7 @@ export default function DropdownField({
           required={required}
           disabled={disabled || loadingDynamicOptions}
           aria-label={element.properties.aria_label}
+          {...errorAttributes}
           onChange={onChange}
           onFocus={(event) => {
             setFocused(true);

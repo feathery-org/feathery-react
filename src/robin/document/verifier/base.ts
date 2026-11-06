@@ -123,6 +123,12 @@ export function checkBases(
         live: live(node)
       } as Conflict['stale'][number]);
   };
+  let shapes: Array<[string, string]> | undefined;
+  const isAnotherShape = (parent: string, carried: string) =>
+    (shapes ??= [view.nf.root, ...view.nodes()].map((n) => [
+      n.id,
+      shapeOf(n, pack.tree)
+    ])).some(([id, shape]) => id !== parent && shapeMatches(shape, carried));
   /** `container` is the shape of the node that owns the anchor's list. */
   const compareContainer = (anchor: string, carried: string | undefined) => {
     if (!isNodeId(anchor)) return;
@@ -135,7 +141,9 @@ export function checkBases(
         live: live(node)
       } as Conflict['stale'][number]);
     const parent = view.placement(anchor)?.parent;
-    if (parent) compare(parent.id, 'shape', carried);
+    // A container copied from another node's line vouches for nothing, the anchor names the list
+    if (parent && !(carried && isAnotherShape(parent.id, carried)))
+      compare(parent.id, 'shape', carried);
   };
   const check = (change: Change) => {
     switch (change.kind) {
@@ -263,42 +271,6 @@ export function misplacedHashes(
   };
   const parentOf = (anchor: string) =>
     isNodeId(anchor) ? view.placement(anchor)?.parent?.id : undefined;
-  // A container copied from the wrong outline line (a sibling section's @ value): the shape is
-  // another node's, so the write never meant this list; it is the model's slip, not the user's edit
-  let shapes: Array<{ id: string; shape: string }> | null = null;
-  const containerOf = (
-    at: string,
-    anchor: string,
-    carried: string | undefined
-  ) => {
-    const parent = parentOf(anchor);
-    if (!parent || carried === undefined) return;
-    const owner = parent === ROOT_ID ? view.nf.root : view.get(parent);
-    if (!owner) return;
-    const right = shapeOf(owner, pack.tree);
-    if (shapeMatches(right, carried)) return;
-    shapes ??= [view.nf.root, ...view.nodes()].map((n) => ({
-      id: n.id,
-      shape: shapeOf(n, pack.tree)
-    }));
-    const other = shapes.find(
-      (x) => x.id !== parent && shapeMatches(x.shape, carried)
-    );
-    if (!other) return;
-    problems.push(
-      problem(
-        'envelope',
-        `Nothing was applied: ${at} ${carried} is the shape of ${other.id}, not of ${parent}, which owns the list ${anchor} is in.`,
-        {
-          detail: [{ at, carried, shapeOf: other.id, container: parent }],
-          hint: `Use ${parent}'s shape as the container: @${right.slice(
-            0,
-            SHAPE_PREFIX
-          )} on its outline line, or its shape from a read.`
-        }
-      )
-    );
-  };
   write.changes.forEach((change, i) => {
     const at = `changes[${i}]`;
     switch (change.kind) {
@@ -323,7 +295,6 @@ export function misplacedHashes(
           change.container,
           "container is the shape of the node that owns the anchor's list"
         );
-        containerOf(`${at}.container`, change.anchor, change.container);
         return;
       case 'move':
         check(
@@ -340,7 +311,6 @@ export function misplacedHashes(
           change.container,
           "container is the shape of the node that owns the anchor's list"
         );
-        containerOf(`${at}.container`, change.anchor, change.container);
         return;
       case 'set': {
         const t = change.target;

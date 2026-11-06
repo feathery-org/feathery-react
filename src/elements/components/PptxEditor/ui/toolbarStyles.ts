@@ -115,6 +115,26 @@ export const styles = {
     padding: '4px 8px',
     overflowX: 'auto' as const
   },
+  // One combined toolbar row: a fixed left group (add slide, history, insert)
+  // then a contextual middle that swaps slide settings for shape settings.
+  bar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 2,
+    minHeight: 42,
+    padding: '4px 8px',
+    borderBottom: `1px solid ${ZINC[200]}`
+  },
+  // The swappable middle; it scrolls on its own so the wide shape cluster never
+  // pushes the fixed groups off the edges.
+  contextual: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 2,
+    flex: '1 1 auto',
+    minWidth: 0,
+    overflowX: 'auto' as const
+  },
   menuPanel: (left: number, top: number, width: number) => ({
     position: 'fixed' as const,
     left,

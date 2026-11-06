@@ -1004,6 +1004,55 @@ describe('IntegrationClient', () => {
       });
     });
 
+    it.each([
+      undefined,
+      [],
+      ['copy@example.com'],
+      [
+        {
+          email: 'custodian@example.com',
+          name: 'Custodian',
+          excluded_documents: [0]
+        }
+      ]
+    ])(
+      'forwards conditional CCs through generation and review finalization: %j',
+      async (ccRecipients) => {
+        const integrationClient = new IntegrationClient('test_form_key');
+        global.fetch.mockResolvedValue({
+          ok: true,
+          json: jest
+            .fn()
+            .mockResolvedValue({ documents: [], docusign_envelope_id: 'ds-cc' })
+        });
+        const action = {
+          documents: ['doc1', 'doc2'],
+          run_async: false,
+          sign_method: 'docusign',
+          envelope_action: 'open_in_editor',
+          cc_recipients: ccRecipients
+        };
+        await integrationClient.generateEnvelopes(action);
+        for (const options of [
+          { draft: true },
+          { draft: true, refreshDraft: true },
+          { draft: false }
+        ]) {
+          await integrationClient.finalizeEnvelopeReview(action, {
+            envelopes: [{ envelopeId: 'env-cc' }],
+            envelopeAction: 'sign',
+            ...options
+          });
+        }
+        for (const [, options] of global.fetch.mock.calls) {
+          const body = JSON.parse(options.body);
+          if (ccRecipients === undefined)
+            expect(body).not.toHaveProperty('cc_recipients');
+          else expect(body.cc_recipients).toEqual(ccRecipients);
+        }
+      }
+    );
+
     it('forwards email subject and blurb, omitting them when unset', async () => {
       const integrationClient = new IntegrationClient('test_form_key');
 
@@ -1018,11 +1067,15 @@ describe('IntegrationClient', () => {
         sign_method: 'docusign',
         email_subject: 'Please sign this',
         email_blurb: 'Two signatures needed.',
+        notification: { reminders: { enabled: true, delay: 2, frequency: 3 } },
         custom_fields: { account_submission_id: 'account-123' }
       });
       let body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(body.email_subject).toBe('Please sign this');
       expect(body.email_blurb).toBe('Two signatures needed.');
+      expect(body.notification).toEqual({
+        reminders: { enabled: true, delay: 2, frequency: 3 }
+      });
       expect(body.custom_fields).toEqual({
         account_submission_id: 'account-123'
       });
@@ -1037,6 +1090,7 @@ describe('IntegrationClient', () => {
       body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(body.email_subject).toBeUndefined();
       expect(body.email_blurb).toBeUndefined();
+      expect(body.notification).toBeUndefined();
       expect(body.custom_fields).toBeUndefined();
     });
 
@@ -1351,6 +1405,33 @@ describe('IntegrationClient', () => {
       expect(result).toEqual({ files: ['merged.pdf'] });
     });
 
+    it('sends refresh_draft only when the review asks to refresh its draft', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ status: 'created' })
+      });
+      const finalize = (refreshDraft) =>
+        integrationClient.finalizeEnvelopeReview(
+          { ...baseAction, run_async: false, sign_method: 'docusign' },
+          {
+            envelopes: [{ envelopeId: 'env-1' }],
+            envelopeAction: 'sign',
+            draft: true,
+            refreshDraft
+          }
+        );
+
+      await finalize(true);
+      await finalize(false);
+
+      const bodies = global.fetch.mock.calls.map(([, options]) =>
+        JSON.parse(options.body)
+      );
+      expect(bodies[0].refresh_draft).toBe(true);
+      expect(bodies[1]).not.toHaveProperty('refresh_draft');
+    });
+
     it('never sends signer_email on finalize (removed from the final contract)', async () => {
       const formKey = 'test_form_key';
       const integrationClient = new IntegrationClient(formKey);
@@ -1394,6 +1475,7 @@ describe('IntegrationClient', () => {
           sign_method: 'docusign',
           email_subject: 'Signed, sealed',
           email_blurb: 'Last step.',
+          notification: { expirations: { enabled: true, after: 30, warn: 5 } },
           custom_fields: { account_submission_id: 'account-123' }
         },
         { envelopes: [{ envelopeId: 'env-1' }], envelopeAction: 'sign' }
@@ -1402,6 +1484,9 @@ describe('IntegrationClient', () => {
       const body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(body.email_subject).toBe('Signed, sealed');
       expect(body.email_blurb).toBe('Last step.');
+      expect(body.notification).toEqual({
+        expirations: { enabled: true, after: 30, warn: 5 }
+      });
       expect(body.custom_fields).toEqual({
         account_submission_id: 'account-123'
       });

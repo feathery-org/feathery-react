@@ -1,11 +1,17 @@
 import React, { useMemo, useRef } from 'react';
-import { imgMaxSizeStyles, noTextSelectStyles } from '../../styles';
+import {
+  hasImageMargins,
+  imgMaxSizeStyles,
+  mergeMobileStyles,
+  noTextSelectStyles
+} from '../../styles';
 import useBorder from '../../components/useBorder';
 import { hoverStylesGuard } from '../../../utils/browser';
 import InlineTooltip from '../../components/InlineTooltip';
 import ErrorInput from '../../components/ErrorInput';
 import HiddenValueInput from '../../components/HiddenValueInput';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
+import { hasIconGlyph, IconGlyph } from '../../components/icons/iconGlyph';
 
 function ButtonGroupField({
   element,
@@ -18,6 +24,7 @@ function ButtonGroupField({
   formSettings,
   onClick = () => {},
   elementProps = {},
+  errorAttributes = {},
   disabled = false,
   children
 }: any) {
@@ -25,7 +32,7 @@ function ButtonGroupField({
   const containerRef = useRef(null);
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar, editMode, asciiOnly);
+    useSalesforceSync(servar, editMode, asciiOnly, formSettings?.formKey);
 
   const selectedOptMap = useMemo(
     () =>
@@ -66,6 +73,11 @@ function ButtonGroupField({
     }));
   }
 
+  const iconImgStyles = responsiveStyles.getTargets('img');
+  const iconGapStyles = hasImageMargins(element)
+    ? {}
+    : responsiveStyles.getTarget('iconGap');
+
   return (
     <div
       ref={containerRef}
@@ -95,11 +107,26 @@ function ButtonGroupField({
           const imageUrl = option.image
             ? option.image
             : servar.metadata.option_images[index];
+          const icon =
+            option.icon ??
+            (!shouldSalesforceSync && !option.image
+              ? servar.metadata.option_icons?.[index]
+              : undefined);
           const tooltip = option.tooltip ?? '';
+          const optionIconGapStyles = label ? iconGapStyles : {};
 
           return (
             <div
               role='button'
+              {...errorAttributes}
+              tabIndex={editMode || disabled || loadingDynamicOptions ? -1 : 0}
+              aria-pressed={!!selectedOptMap[value]}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  event.currentTarget.click();
+                }
+              }}
               onClick={() => {
                 if (!editMode && !disabled && !loadingDynamicOptions) {
                   onClick(value);
@@ -132,15 +159,39 @@ function ButtonGroupField({
               }}
             >
               {customBorder}
-              {imageUrl && (
-                <img
-                  src={imageUrl}
+              {hasIconGlyph(icon?.glyph) ? (
+                <span
+                  data-feathery-option-icon={icon.icon}
                   css={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
                     ...imgMaxSizeStyles,
-                    ...responsiveStyles.getTargets('img'),
+                    ...iconImgStyles,
+                    ...optionIconGapStyles,
+                    ...mergeMobileStyles(
+                      iconImgStyles,
+                      optionIconGapStyles,
+                      responsiveStyles.getMobileBreakpoint()
+                    ),
                     pointerEvents: 'none'
                   }}
-                />
+                >
+                  <IconGlyph
+                    glyph={icon.glyph}
+                    size={element.styles.image_width ? '100%' : '1em'}
+                  />
+                </span>
+              ) : (
+                imageUrl && (
+                  <img
+                    src={imageUrl}
+                    css={{
+                      ...imgMaxSizeStyles,
+                      ...responsiveStyles.getTargets('img'),
+                      pointerEvents: 'none'
+                    }}
+                  />
+                )
               )}
               {label && (
                 <div

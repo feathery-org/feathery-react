@@ -4,10 +4,10 @@
  * boundaries counting one position each); here they become paragraph ids and offsets into each
  * paragraph's own text, the values a `set` match target or a `read` works from.
  */
-import type { DocumentView } from '../../pack';
+import type { DocumentView, LaidOutPage } from '../../pack';
 import type { NfNode } from '../../tree';
-import { KIND } from './adapter/keys';
-import { hierOf, walkPositions } from './reconcile';
+import { editorParagraphs } from './positions';
+import { walkPositions } from './reconcile';
 
 /** What the host reports: the editor's start and end positions and the selected text. */
 export interface NativeSelection {
@@ -34,6 +34,25 @@ function ownOffset(paragraph: NfNode, editorAt: number): number {
   return found ?? total.own;
 }
 
+/** A reader of the editor's positions (`section;block;...;offset`) as paragraph ids and own-text offsets */
+function positionsOf(
+  view: DocumentView
+): (position: string) => { id: string; offset: number } | null {
+  const byPosition = new Map(
+    [...editorParagraphs(view).values()].map((p) => [p.position, p])
+  );
+  return (position) => {
+    const parts = position.split(';');
+    const offset = Number(parts.pop());
+    const found = byPosition.get(parts.join(';'));
+    if (!found || !Number.isInteger(offset)) return null;
+    const { paragraph, opensControl } = found;
+    // The start of a block control takes one position before the text of the paragraph it opens on
+    const editorAt = opensControl ? offset - 1 : offset;
+    return { id: paragraph.id, offset: ownOffset(paragraph, editorAt) };
+  };
+}
+
 export function selectionOf(
   view: DocumentView,
   native: unknown
@@ -45,21 +64,9 @@ export function selectionOf(
   const s = native as Partial<NativeSelection> | null;
   if (!s || typeof s.start !== 'string' || typeof s.end !== 'string')
     return null;
-  const paragraphs = new Map<string, NfNode>();
   const order = new Map<string, number>();
-  view.nodes().forEach((node, index) => {
-    order.set(node.id, index);
-    if (node.kind !== KIND.paragraph) return;
-    const hi = hierOf(view, node.id);
-    if (hi) paragraphs.set(hi, node);
-  });
-  const point = (position: string) => {
-    const parts = position.split(';');
-    const offset = Number(parts.pop());
-    const paragraph = paragraphs.get(parts.join(';'));
-    if (!paragraph || !Number.isInteger(offset)) return null;
-    return { id: paragraph.id, offset: ownOffset(paragraph, offset) };
-  };
+  view.nodes().forEach((node, index) => order.set(node.id, index));
+  const point = positionsOf(view);
   let start = point(s.start);
   let end = point(s.end);
   if (!start || !end) return null;
@@ -69,4 +76,23 @@ export function selectionOf(
     start.offset - end.offset;
   if (before > 0) [start, end] = [end, start];
   return { start, end, text: typeof s.text === 'string' ? s.text : '' };
+}
+
+/** Each laid-out page with the page number it shows, its paragraphs read from the editor's positions as the selection's are */
+export function pagesOf(
+  view: DocumentView,
+  native: unknown
+): LaidOutPage[] | null {
+  if (!Array.isArray(native) || !native.length) return null;
+  const point = positionsOf(view);
+  return native.map((page) => ({
+    paragraphs: (Array.isArray(page?.paragraphs)
+      ? page.paragraphs
+      : []
+    ).flatMap((position: unknown) => {
+      const at = typeof position === 'string' ? point(position) : null;
+      return at ? [at] : [];
+    }),
+    number: Number.isInteger(page?.number) ? page.number : null
+  }));
 }

@@ -1,4 +1,4 @@
-import React, { memo, useMemo, Suspense, lazy } from 'react';
+import React, { memo, useId, useMemo, Suspense, lazy } from 'react';
 import { InView } from 'react-intersection-observer';
 
 import Fields from './fields';
@@ -39,10 +39,21 @@ Object.entries(Elements).map(([key, Element]) => {
       children,
       componentOnly = true,
       inlineError = '',
+      elementProps = {},
       onView,
       formSettings,
       ...props
     }: any) => {
+      const errorId = useId();
+      const hasError = Boolean(inlineError && !componentOnly);
+      const showInlineError = hasError && formSettings?.errorType !== 'html5';
+      const errorAttributes: React.AriaAttributes = {
+        'aria-invalid': hasError || undefined,
+        'aria-describedby':
+          [elementProps['aria-describedby'], showInlineError && errorId]
+            .filter(Boolean)
+            .join(' ') || undefined
+      };
       const responsiveStyles = useMemo(() => {
         return new ResponsiveStyles(
           element,
@@ -64,6 +75,12 @@ Object.entries(Elements).map(([key, Element]) => {
           <Element
             element={element}
             responsiveStyles={responsiveStyles}
+            inlineError={inlineError}
+            errorAttributes={errorAttributes}
+            elementProps={{
+              ...elementProps,
+              ...(showInlineError && { 'data-feathery-error-id': errorId })
+            }}
             {...props}
           />
         </Suspense>
@@ -86,10 +103,17 @@ Object.entries(Elements).map(([key, Element]) => {
         return (
           <>
             {e}
-            {inlineError && (
+            {showInlineError && (
               <span
+                id={errorId}
+                data-feathery-error-label={
+                  element.servar?.name || element.properties?.aria_label || ''
+                }
                 css={{
                   alignSelf: 'flex-start',
+                  flexShrink: 0,
+                  marginTop: '4px',
+                  overflowWrap: 'anywhere',
                   color: ERROR_COLOR,
                   ...responsiveStyles.getTarget('error')
                 }}

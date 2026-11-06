@@ -193,12 +193,14 @@ interface SetFormElementErrorArgs {
   errorType?: string;
   errorCallback?: (props: Record<string, unknown>) => unknown;
   fieldKey?: string;
+  inputKey?: string;
   message?: string;
   index?: number | null;
   servarType?: string;
   inlineErrors?: InlineErrors;
   setInlineErrors?: (errors: InlineErrors) => void;
   triggerErrors?: boolean;
+  reportNativeErrors?: boolean;
 }
 
 export async function setFormElementError({
@@ -206,6 +208,7 @@ export async function setFormElementError({
   errorType,
   errorCallback = () => {},
   fieldKey = '',
+  inputKey = fieldKey,
 
   // Empty message means no error / clearing the error
   message = '',
@@ -214,26 +217,34 @@ export async function setFormElementError({
   servarType = '',
   inlineErrors = {},
   setInlineErrors = () => {},
-  triggerErrors = false
+  triggerErrors = false,
+  reportNativeErrors = true
 }: SetFormElementErrorArgs) {
   let invalid = false;
   let listIndex = index;
+  if (errorType === 'inline' || errorType === 'html5') {
+    // Both modes share field error state for control borders. Only Inline
+    // renders the message beside the field.
+    applyInlineError(inlineErrors, fieldKey, message, index);
+    if (triggerErrors)
+      setInlineErrors(JSON.parse(JSON.stringify(inlineErrors)));
+  }
   if (errorType === 'html5') {
     const form = formRef?.current;
     if (!form) return false;
 
     let errorTriggered = false;
-    if (fieldKey) {
+    if (inputKey) {
       if (['pin_input', 'select', 'multiselect'].includes(servarType))
-        fieldKey = `${fieldKey}-0`;
+        inputKey = `${inputKey}-0`;
       // Add repeat index to fieldKey for fields using radio inputs
       if (index != null && ['matrix', 'select'].includes(servarType)) {
-        fieldKey = `${fieldKey}-${index}`;
+        inputKey = `${inputKey}-${index}`;
         // no longer use index to key into element list
         listIndex = null;
       }
       // form.elements has reserved props so must use namedItem to get by id
-      const singleOrList = form.elements.namedItem(fieldKey);
+      const singleOrList = form.elements.namedItem(inputKey);
       let elements =
         singleOrList instanceof RadioNodeList
           ? Array.from(singleOrList)
@@ -257,14 +268,14 @@ export async function setFormElementError({
           if (!element) return;
         }
         element.setCustomValidity(message);
-        if (triggerErrors) {
+        if (triggerErrors && reportNativeErrors) {
           // Trigger manually-set errors first before other form errors
           element.reportValidity();
           errorTriggered = true;
         }
       });
     }
-    if (triggerErrors && !errorTriggered) {
+    if (triggerErrors && reportNativeErrors && !errorTriggered) {
       // Find the first visible invalid element to show the browser tooltip.
       // Calling reportValidity() on the entire form fails if the first
       // invalid control is hidden via CSS (display:none).
@@ -282,21 +293,13 @@ export async function setFormElementError({
     }
     invalid = !form.checkValidity();
   } else if (errorType === 'inline') {
-    // Scope a repeated-field error to its row via a nested `byIndex` map under
-    // the real field key, so an error validated on one repeat row doesn't bleed
-    // onto other rows (including freshly added, untouched ones) and can never
-    // collide with a literal field key such as `foo-0`. An empty message clears
-    // (whole field for a non-indexed write, only that row for an indexed one).
-    applyInlineError(inlineErrors, fieldKey, message, index);
-    if (triggerErrors)
-      setInlineErrors(JSON.parse(JSON.stringify(inlineErrors)));
     invalid = Object.values(inlineErrors).some((data) =>
       inlineEntryHasMessage(data as any)
     );
   }
   if (message) {
     await errorCallback({
-      errorFieldId: fieldKey,
+      errorFieldId: errorType === 'html5' ? inputKey : fieldKey,
       errorFieldType: servarType,
       errorMessage: message,
       elementRepeatIndex: index || 0
@@ -369,6 +372,31 @@ export function processFileValues(fileValues: Record<string, any>) {
 export function removeFilePathMapEntry(key: any, index: number) {
   const paths = filePathMap[key];
   if (Array.isArray(paths)) filePathMap[key] = justRemove(paths, index);
+  delete fileDeduplicationCount[key];
+}
+
+// Keep filePathMap lined up with a file value that was replaced wholesale, e.g.
+// `field.value = field.value.toSpliced(i, 1)` from a logic rule. Each stored
+// path follows the file reference it belonged to; a file that is new, moved
+// into a hole, or no longer present gets no path and is uploaded on submit.
+export function realignFilePathMap(
+  key: string,
+  prevValue: any,
+  nextValue: any
+) {
+  const paths = filePathMap[key];
+  if (paths === undefined || paths === null || prevValue === nextValue) return;
+
+  if (Array.isArray(nextValue) && Array.isArray(prevValue)) {
+    const prevPaths = Array.isArray(paths) ? paths : [];
+    filePathMap[key] = nextValue.map((file) => {
+      if (file === null || file === undefined || file === '') return null;
+      const prevIndex = prevValue.indexOf(file);
+      return prevIndex === -1 ? null : prevPaths[prevIndex] ?? null;
+    });
+  } else {
+    filePathMap[key] = null;
+  }
   delete fileDeduplicationCount[key];
 }
 

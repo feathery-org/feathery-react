@@ -46,3 +46,32 @@ describe('layoutOnly (troy-1: each reopen re-lays out percent-width tables)', ()
     expect(layoutOnly(doc(92.79, [92.79]).replace('"preferredWidth":18', '"preferredWidth":19'), doc(92.79, [92.79]))).toBe(false);
   });
 });
+
+describe('pages, from an editor whose widgets are its own script classes', () => {
+  const paragraph = (name: string) => ({ paragraphFormat: {}, childWidgets: [{ line: name }] });
+  const row = (name: string, isHeader = false) => ({ rowFormat: { isHeader }, childWidgets: [{ childWidgets: [paragraph(name)] }] });
+  const footer = { childWidgets: [{ childWidgets: [{ children: [{ fieldType: 0, code: ' PAGE   \\* MERGEFORMAT ' }, { text: '1' }] }] }] };
+  const editor = {
+    serialize: () => '',
+    documentHelper: {
+      pages: [
+        { currentPageNum: 1, bodyWidgets: [{ childWidgets: [paragraph('cover')] }] },
+        { currentPageNum: 1, footerWidget: footer, bodyWidgets: [{ childWidgets: [{ tableFormat: {}, previousSplitWidget: {}, childWidgets: [row('header', true), row('row 7')] }] }] },
+        { currentPageNum: 2, footerWidget: footer, bodyWidgets: [{ childWidgets: [] }] }
+      ]
+    },
+    selection: {
+      getParagraphInfoInternal: (line: { line: string }, offset: number) => ({ paragraph: line.line, offset }),
+      getHierarchicalIndex: (paragraph: string, offset: string) => `${paragraph};${offset}`,
+      getFieldCode: (field: { code: string }) => field.code
+    }
+  } as unknown as LiveEditor;
+
+  it('lists the paragraphs on each page past a continued table header, with the number its footer prints', () => {
+    expect(createHost(editor).pages?.()).toEqual([
+      { paragraphs: ['cover;0'], number: null },
+      { paragraphs: ['row 7;0'], number: 1 },
+      { paragraphs: [], number: 2 }
+    ]);
+  });
+});

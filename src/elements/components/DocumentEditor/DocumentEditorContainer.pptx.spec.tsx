@@ -11,6 +11,7 @@ import { initState } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import { featheryWindow } from '../../../utils/browser';
 import DocumentEditorContainer from './DocumentEditorContainer';
+import { setFormInternalState } from '../../../utils/internalState';
 import {
   _clearDocxDirtyRegistry,
   hasDirtyDocxEditors
@@ -459,6 +460,41 @@ describe('presentation document tabs', () => {
         'https://example.com/second.pptx'
       ]
     });
+  });
+
+  it('fires the document-review logic when a PPTX deck is saved', async () => {
+    const runDocumentReviewLogic = jest.fn();
+    setFormInternalState('form-1', { runDocumentReviewLogic });
+    initState.sdkKey = 'test-key';
+    const localSchema = JSON.parse(JSON.stringify(schema));
+    const action = localSchema.steps[0].buttons[0].properties.actions[0];
+    action.editor_toolbar_actions = ['save', 'download'];
+    action.save_document_field_key = 'packet-files';
+    initState.formSchemas = { 'form-key': localSchema };
+    render(<DocumentEditorContainer containerId={CONTAINER} formId='form-1' />);
+    await screen.findByTestId('pptx-editor:https://example.com/deck.pptx');
+    await act(async () => fireEvent.click(screen.getByTestId('pptx-save')));
+    await waitFor(() => expect(runDocumentReviewLogic).toHaveBeenCalled());
+    expect(runDocumentReviewLogic.mock.calls[0][0].action).toBe('save');
+  });
+
+  it('keeps the saved field unchanged when a single Save has an unresolved sibling', async () => {
+    initState.sdkKey = 'test-key';
+    const localSchema = JSON.parse(JSON.stringify(schema));
+    const action = localSchema.steps[0].buttons[0].properties.actions[0];
+    action.editor_toolbar_actions = ['save', 'download'];
+    action.save_document_field_key = 'packet-files';
+    initState.formSchemas = { 'form-key': localSchema };
+    (featheryWindow() as any)[PENDING_DRAFTS_KEY][CONTAINER].envelopes[1].file =
+      null;
+    render(<DocumentEditorContainer containerId={CONTAINER} />);
+    await screen.findByTestId('pptx-editor:https://example.com/deck.pptx');
+    mockSubmitCustom.mockClear();
+    await act(async () => fireEvent.click(screen.getByTestId('pptx-save')));
+    // The deck's own save already landed; a sibling without a generated file
+    // leaves the field as-is instead of writing a partial list or erroring.
+    expect(mockSubmitCustom).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('saves PPTX edits before leaving for DOCX and keeps the tabs available', async () => {

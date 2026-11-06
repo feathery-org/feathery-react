@@ -5,6 +5,7 @@ import { OfflineRequestHandler } from '../offlineRequestHandler';
 import {
   AlloyEntities,
   CreateEgnyteFolderParams,
+  DocusignNotification,
   GetDocusignEnvelopeParams,
   LoanProCustomerObject,
   SendDocusignParams,
@@ -12,7 +13,11 @@ import {
   UploadFileToEgnyteParams
 } from '../internalState';
 import { featheryWindow } from '../browser';
-import { PROVIDER_LABELS } from '../../integrations/connectAccount/providers';
+import { isFetchNetworkError } from '../error';
+import {
+  PROVIDER_LABELS,
+  SALESFORCE_PROVIDER
+} from '../../integrations/connectAccount/providers';
 import {
   apiFetch,
   customRolloutAction as apiCustomRolloutAction,
@@ -58,6 +63,8 @@ export type QuikDocumentSource = {
   forms?: {
     id: string | number;
     fields: Record<string, string>;
+    // Opaque identity returned with the actual DocuSign document ID on completion.
+    reference?: string;
     // DocuSign-only: Quik role prefix -> stable person ID, e.g. { '1own': 'client-123' }.
     signerIds?: Record<string, string>;
   }[];
@@ -71,7 +78,12 @@ export type GenerateDocumentRef =
   | string
   | QuikDocumentSource
   | FileUploadDocumentSource
-  | { kind: 'template'; document_id: string };
+  | {
+      kind: 'template';
+      document_id: string;
+      // Exactly one opaque reference per generated copy, in repeat order.
+      references?: string[];
+    };
 
 // The template id a document entry names, or null for a non-template source.
 export const documentRefTemplateId = (
@@ -92,13 +104,6 @@ const documentRefCacheKey = (doc: GenerateDocumentRef) => {
   if (doc.kind === 'file_upload') return `file_upload:${doc.field_id}`;
   return String(doc.document_id);
 };
-
-const TYPE_MESSAGES_TO_IGNORE = [
-  // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
-  'Failed to fetch',
-  // e.g. https://sentry.io/organizations/feathery-forms/issues/3529742129/
-  'Load failed'
-];
 
 const QUIK_DYNAMIC_ATTACHMENTS_OPTION = '__quik_dynamic_attachments__';
 // Backend 400s meaning another tab closed, superseded or finalized the session.
@@ -252,8 +257,7 @@ export default class IntegrationClient {
       // Ignore TypeErrors if form has redirected because `fetch` in
       // Safari will error after redirect
       const ignore =
-        this.ignoreNetworkErrors?.current ||
-        TYPE_MESSAGES_TO_IGNORE.includes(e.message);
+        this.ignoreNetworkErrors?.current || isFetchNetworkError(e);
       if (ignore && !propagateNetworkErrors && e instanceof TypeError) return;
       throw e;
     });
@@ -320,6 +324,32 @@ export default class IntegrationClient {
     return this._fetch(url).then((response) =>
       response ? response.json() : Promise.resolve()
     );
+  }
+
+  async listSalesforceDocumentSync() {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      form_key: this.formKey,
+      fuser_key: userId,
+      provider: SALESFORCE_PROVIDER
+    });
+    const response = await this._fetch(
+      `${API_URL}account-connect/salesforce-sync/?${params}`,
+      undefined,
+      false
+    );
+    if (!response) throw new Error('Unable to load Salesforce document sync.');
+    const payload = await response.json();
+    if (!response.ok) throw new Error(parseAPIError(payload));
+    return payload;
+  }
+
+  async retrySalesforceDocumentSync(runId: string) {
+    return this._accountConnectPost('salesforce-sync', {
+      provider: SALESFORCE_PROVIDER,
+      run_id: runId
+    });
   }
 
   async listAccountCredentials(provider: string) {
@@ -425,6 +455,18 @@ export default class IntegrationClient {
     );
   }
 
+  async completeAccountConnect(
+    provider: string,
+    state: string,
+    completionSecret: string
+  ) {
+    return this._accountConnectPost('complete', {
+      provider,
+      state,
+      completion_secret: completionSecret
+    });
+  }
+
   async browseAccountResources(
     provider: string,
     parent: string,
@@ -462,7 +504,17 @@ export default class IntegrationClient {
     if (!response) throw new Error('Unable to reach the connected account.');
 
     const payload = await response.json();
-    if (response.status === 200) return payload;
+    if (response.status === 200) {
+      if (
+        body.provider === SALESFORCE_PROVIDER &&
+        ['complete', 'select', 'disconnect'].includes(path)
+      ) {
+        featheryWindow().dispatchEvent(
+          new CustomEvent('feathery:salesforce-connection-changed')
+        );
+      }
+      return payload;
+    }
     throw new Error(
       parseAPIError(payload) || 'Unable to reach the connected account.'
     );
@@ -834,6 +886,8 @@ export default class IntegrationClient {
         draft: action.draft,
         emailSubject: action.email_subject,
         emailBlurb: action.email_blurb,
+        notification: action.notification,
+        ccRecipients: action.cc_recipients,
         customFields: action.custom_fields
       });
     }
@@ -1141,6 +1195,8 @@ export default class IntegrationClient {
     draft,
     emailSubject,
     emailBlurb,
+    notification,
+    ccRecipients,
     customFields
   }: {
     documentIds: GenerateDocumentRef[];
@@ -1159,6 +1215,12 @@ export default class IntegrationClient {
     // DocuSign sign only: subject and body of the envelope's signing email.
     emailSubject?: string;
     emailBlurb?: string;
+    // DocuSign sign only: reminder and expiration schedule.
+    notification?: DocusignNotification;
+    ccRecipients?: (
+      | string
+      | { email: string; name?: string; excluded_documents?: number[] }
+    )[];
     customFields?: Record<
       string,
       string | { listItems: string[]; value?: string }
@@ -1199,6 +1261,8 @@ export default class IntegrationClient {
     if (signMethod) payload.sign_method = signMethod;
     if (emailSubject) payload.email_subject = emailSubject;
     if (emailBlurb) payload.email_blurb = emailBlurb;
+    if (notification) payload.notification = notification;
+    if (ccRecipients !== undefined) payload.cc_recipients = ccRecipients;
     if (customFields !== undefined) payload.custom_fields = customFields;
     if (signers.length) payload.signers = signers;
     if (repeatable) payload.repeatable = repeatable;
@@ -1235,7 +1299,8 @@ export default class IntegrationClient {
     {
       envelopes,
       envelopeAction,
-      draft = false
+      draft = false,
+      refreshDraft = false
     }: {
       // signerId: the filler's own signing token for that envelope, as handed
       // back by generate. Keeps finalize from emailing them an invite to a
@@ -1244,6 +1309,9 @@ export default class IntegrationClient {
       envelopeAction: 'sign' | 'fill' | 'download' | 'save';
       // DocuSign sign only: create the envelope as a draft instead of sending.
       draft?: boolean;
+      // Replace the documents on a DocuSign draft created earlier in the same
+      // review, so it carries the filler's later edits.
+      refreshDraft?: boolean;
     }
   ) {
     if (!envelopes.length) {
@@ -1268,10 +1336,15 @@ export default class IntegrationClient {
     if (action.merged_file_name)
       payload.merged_file_name = action.merged_file_name;
     if (action.sign_method) payload.sign_method = action.sign_method;
+    // Omitted unless set, so a backend without the flag sees the old body.
+    if (refreshDraft) payload.refresh_draft = true;
     // Carried to finalize too: an open_in_editor flow does not build the
     // DocuSign envelope until the filler presses Sign.
     if (action.email_subject) payload.email_subject = action.email_subject;
     if (action.email_blurb) payload.email_blurb = action.email_blurb;
+    if (action.notification) payload.notification = action.notification;
+    if (action.cc_recipients !== undefined)
+      payload.cc_recipients = action.cc_recipients;
     if (action.custom_fields !== undefined)
       payload.custom_fields = action.custom_fields;
 
@@ -1922,13 +1995,17 @@ export default class IntegrationClient {
   async fetchSalesforcePicklistOptions(
     objectName: string,
     fieldName: string,
-    credentialKey: string
+    credentialKey: string,
+    authSource = 'rollout'
   ) {
     const url = `${API_URL}salesforce/field/options/`;
     const params = new URLSearchParams({
       object_name: objectName,
       field_name: fieldName,
-      credential_key: credentialKey
+      credential_key: credentialKey || '',
+      auth_source: authSource,
+      form_key: this.formKey,
+      fuser_key: initInfo().userId || ''
     }).toString();
     const response = await this._fetch(`${url}?${params}`);
     if (response && response.ok) {

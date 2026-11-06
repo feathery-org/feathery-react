@@ -17,6 +17,7 @@ import internalState, {
   AlloyEntities,
   GetConfigParams,
   CreateEgnyteFolderParams,
+  DocusignNotification,
   GetDocusignEnvelopeParams,
   UploadFileToEgnyteParams,
   LoanProCustomerObject,
@@ -363,8 +364,11 @@ export const getFormContext = (formUuid: string) => {
       signMethod,
       draft,
       toolbarActions,
+      closeOnAction,
       emailSubject,
       emailBlurb,
+      notification,
+      ccRecipients,
       customFields,
       repeatable,
       download,
@@ -410,10 +414,20 @@ export const getFormContext = (formUuid: string) => {
       // toolbar offers. 'draft' is DocuSign-only (it finalizes as a sign with
       // draft=true).
       toolbarActions?: ('sign' | 'download' | 'save' | 'draft')[];
+      // Only for envelopeAction 'open_in_editor': false keeps the editor open
+      // after a toolbar action, and the flow continues once the filler closes
+      // it. Defaults to true.
+      closeOnAction?: boolean;
       // Only for signMethod 'docusign': the subject and body of the envelope's
       // signing email, as sendDocusignEnvelope takes them.
       emailSubject?: string;
       emailBlurb?: string;
+      // Only for signMethod 'docusign': reminder and expiration schedule, as
+      // sendDocusignEnvelope takes it.
+      notification?: DocusignNotification;
+      // Completion copies added to the integration's configured recipients.
+      // excludedDocuments uses 0-based positions in the generated packet.
+      ccRecipients?: SendDocusignParams['ccRecipients'];
       // DocuSign envelope metadata (not PDF fields), e.g. account_submission_id.
       customFields?: Record<
         string,
@@ -428,6 +442,24 @@ export const getFormContext = (formUuid: string) => {
       // Where the signing page sends the filler when they finish.
       redirect?: boolean | string;
     }) => {
+      if (ccRecipients !== undefined && signMethod !== 'docusign') {
+        return Promise.reject(
+          new Error(
+            "generateDocuments: ccRecipients require signMethod 'docusign'"
+          )
+        );
+      }
+      const ccCopies = ccRecipients?.map((cc) =>
+        typeof cc === 'string'
+          ? cc
+          : {
+              email: cc.email,
+              name: cc.name,
+              excluded_documents: cc.excludedDocuments
+                ? [...cc.excludedDocuments]
+                : undefined
+            }
+      );
       if (customFields !== undefined && signMethod !== 'docusign') {
         return Promise.reject(
           new Error(
@@ -511,8 +543,27 @@ export const getFormContext = (formUuid: string) => {
                 ...(form.signerIds ? { signerIds: { ...form.signerIds } } : {})
               }))
             }
+          : typeof doc !== 'string' && doc.kind === 'template'
+          ? {
+              ...doc,
+              ...(doc.references ? { references: [...doc.references] } : {})
+            }
           : doc
       );
+      const hasReferences = documentIds.some(
+        (doc) =>
+          typeof doc !== 'string' &&
+          ((doc.kind === 'template' && doc.references !== undefined) ||
+            (doc.kind === 'quik' &&
+              doc.forms?.some((form) => form.reference !== undefined)))
+      );
+      if (hasReferences && (signMethod !== 'docusign' || merge)) {
+        return Promise.reject(
+          new Error(
+            "generateDocuments: references require signMethod 'docusign' and cannot be merged"
+          )
+        );
+      }
       const unknownUploadKeys: string[] = [];
       let missingUploadField = false;
       documentIds = documentIds.map((doc) => {
@@ -602,8 +653,13 @@ export const getFormContext = (formUuid: string) => {
               })
             ),
             editor_toolbar_actions: toolbarActions,
+            ...(closeOnAction !== undefined
+              ? { editor_close_on_action: closeOnAction }
+              : {}),
             email_subject: emailSubject,
             email_blurb: emailBlurb,
+            notification,
+            cc_recipients: ccCopies,
             custom_fields: customFields,
             repeatable,
             merge_docs: merge,
@@ -633,6 +689,13 @@ export const getFormContext = (formUuid: string) => {
         return Promise.reject(
           new Error(
             'generateDocuments: per-role signers require a mounted <Form />.'
+          )
+        );
+      }
+      if (ccRecipients !== undefined) {
+        return Promise.reject(
+          new Error(
+            'generateDocuments: ccRecipients require a mounted <Form />.'
           )
         );
       }

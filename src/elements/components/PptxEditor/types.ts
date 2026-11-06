@@ -1,3 +1,4 @@
+import type { Deck } from './core/model/types';
 import type { PptxChangeRecord } from './engine/changes';
 
 export type PptxSource = { url: string } | { buffer: ArrayBuffer };
@@ -37,6 +38,8 @@ export interface PptxEditorProps {
   /** Bump to force a reload of the same source (mirrors DocxEditor). */
   openNonce?: number;
   onReady?: () => void;
+  /** Packet-owned preparation cache; transfers the deck to this editor. */
+  prepareSource?: (signal: AbortSignal) => Promise<Deck>;
   onChange?: (dirty: boolean) => void;
   /** A failed operation (save) on a document that stays open and editable. */
   onError?: (message: string) => void;

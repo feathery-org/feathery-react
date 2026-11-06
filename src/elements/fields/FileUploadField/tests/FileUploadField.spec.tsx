@@ -1,4 +1,5 @@
 import React from 'react';
+import userEvent from '@testing-library/user-event';
 import {
   createFileUploadElement,
   createFileUploadProps,
@@ -19,10 +20,14 @@ import {
   waitFor
 } from '@testing-library/react';
 import FileUploadField from '../index';
+import { applyFieldStyles } from '../../index';
+import ResponsiveStyles from '../../../styles';
 
 describe('FileUploadField - Base Functionality', () => {
   const getFileInput = () =>
-    screen.getByLabelText('File upload field') as HTMLInputElement;
+    screen.getByLabelText('File upload field', {
+      selector: 'input'
+    }) as HTMLInputElement;
   const getUploadArea = () => getFileInput().parentElement as HTMLElement;
 
   beforeEach(() => {
@@ -37,8 +42,33 @@ describe('FileUploadField - Base Functionality', () => {
 
       render(<FileUploadField {...props} />);
 
-      expect(screen.getByLabelText('File upload field')).toBeTruthy();
+      expect(
+        screen.getByLabelText('File upload field', { selector: 'input' })
+      ).toBeTruthy();
       expect(getUploadArea()).toBeTruthy();
+    });
+
+    it('renders a stored glyph with the authored icon color', () => {
+      const element = createFileUploadElement('file_upload');
+      element.properties.icon_glyph = {
+        variant: 'outline',
+        nodes: [['path', { d: 'M12 5l0 14' }]]
+      };
+      element.styles.icon_color = 'F5A623';
+      const responsiveStyles = applyFieldStyles(
+        element,
+        new ResponsiveStyles(element, [], false)
+      );
+
+      const { container } = render(
+        <FileUploadField
+          {...createFileUploadProps(element, { responsiveStyles })}
+        />
+      );
+
+      const icon = container.querySelector('svg');
+      expect(icon).toHaveAttribute('stroke', 'currentColor');
+      expect(responsiveStyles.getTarget('img').color).toBe('#F5A623');
     });
   });
 
@@ -412,4 +442,43 @@ describe('FileUploadField - Base Functionality', () => {
       expect(getFileInput().validity.customError).toBe(false);
     });
   });
+});
+
+it('describes the visible upload control and opens the picker from the keyboard', async () => {
+  const props = createFileUploadProps(createFileUploadElement('file_upload'), {
+    errorAttributes: {
+      'aria-invalid': true,
+      'aria-describedby': 'upload-error'
+    }
+  });
+  const user = userEvent.setup();
+  const { container, rerender } = render(
+    <>
+      <FileUploadField {...props} />
+      <span id='upload-error'>Required</span>
+      <button>Continue</button>
+    </>
+  );
+  const upload = screen.getByRole('button', { name: 'File upload field' });
+  const input = container.querySelector(
+    'input[type="file"]'
+  ) as HTMLInputElement;
+  const openPicker = jest.spyOn(input, 'click').mockImplementation(() => {});
+  expect(upload).toHaveAttribute('aria-invalid', 'true');
+  expect(upload).toHaveAccessibleDescription('Required');
+  await user.tab();
+  expect(upload).toHaveFocus();
+  await user.keyboard('{Enter}');
+  expect(openPicker).toHaveBeenCalledTimes(1);
+  await user.keyboard(' ');
+  expect(openPicker).toHaveBeenCalledTimes(2);
+  await user.tab();
+  expect(screen.getByRole('button', { name: 'Continue' })).toHaveFocus();
+
+  rerender(<FileUploadField {...props} disabled />);
+  fireEvent.keyDown(screen.getByRole('button', { name: 'File upload field' }), {
+    key: 'Enter'
+  });
+  expect(openPicker).toHaveBeenCalledTimes(2);
+  openPicker.mockRestore();
 });

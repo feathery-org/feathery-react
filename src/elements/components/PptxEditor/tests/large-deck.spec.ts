@@ -69,9 +69,7 @@ describe('large deck hardening', () => {
     const deck = importDeck(fixture);
     for (const slide of deck.slides) {
       const svg = renderSlideSvg(deck, slide);
-      expect(svg.querySelectorAll('[data-shape-id]').length).toBeGreaterThan(
-        5
-      );
+      expect(svg.querySelectorAll('[data-shape-id]').length).toBeGreaterThan(5);
     }
   });
 

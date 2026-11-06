@@ -55,6 +55,21 @@ describe('proof', () => {
     });
   });
 
+  it('reads a key written as null as absent: an unbinding lands though the live node has no binding', () => {
+    const live = nf(
+      toyNative(
+        para('a'),
+        para('b', { rev: 'del', by: 't' }),
+        para('B', { rev: 'ins', by: 't' })
+      )
+    );
+    const unbound: NormalForm = JSON.parse(JSON.stringify(intended));
+    (unbound.root.blocks as NfNode[])[1].binding = null;
+    expect(
+      prove(pack, { before, intended: unbound, live, ...nothingElse }).landed
+    ).toBe(true);
+  });
+
   it('fails when the change landed beside the target (true positive for landed)', () => {
     const live = nf(
       toyNative(para('a'), para('b'), para('B', { rev: 'ins', by: 't' }))
@@ -170,6 +185,58 @@ describe('proof', () => {
         expect.stringContaining('not grouped under this change')
       ])
     );
+  });
+
+  it("keeps authorship when the editor glues another author's pending pieces it re-split (true negative)", () => {
+    const glue: Normalization = {
+      name: 'glue',
+      apply: (doc) => {
+        const blocks = doc.root.blocks as NfNode[];
+        const merged: NfNode[] = [];
+        const look = (block: NfNode) =>
+          canonicalJson({ ...block, id: null, text: null });
+        for (const block of blocks) {
+          const prev = merged[merged.length - 1];
+          if (prev && look(prev) === look(block)) {
+            merged[merged.length - 1] = {
+              ...prev,
+              text: `${prev.text}${block.text}`
+            };
+            continue;
+          }
+          merged.push(block);
+        }
+        return merged.length === blocks.length
+          ? doc
+          : { ...doc, root: { ...doc.root, blocks: merged } };
+      }
+    };
+    const gluing = makeToyPack({
+      projections: { ...pack.projections, normalizations: [glue] }
+    });
+    const piecesBefore = nf(
+      toyNative(
+        para('a', { rev: 'ins', by: 'user' }),
+        para('b', { rev: 'ins', by: 'user' }),
+        para('c')
+      )
+    );
+    const piecesIntended: NormalForm = JSON.parse(JSON.stringify(piecesBefore));
+    (piecesIntended.root.blocks as NfNode[])[2].text = 'C';
+    const glued = nf(
+      toyNative(
+        para('ab', { rev: 'ins', by: 'user' }),
+        para('c', { rev: 'del', by: 't' }),
+        para('C', { rev: 'ins', by: 't' })
+      )
+    );
+    const p = prove(gluing, {
+      before: piecesBefore,
+      intended: piecesIntended,
+      live: glued,
+      ...nothingElse
+    });
+    expect([p.passed, p.authorship]).toEqual([true, true]);
   });
 
   it('compares format references by the entry they name, not by key', () => {

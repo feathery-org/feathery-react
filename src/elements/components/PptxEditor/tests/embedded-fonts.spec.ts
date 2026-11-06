@@ -1,7 +1,7 @@
 import { importDeck } from '../core/model/import';
 import { ensureDeckFontsLoaded, cssFamilyList } from '../core/render/fonts';
 import { fixtureBytes } from './harness';
-import { releaseEmbeddedFonts } from '../core/render/embeddedFonts';
+import { releaseEmbeddedFonts } from '../core/render/embeddedFontRegistry';
 
 it('loads the deck’s compressed Inter face instead of substituting a web version', async () => {
   const faces: Array<{ family: string; source: ArrayBuffer }> = [];

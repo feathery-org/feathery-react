@@ -3,7 +3,8 @@ import {
   formatStepFields,
   getDefaultFieldValue,
   getDefaultFormFieldValue,
-  saveInitialValuesAndUrlParams
+  saveInitialValuesAndUrlParams,
+  updateStepFieldOptions
 } from '../fieldHelperFunctions';
 import { featheryWindow } from '../browser';
 import { fieldValues } from '../init';
@@ -281,4 +282,21 @@ describe('fieldHelperFunctions', () => {
       });
     });
   });
+});
+
+it('preserves stored icons when editing options and clears them for new uploaded options', () => {
+  const icon = {
+    icon: 'IconHeart',
+    glyph: { variant: 'outline', nodes: [['path', { d: 'M12 5v14' }]] }
+  };
+  const field = {
+    servar: { type: 'button_group', key: 'choice', metadata: {} },
+    properties: {}
+  };
+  const step = { servar_fields: [field] };
+  updateStepFieldOptions(step, { choice: [{ value: 'Yes', icon }] });
+  expect(field.servar.metadata.option_icons).toEqual([icon]);
+  updateStepFieldOptions(step, { choice: [{ value: 'No', image: 'no.png' }] });
+  expect(field.servar.metadata.option_icons).toEqual([null]);
+  expect(field.servar.metadata.option_images).toEqual(['no.png']);
 });

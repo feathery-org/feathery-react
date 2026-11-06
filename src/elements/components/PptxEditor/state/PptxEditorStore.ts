@@ -6,6 +6,7 @@
 // consumed by React through useSyncExternalStore - no state library dependency.
 
 import { importDeck } from '../core/model/import';
+import { releaseThumbnails } from '../loading/thumbnailCache';
 import type { Deck, Shape } from '../core/model/types';
 import type { TextRange } from '../core/model/edit';
 import {
@@ -20,7 +21,7 @@ import {
   type EditorSnapshot,
   type PptxSavePoint
 } from '../engine/PptxEditorEngine';
-import type { EditorCommand } from '../engine/commands';
+import type { EditorCommand, Invalidation } from '../engine/commands';
 
 export interface HistorySummary {
   id: number;
@@ -134,6 +135,7 @@ export class PptxEditorStore {
    * afterwards (StrictMode remounts reload through loadFile).
    */
   dispose(): void {
+    if (this.state.deck) releaseThumbnails(this.state.deck.pkg);
     this.engine.dispose();
     this.svgRoot = null;
     this.commitSvgTextEdit = null;
@@ -205,7 +207,12 @@ export class PptxEditorStore {
   // ---- engine actions ----
 
   loadFile = (bytes: Uint8Array, name: string): void => {
-    const deck = importDeck(bytes);
+    this.loadDeck(importDeck(bytes), name);
+  };
+
+  loadDeck = (deck: Deck, name: string): void => {
+    if (this.state.deck && this.state.deck !== deck)
+      releaseThumbnails(this.state.deck.pkg);
     this.engine.adopt(deck);
     this.set({
       deck,
@@ -279,13 +286,24 @@ export class PptxEditorStore {
 
   private afterHistoryRestore(result: CommandResult): void {
     const rendering = this.refreshEngineView(result);
-    // Undo/redo of a slide add/delete can leave activeSlide out of range.
-    const count = this.state.deck?.slides.length ?? 0;
-    const activeSlide = Math.min(
-      this.state.activeSlide,
-      Math.max(0, count - 1)
-    );
-    const slide = this.state.deck?.slides[activeSlide];
+    const slides = this.state.deck?.slides ?? [];
+    const count = slides.length;
+    // Jump to the slide the undone/redone change touched so the user sees what
+    // reverted instead of staying on an unrelated slide. Shape/background/slide
+    // invalidations carry that slide's path; a 'deck' invalidation (add/delete/
+    // resize) touches every slide, so there we just keep activeSlide in range.
+    const changedPath = result.invalidations.find(
+      (inv): inv is Extract<Invalidation, { slideId: string }> =>
+        'slideId' in inv
+    )?.slideId;
+    const changedIndex = changedPath
+      ? slides.findIndex((candidate) => candidate.path === changedPath)
+      : -1;
+    const activeSlide =
+      changedIndex >= 0
+        ? changedIndex
+        : Math.min(this.state.activeSlide, Math.max(0, count - 1));
+    const slide = slides[activeSlide];
     const selectedIds = this.state.selectedIds.filter((id) =>
       slide?.shapes.some((shape) => shape.id === id)
     );

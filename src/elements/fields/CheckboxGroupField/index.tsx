@@ -30,13 +30,14 @@ function CheckboxGroupField({
   onOtherChange = () => {},
   onEnter = () => {},
   elementProps = {},
+  errorAttributes = {},
   disabled = false,
   children
 }: any) {
   const asciiOnly = formSettings?.asciiOnly ?? false;
   const servar = element.servar;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar, editMode, asciiOnly);
+    useSalesforceSync(servar, editMode, asciiOnly, formSettings?.formKey);
   const otherChecked = fieldVal.includes(otherVal);
   const otherLabel = servar.metadata.other_label ?? 'Other';
   const selectAllLabel = servar.metadata.select_all_label || 'Select All';
@@ -121,6 +122,9 @@ function CheckboxGroupField({
       {children}
       {fieldLabel}
       <div
+        role='group'
+        aria-label={element.properties.aria_label || servar.name}
+        {...errorAttributes}
         css={{
           display: 'flex',
           flexWrap: 'wrap',
@@ -206,7 +210,6 @@ function CheckboxGroupField({
                     '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
                   }}
                   disabled={optionDisabled}
-                  aria-label={element.properties.aria_label}
                 />
                 <span
                   css={{

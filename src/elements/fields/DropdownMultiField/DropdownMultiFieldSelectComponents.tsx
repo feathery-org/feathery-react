@@ -2,6 +2,7 @@ import React, { ComponentType, useRef, useState } from 'react';
 import {
   components as SelectComponents,
   type ControlProps,
+  type InputProps,
   type MultiValueGenericProps,
   type MultiValueProps,
   type MultiValueRemoveProps,
@@ -12,6 +13,24 @@ import type { DropdownSelectProps, OptionData } from './types';
 import Overlay from '../../components/Overlay';
 import { Tooltip } from '../../components/Tooltip';
 import { FORM_Z_INDEX } from '../../../utils/styles';
+
+const Input = (props: InputProps<OptionData, boolean>) => {
+  const { errorAttributes } = props.selectProps as DropdownSelectProps;
+  const BaseInput = SelectComponents.Input as ComponentType<
+    InputProps<OptionData, boolean>
+  >;
+  return (
+    <BaseInput
+      {...props}
+      {...errorAttributes}
+      aria-describedby={
+        [props['aria-describedby'], errorAttributes?.['aria-describedby']]
+          .filter(Boolean)
+          .join(' ') || undefined
+      }
+    />
+  );
+};
 
 const TooltipOption = ({
   children,
@@ -346,6 +365,7 @@ const CollapsibleMultiValue = (props: MultiValueProps<OptionData, boolean>) => {
 };
 
 export {
+  Input,
   Control,
   CollapsibleMultiValue,
   CollapsibleMultiValueContainer,

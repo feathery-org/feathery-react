@@ -50,6 +50,14 @@ export function useDocumentPacket({
   const [reloadKey, setReloadKey] = useState(0);
   const busy = useRef<number | null>(null);
   const generation = useRef(0);
+  // A background lookup and a later tab selection must use the same envelope
+  // (including its presigned file URL) for the prepared presentation to match.
+  const unresolved = useRef(
+    new Map<
+      string,
+      { documentId: string; promise: Promise<EditorEnvelope | null> }
+    >()
+  );
   const current = useRef({
     tabs,
     activeId,
@@ -67,18 +75,27 @@ export function useDocumentPacket({
     saveOnSwitch
   };
 
-  const resolveTab = async (tab?: DocumentTab) => {
+  const resolveTab = useCallback(async (tab?: DocumentTab) => {
     if (tab?.envelope) return tab.envelope;
     if (!tab?.documentId) return null;
-    const value = await current.current.load(tab.documentId);
-    if (!value) throw new Error(`Could not load ${tab.label}. Please retry.`);
-    return value?.id
-      ? ({
-          ...value,
-          document: value.document ?? tab.documentId
-        } as EditorEnvelope)
-      : null;
-  };
+    const previous = unresolved.current.get(tab.id);
+    if (previous?.documentId === tab.documentId) return previous.promise;
+    const promise = current.current.load(tab.documentId).then((value) => {
+      if (!value) throw new Error(`Could not load ${tab.label}. Please retry.`);
+      return value?.id
+        ? ({
+            ...value,
+            document: value.document ?? tab.documentId
+          } as EditorEnvelope)
+        : null;
+    });
+    unresolved.current.set(tab.id, { documentId: tab.documentId, promise });
+    promise.catch(() => {
+      if (unresolved.current.get(tab.id)?.promise === promise)
+        unresolved.current.delete(tab.id);
+    });
+    return promise;
+  }, []);
 
   const open = (tab: DocumentTab | undefined, value: EditorEnvelope | null) => {
     updateEnvelope(value);
@@ -96,6 +113,7 @@ export function useDocumentPacket({
 
   useEffect(() => {
     if (editMode) return;
+    unresolved.current.clear();
     const sequence = ++generation.current;
     resolveTab(current.current.tabs[0])
       .then((value) => {
@@ -159,6 +177,7 @@ export function useDocumentPacket({
       setSwitching(true);
       try {
         await current.current.beforeReplace();
+        unresolved.current.clear();
         const nextTabs = packetTabs(
           detail.envelopes?.length
             ? detail
@@ -240,33 +259,32 @@ export function useDocumentPacket({
   const resolveEnvelopes = useCallback(
     async (onUnavailable?: (label: string, error: unknown) => void) => {
       const resolved = [];
+      // Cache a freshly resolved sibling back onto its tab so repeated saves
+      // don't re-fetch every unvisited deck.
+      const cached: Record<string, EditorEnvelope> = {};
       for (const tab of current.current.tabs) {
         try {
+          const known = tab.envelope;
           const value = await resolveTab(tab);
           if (!value?.file)
             throw new Error(`No generated file for ${tab.label}`);
+          if (!known && tab.id) cached[tab.id] = value;
           resolved.push(value);
         } catch (error) {
           if (!onUnavailable) throw error;
           onUnavailable(tab.label, error);
         }
       }
+      if (Object.keys(cached).length)
+        setTabs((items) =>
+          items.map((item) =>
+            cached[item.id] ? { ...item, envelope: cached[item.id] } : item
+          )
+        );
       return resolved;
     },
     []
   );
-
-  const filesForSave = useCallback(async (saved: EditorEnvelope) => {
-    const values = await Promise.all(
-      current.current.tabs.map(async (tab) => {
-        if (tab.id === current.current.activeId) return saved.file;
-        const value = await resolveTab(tab);
-        if (!value?.file) throw new Error(`No generated file for ${tab.label}`);
-        return value.file;
-      })
-    );
-    return values.length === 1 ? values[0] : values;
-  }, []);
 
   return {
     tabs,
@@ -285,8 +303,8 @@ export function useDocumentPacket({
     reloadKey,
     setReloadKey,
     selectTab,
-    filesForSave,
     updateTabEnvelope,
-    resolveEnvelopes
+    resolveEnvelopes,
+    resolveTabEnvelope: resolveTab
   };
 }

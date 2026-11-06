@@ -6,6 +6,7 @@ import {
   DownloadIcon,
   FileUploadIcon
 } from '../../components/icons';
+import { hasIconGlyph, IconGlyph } from '../../components/icons/iconGlyph';
 import { imgMaxSizeStyles } from '../../styles';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { downloadFile, iosScrollOnFocus } from '../../../utils/browser';
@@ -26,6 +27,7 @@ function FileUploadField({
   onChange: customOnChange = () => {},
   initialFiles = [],
   elementProps = {},
+  errorAttributes = {},
   children
 }: any) {
   const servar = element.servar;
@@ -76,7 +78,7 @@ function FileUploadField({
 
   const onClick = () => {
     if (!allowMoreFiles && !hidePreview) return;
-    if (disabled) return;
+    if (disabled || editMode) return;
     fileInput.current?.click();
   };
 
@@ -144,22 +146,46 @@ function FileUploadField({
     ...imgMaxSizeStyles,
     ...responsiveStyles.getTarget('img')
   };
-  const icon = element.properties.icon ? (
-    <img
-      src={element.properties.icon}
-      style={{ ...imgStyles, maxWidth: '100%', height: 'auto' }}
-      alt=''
-    />
-  ) : (
-    <FileUploadIcon
-      width={
-        imgStyles.width && imgStyles.width !== 'px'
-          ? imgStyles.width
-          : undefined
-      }
-      style={{ maxHeight: '100%' }}
-    />
-  );
+  let icon;
+  if (hasIconGlyph(element.properties.icon_glyph)) {
+    icon = (
+      <span
+        css={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          ...imgStyles,
+          maxWidth: '100%'
+        }}
+      >
+        <IconGlyph
+          glyph={element.properties.icon_glyph}
+          // Unset widths are emitted as a bare unit, so use the default icon size.
+          size={
+            Number.isFinite(parseFloat(imgStyles.width as any)) ? '100%' : 32
+          }
+        />
+      </span>
+    );
+  } else if (element.properties.icon) {
+    icon = (
+      <img
+        src={element.properties.icon}
+        style={{ ...imgStyles, maxWidth: '100%', height: 'auto' }}
+        alt=''
+      />
+    );
+  } else {
+    icon = (
+      <FileUploadIcon
+        width={
+          imgStyles.width && imgStyles.width !== 'px'
+            ? imgStyles.width
+            : undefined
+        }
+        style={{ maxHeight: '100%' }}
+      />
+    );
+  }
 
   return (
     <div
@@ -287,7 +313,18 @@ function FileUploadField({
       {(allowMoreFiles || hidePreview) && (
         <div
           id={`${servar.key}-add`}
+          role='button'
+          tabIndex={disabled || editMode ? -1 : 0}
+          aria-label={element.properties.aria_label || servar.name}
+          aria-disabled={disabled || editMode || undefined}
+          {...errorAttributes}
           onClick={onClick}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onClick();
+            }
+          }}
           css={{
             position: 'relative',
             pointerEvents: disabled ? 'none' : 'auto',
@@ -317,11 +354,13 @@ function FileUploadField({
         name={servar.key}
         ref={fileInput}
         type='file'
+        tabIndex={-1}
         onChange={handleChange}
         required={required && !hasFiles}
         accept={allowedFileTypes.join(',') || undefined}
         disabled={disabled}
         aria-label={element.properties.aria_label}
+        {...errorAttributes}
         multiple={isMultiple}
         onFocus={iosScrollOnFocus}
         style={{

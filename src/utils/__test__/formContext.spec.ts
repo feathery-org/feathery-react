@@ -59,6 +59,64 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     ).rejects.toThrow('customFields require');
   });
 
+  it.each(['open_in_editor', 'sign'] as const)(
+    'captures dynamic CC recipients for %s before pending saves',
+    async (envelopeAction) => {
+      const ccRecipients = [
+        'operations@example.com',
+        {
+          email: 'custodian@example.com',
+          name: 'Custodian',
+          excludedDocuments: [0]
+        }
+      ];
+      client.flushCustomFields.mockImplementation(async () => {
+        ccRecipients.splice(0, 1);
+        const custodian = ccRecipients[0];
+        if (typeof custodian !== 'string') custodian.excludedDocuments.push(1);
+      });
+      await getFormContext(uuid).generateDocuments({
+        documentIds: ['tpl-1', 'tpl-2'],
+        signMethod: 'docusign',
+        envelopeAction,
+        ccRecipients
+      });
+      expect(flow.mock.calls[0][0].cc_recipients).toEqual([
+        'operations@example.com',
+        {
+          email: 'custodian@example.com',
+          name: 'Custodian',
+          excluded_documents: [0]
+        }
+      ]);
+    }
+  );
+
+  it('rejects CC recipients for other sign methods before saving', async () => {
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: ['tpl-1'],
+        ccRecipients: ['operations@example.com']
+      })
+    ).rejects.toThrow('ccRecipients require');
+    expect(client.flushCustomFields).not.toHaveBeenCalled();
+    expect(flow).not.toHaveBeenCalled();
+  });
+
+  it('rejects headless CCs instead of silently dropping recipients', async () => {
+    const headlessUuid = 'formContext-headless-cc';
+    setFormInternalState(headlessUuid, { fields: {}, client } as any);
+    await expect(
+      getFormContext(headlessUuid).generateDocuments({
+        documentIds: ['tpl-1'],
+        signMethod: 'docusign',
+        ccRecipients: ['operations@example.com']
+      })
+    ).rejects.toThrow('ccRecipients require a mounted');
+    expect(client.flushCustomFields).not.toHaveBeenCalled();
+    expect(client.generateDocuments).not.toHaveBeenCalled();
+  });
+
   it.each([undefined, 'sign'] as const)(
     'creates a DocuSign draft with envelopeAction %s and preserves signer roles',
     async (envelopeAction) => {
@@ -169,7 +227,11 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       saveDocumentFieldKey: 'saved_files',
       redirect: 'https://done.example.com',
       emailSubject: 'Please sign this',
-      emailBlurb: 'Two signatures needed.'
+      emailBlurb: 'Two signatures needed.',
+      notification: {
+        reminders: { enabled: true, delay: 2, frequency: 3 },
+        expirations: { enabled: true, after: 30, warn: 5 }
+      }
     });
 
     expect(client.flushCustomFields).toHaveBeenCalledTimes(1);
@@ -185,6 +247,10 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       redirect: 'https://done.example.com',
       email_subject: 'Please sign this',
       email_blurb: 'Two signatures needed.',
+      notification: {
+        reminders: { enabled: true, delay: 2, frequency: 3 },
+        expirations: { enabled: true, after: 30, warn: 5 }
+      },
       run_async: true
     });
     // role_id is left off entirely for a document-wide signer, not nulled.
@@ -198,6 +264,23 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       { document_id: 'tpl-2', email: 'b@x.com', filler: false }
     ]);
     expect(client.generateDocuments).not.toHaveBeenCalled();
+  });
+
+  it('maps closeOnAction to editor_close_on_action and omits it when unset', async () => {
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1'],
+      envelopeAction: 'open_in_editor',
+      toolbarActions: ['sign'],
+      closeOnAction: false
+    });
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1'],
+      envelopeAction: 'open_in_editor',
+      toolbarActions: ['sign']
+    });
+
+    expect(flow.mock.calls[0][0].editor_close_on_action).toBe(false);
+    expect(flow.mock.calls[1][0]).not.toHaveProperty('editor_close_on_action');
   });
 
   it('captures independent Quik copies before flushing saved fields', async () => {
@@ -500,6 +583,40 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       })
     ).rejects.toThrow(/per-role signers require a mounted <Form \/>/);
     expect(client.generateDocuments).not.toHaveBeenCalled();
+  });
+
+  it('snapshots per-copy references before saving and rejects ambiguous merging', async () => {
+    const references = ['account-a', 'account-b'];
+    client.flushCustomFields.mockImplementation(async () => {
+      references[0] = 'changed';
+    });
+    await getFormContext(uuid).generateDocuments({
+      documentIds: [
+        { kind: 'template', document_id: 'tpl-1', references },
+        {
+          kind: 'quik',
+          forms: [{ id: 44252, fields: {}, reference: 'account-c' }]
+        }
+      ],
+      signMethod: 'docusign',
+      envelopeAction: 'open_in_editor',
+      repeatable: true,
+      toolbarActions: ['download', 'draft']
+    });
+    expect(flow.mock.calls[0][0].documents[0].references).toEqual([
+      'account-a',
+      'account-b'
+    ]);
+    expect(flow.mock.calls[0][0].documents[1].forms[0].reference).toBe(
+      'account-c'
+    );
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: [{ kind: 'template', document_id: 'tpl-1', references }],
+        signMethod: 'docusign',
+        merge: true
+      })
+    ).rejects.toThrow('cannot be merged');
   });
 });
 

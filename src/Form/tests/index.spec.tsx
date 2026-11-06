@@ -2,8 +2,10 @@ import {
   BrowserMod,
   CheckButtonActionMod,
   ClientMod,
+  FieldHelperMod,
   FormHelperMod,
   GridMod,
+  HideAndRepeatsMod,
   ValidationMod
 } from './testMocks';
 import {
@@ -17,6 +19,7 @@ import {
 import { JSForm } from '..';
 import FeatheryClient from '../../utils/featheryClient';
 import internalState from '../../utils/internalState';
+import { fieldValues } from '../../utils/init';
 import {
   _clearDocxDirtyRegistry,
   hasDirtyDocxEditors,
@@ -41,6 +44,16 @@ afterEach(() => {
   GridMod._spies.actions = [];
   GridMod._spies.submit = false;
   GridMod._spies.form = null;
+  FieldHelperMod._spies.formattedFields = {};
+  FieldHelperMod.formatStepFields.mockImplementation(() =>
+    Object.fromEntries(
+      Object.entries(FieldHelperMod._spies.formattedFields).map(
+        ([key, value]: any) => [key, { ...value }]
+      )
+    )
+  );
+  HideAndRepeatsMod._spies.visiblePositions = {};
+  ClientMod._spies.state.steps = null;
   ValidationMod._spies.invalid = false;
   BrowserMod._spies.confirm.mockReset();
   BrowserMod._spies.history.state = null;
@@ -52,6 +65,278 @@ afterEach(() => {
 
   // Restore FeatheryClient prototype if a test overrode it
   FeatheryClient.prototype.fetchForm = originalFetchForm;
+});
+
+describe('validation feedback navigation', () => {
+  const originalValidate =
+    ValidationMod.validateElements.getMockImplementation();
+
+  afterEach(() => {
+    ValidationMod.validateElements
+      .mockReset()
+      .mockImplementation(originalValidate);
+    jest.restoreAllMocks();
+    delete (internalState as any)['iid-validation-feedback'];
+    delete fieldValues.edited;
+  });
+
+  it.each(['inline', 'html5'])(
+    'honors %s validation when scrolling and revalidating current visibility',
+    async (errorType) => {
+      jest
+        .spyOn(FormHelperMod, 'mapFormSettingsResponse')
+        .mockReturnValue({ errorType });
+      const expectedScrolls = errorType === 'inline' ? 1 : 0;
+      jest.spyOn(FormHelperMod, 'isElementInViewport').mockReturnValue(false);
+      const publishErrors = ({ setInlineErrors }: any) => {
+        const inlineErrors = { missing: { message: 'Required' } };
+        setInlineErrors(inlineErrors);
+        return { invalid: true, inlineErrors };
+      };
+      ValidationMod.validateElements
+        .mockImplementationOnce(publishErrors)
+        .mockImplementationOnce(publishErrors);
+      const instanceId = 'iid-validation-feedback';
+      (internalState as any)[instanceId] = { inlineErrors: {} };
+
+      render(
+        <JSForm formId='f1' _internalId={instanceId}>
+          <input data-testid='missing' data-feathery-error-id='missing-error' />
+          <span id='missing-error' data-feathery-error-label='Name'>
+            Required
+          </span>
+          <input data-testid='typing' />
+        </JSForm>
+      );
+      await screen.findByTestId('btn');
+      // Finish the initial step effects before attempting submission.
+      await act(async () => {});
+      const missingField = screen.getByTestId('missing');
+      missingField.scrollIntoView = jest.fn();
+
+      await act(async () => {
+        await GridMod._spies.form.runElementActions({
+          actions: [],
+          element: { id: 'b1', properties: {} },
+          elementType: 'button',
+          submit: true
+        });
+      });
+      expect(missingField.scrollIntoView).toHaveBeenCalledTimes(
+        expectedScrolls
+      );
+      expect(missingField.closest('form')?.noValidate).toBe(
+        errorType === 'inline'
+      );
+      expect(ClientMod._spies.submitStep).not.toHaveBeenCalled();
+      const announcement =
+        errorType === 'inline' ? screen.getByRole('status') : null;
+      if (announcement) {
+        expect(announcement).toHaveAttribute('aria-live', 'polite');
+        expect(announcement).toHaveTextContent('Name: Required');
+      } else expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      const typingField = screen.getByTestId('typing');
+      typingField.focus();
+      const currentVisibility = { missing: [false] };
+      HideAndRepeatsMod._spies.visiblePositions = currentVisibility;
+      act(() => GridMod._spies.form.updateFieldValues({ edited: 'filled' }));
+
+      expect(ValidationMod.validateElements).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          visiblePositions: currentVisibility,
+          reportNativeErrors: false
+        })
+      );
+      expect(missingField.scrollIntoView).toHaveBeenCalledTimes(
+        expectedScrolls
+      );
+      expect(typingField).toHaveFocus();
+      if (announcement) expect(announcement).toBeEmptyDOMElement();
+    }
+  );
+});
+
+describe('submit field snapshot', () => {
+  const setSubmitFields = (fieldKeys: string[]) => {
+    ClientMod._spies.state.steps = [
+      {
+        key: 'step-1',
+        id: 's1',
+        servar_fields: fieldKeys.map((key, index) => ({
+          id: `field-${index}`,
+          position: [index],
+          properties: {},
+          servar: {
+            id: `servar-${index}`,
+            key,
+            type: 'text_field',
+            metadata: {}
+          }
+        })),
+        buttons: [],
+        next_conditions: []
+      }
+    ];
+  };
+
+  const formattedField = (value: string, displayText: string, index = 0) => ({
+    value,
+    type: 'text_field',
+    displayText,
+    position: [index]
+  });
+
+  it('persists field updates made by awaited before-submit logic', async () => {
+    setSubmitFields(['TextField']);
+    FieldHelperMod._spies.formattedFields = {
+      TextField: formattedField('before-rule', 'Text field')
+    };
+    GridMod._spies.submit = true;
+    (internalState as any)['iid-submit-refresh'] = { inlineErrors: {} };
+    const onSubmit = jest.fn(async () => {
+      FieldHelperMod._spies.formattedFields.TextField.value = 'after-rule';
+    });
+
+    render(
+      <JSForm
+        formId='f1'
+        _internalId='iid-submit-refresh'
+        onSubmit={onSubmit}
+      />
+    );
+    await screen.findByTestId('btn');
+    await act(async () => {
+      await GridMod._spies.form.buttonOnClick({
+        id: 'b1',
+        properties: { actions: [], submit: true },
+        repeat: 0
+      });
+    });
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+
+    await waitFor(() =>
+      expect(ClientMod._spies.submitStep).toHaveBeenCalledWith(
+        [{ key: 'TextField', text_field: 'after-rule' }],
+        expect.objectContaining({ id: 's1' }),
+        false
+      )
+    );
+    delete (internalState as any)['iid-submit-refresh'];
+  });
+
+  it('uses visibility recomputed after awaited submit logic', async () => {
+    setSubmitFields(['FieldA', 'FieldB']);
+    const beforeLogicVisibility = { before: [true] };
+    const afterLogicVisibility = { after: [true] };
+    HideAndRepeatsMod._spies.visiblePositions = beforeLogicVisibility;
+    FieldHelperMod.formatStepFields.mockImplementation(
+      (_step: any, currentVisibility: any) =>
+        currentVisibility === afterLogicVisibility
+          ? {
+              FieldA: formattedField('a', 'Field A'),
+              FieldB: formattedField('b', 'Field B', 1)
+            }
+          : {
+              FieldA: formattedField('a', 'Field A')
+            }
+    );
+    GridMod._spies.submit = true;
+    (internalState as any)['iid-submit-visibility'] = { inlineErrors: {} };
+    const onSubmit = jest.fn(async () => {
+      HideAndRepeatsMod._spies.visiblePositions = afterLogicVisibility;
+    });
+
+    render(
+      <JSForm
+        formId='f1'
+        _internalId='iid-submit-visibility'
+        onSubmit={onSubmit}
+      />
+    );
+    await screen.findByTestId('btn');
+    await act(async () => {
+      await GridMod._spies.form.buttonOnClick({
+        id: 'b1',
+        properties: { actions: [], submit: true },
+        repeat: 0
+      });
+    });
+
+    expect(FieldHelperMod.formatStepFields).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: 's1' }),
+      afterLogicVisibility,
+      false
+    );
+    expect(ValidationMod.validateElements).toHaveBeenLastCalledWith(
+      expect.objectContaining({ visiblePositions: afterLogicVisibility })
+    );
+    expect(ClientMod._spies.submitStep).toHaveBeenCalledWith(
+      [
+        { key: 'FieldA', text_field: 'a' },
+        { key: 'FieldB', text_field: 'b' }
+      ],
+      expect.objectContaining({ id: 's1' }),
+      false
+    );
+    delete (internalState as any)['iid-submit-visibility'];
+  });
+
+  it('revalidates values changed while submit logic is awaited', async () => {
+    setSubmitFields(['TextField']);
+    FieldHelperMod._spies.formattedFields = {
+      TextField: formattedField('valid-before-rule', 'Text field')
+    };
+    GridMod._spies.submit = true;
+    (internalState as any)['iid-submit-revalidate'] = { inlineErrors: {} };
+    const onSubmit = jest.fn(async () => {
+      ValidationMod._spies.invalid = true;
+    });
+
+    render(
+      <JSForm
+        formId='f1'
+        _internalId='iid-submit-revalidate'
+        onSubmit={onSubmit}
+      />
+    );
+    await screen.findByTestId('btn');
+    await act(async () => {
+      await GridMod._spies.form.buttonOnClick({
+        id: 'b1',
+        properties: { actions: [], submit: true },
+        repeat: 0
+      });
+    });
+
+    expect(ValidationMod.validateElements).toHaveBeenCalledTimes(2);
+    expect(ClientMod._spies.submitStep).not.toHaveBeenCalled();
+    delete (internalState as any)['iid-submit-revalidate'];
+  });
+
+  it('does not take a second snapshot when no submit logic runs', async () => {
+    setSubmitFields(['TextField']);
+    FieldHelperMod._spies.formattedFields = {
+      TextField: formattedField('unchanged', 'Text field')
+    };
+    GridMod._spies.submit = true;
+
+    render(<JSForm formId='f1' _internalId='iid-submit-no-logic' />);
+    await screen.findByTestId('btn');
+    const snapshotsBeforeClick =
+      FieldHelperMod.formatStepFields.mock.calls.length;
+    await act(async () => {
+      await GridMod._spies.form.buttonOnClick({
+        id: 'b1',
+        properties: { actions: [], submit: true },
+        repeat: 0
+      });
+    });
+
+    expect(
+      FieldHelperMod.formatStepFields.mock.calls.length - snapshotsBeforeClick
+    ).toBe(1);
+  });
 });
 
 describe('docx discard navigation boundary', () => {
@@ -426,11 +711,15 @@ describe('enableFormTools', () => {
     render(<JSForm formId='f1' _internalId='iid-tools-on' enableFormTools />);
     await screen.findByTestId('btn');
 
-    expect(registerTool.mock.calls.map(([tool]: any) => tool.name)).toEqual([
-      'feathery_get_step',
-      'feathery_fill_step',
-      'feathery_next_step'
-    ]);
+    // Registration runs in FormWebMCPTools' effect, which can fire after the
+    // button appears, so wait for it rather than asserting on the first tick.
+    await waitFor(() =>
+      expect(registerTool.mock.calls.map(([tool]: any) => tool.name)).toEqual([
+        'feathery_get_step',
+        'feathery_fill_step',
+        'feathery_next_step'
+      ])
+    );
   });
 
   it('does not register tools when enableFormTools is left off', async () => {

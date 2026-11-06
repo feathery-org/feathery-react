@@ -31,6 +31,7 @@ function validateElements({
   step,
   visiblePositions,
   triggerErrors,
+  reportNativeErrors = true,
   errorType,
   formRef,
   errorCallback = () => {},
@@ -40,6 +41,7 @@ function validateElements({
   step: any;
   visiblePositions: any;
   triggerErrors: boolean;
+  reportNativeErrors?: boolean;
   errorType: string;
   formRef: React.MutableRefObject<any>;
   errorCallback?: any;
@@ -90,6 +92,7 @@ function validateElements({
 
     if (message && !invalid) invalid = true;
 
+    let inputKey = key;
     if (type === 'matrix' && message && errorType === 'html5') {
       // The `${key}-${questionIndex}` suffix targets the specific unanswered
       // matrix question's DOM control, so it is only for HTML5 targeting.
@@ -108,7 +111,7 @@ function validateElements({
           value === undefined ||
           (Array.isArray(value) && value.length === 0)
         ) {
-          key = `${key}-${i}`;
+          inputKey = `${key}-${i}`;
           break;
         }
       }
@@ -119,6 +122,7 @@ function validateElements({
         formRef,
         errorCallback,
         fieldKey: key,
+        inputKey,
         message,
         errorType: errorType,
         servarType: type,
@@ -134,7 +138,8 @@ function validateElements({
       errorType: errorType,
       inlineErrors,
       setInlineErrors,
-      triggerErrors: true
+      triggerErrors: true,
+      reportNativeErrors
     });
   }
   return { errors, inlineErrors, invalid };

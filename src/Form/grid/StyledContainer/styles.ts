@@ -202,6 +202,10 @@ export const getContainerStyles = (
         s.minWidth = 'fit-content !important';
       }
 
+      // The document editor owns its internal scrolling and must be able to
+      // shrink with a configured container, even when its toolbar is wider.
+      if (node.properties?.document_editor) s.minWidth = 0;
+
       return s;
     }
   );
@@ -303,6 +307,12 @@ export const getContainerStyles = (
         s.minHeight = `${height}${heightUnit}`;
         s.maxHeight = `max-content`;
 
+        if (node.properties?.document_editor) {
+          s.height = `${height}${heightUnit}`;
+          s.maxHeight = `${height}${heightUnit}`;
+          s.overflow = 'hidden';
+        }
+
         if (!node.uuid && overflow) {
           if (overflow === 'scroll') overflow = 'auto';
           s.height = `${height}${heightUnit}`;
@@ -341,6 +351,19 @@ export const getContainerStyles = (
 
         if (!hasChildren) {
           s.minHeight = `${DEFAULT_MIN_SIZE}px`;
+        }
+
+        if (node.properties?.document_editor) {
+          // The document editor owns scrolling inside its viewport. Its slide
+          // stage must not give a fill-height container an intrinsic minimum
+          // that stretches the form beyond the available parent height.
+          s.height = '100%';
+          s.minHeight = 0;
+          s.overflow = 'hidden';
+          if (parentAxis === 'row') {
+            s.flexShrink = 1;
+            s.flexBasis = 0;
+          }
         }
       }
 
@@ -504,7 +527,18 @@ export const getInnerContainerStyles = (
       const s: any = {};
 
       if (heightUnit === 'px') {
-        s.minHeight = `${height - (pt ?? 0) - (pb ?? 0)}${heightUnit}`;
+        s.minHeight = node.properties?.document_editor
+          ? 0
+          : `${height - (pt ?? 0) - (pb ?? 0)}${heightUnit}`;
+      }
+
+      if (
+        node.properties?.document_editor &&
+        (isFill(height) || isFill(heightUnit))
+      ) {
+        s.minHeight = 0;
+        s.maxHeight = '100%';
+        s.overflow = 'hidden';
       }
 
       return s;
