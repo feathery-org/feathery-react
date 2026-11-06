@@ -153,10 +153,7 @@ export function signsViaDocusign(action: Record<string, any>): boolean {
   );
 }
 
-/** The number DocuSign texts a code to before this signer opens the envelope:
- * one given outright, else the mapped field's value when the action turns SMS
- * authentication on. Omitted when empty, since a present phone is the request
- * to challenge. */
+// A phone passed in code wins; else the mapped field, when SMS auth is on.
 export function signerPhone(
   entry: Record<string, any>,
   action: Record<string, any>,
@@ -167,8 +164,7 @@ export function signerPhone(
     (entry.sms_authentication && signsViaDocusign(action)
       ? values[entry.phone_field_key]
       : undefined);
-  // Stringified before the emptiness check: an empty repeating value ([] or
-  // ['']) is truthy as an array but has no number in it.
+  // An emptied repeating field ([] or ['']) stringifies to ''
   const text = phone == null ? '' : phone.toString();
   return text || undefined;
 }

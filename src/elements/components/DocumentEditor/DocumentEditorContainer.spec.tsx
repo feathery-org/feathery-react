@@ -709,7 +709,6 @@ describe('DocumentEditorContainer signing outcomes', () => {
           email: 'buyer@test.com',
           filler: false
         },
-        // Held back at generation, so its mapped phone goes up here instead.
         {
           document_id: `document-${CONTAINER}`,
           role_id: 'seller',
