@@ -1,5 +1,5 @@
 // Flattens SFDT into per-character blocks; only paragraphs are blocks, so table
-// cell paragraphs (with full paths) diff like any other text.
+// cell and text box paragraphs (with full paths) diff like any other text.
 
 import type { BlockPath, FormatDelta } from './types';
 
@@ -48,6 +48,9 @@ export interface FlatBlock {
    *  table. Lets a whole-table deletion carry its real structure without a
    *  path lookup, which goes stale once slices move blocks. */
   rawTable?: unknown;
+  /** Alignment region when it isn't derivable from the path: a text box's
+   *  paragraphs only pair with paragraphs of the same shape. */
+  region?: string;
   chars: FlatChar[];
   text: string;
   paraFmt: Record<string, unknown>;
@@ -120,20 +123,43 @@ function isTable(block: any): boolean {
   return !!block && Array.isArray(block.rows);
 }
 
-/** Recursively flatten inlines (content controls wrap nested `inlines`). */
+interface TextFrame {
+  path: BlockPath;
+  blocks: any[];
+  id: unknown;
+}
+
+/** Recursively flatten inlines (content controls wrap nested `inlines`). Text
+ *  boxes stay one token here; their paragraphs are collected into `frames`. */
 function flattenInlines(
   inlines: any[],
   chars: FlatChar[],
   fmts: Map<string, Record<string, unknown>>,
-  inherited?: Record<string, unknown>
+  inherited: Record<string, unknown> | undefined,
+  path: BlockPath,
+  frames: TextFrame[]
 ): void {
-  for (const inline of inlines) {
-    if (!inline || typeof inline !== 'object') continue;
+  inlines.forEach((inline, index) => {
+    if (!inline || typeof inline !== 'object') return;
+    const here = [...path, index];
     const fmt = inline.characterFormat ?? inherited;
     if (Array.isArray(inline.inlines)) {
-      flattenInlines(inline.inlines, chars, fmts, fmt);
-      continue;
+      flattenInlines(
+        inline.inlines,
+        chars,
+        fmts,
+        fmt,
+        [...here, 'inlines'],
+        frames
+      );
+      return;
     }
+    if (Array.isArray(inline.textFrame?.blocks))
+      frames.push({
+        path: here,
+        blocks: inline.textFrame.blocks,
+        id: inline.shapeId
+      });
     const key = fmtKeyOf(fmt);
     if (!fmts.has(key)) fmts.set(key, fmt ? { ...fmt } : {});
     if (typeof inline.text === 'string') {
@@ -141,7 +167,7 @@ function flattenInlines(
     } else {
       chars.push({ ch: TOKEN_CHAR, fmtKey: key, token: inline });
     }
-  }
+  });
 }
 
 function flattenParagraph(
@@ -149,16 +175,26 @@ function flattenParagraph(
   path: BlockPath,
   rowPath: BlockPath | undefined,
   rawTable: unknown,
-  out: FlatBlock[]
+  out: FlatBlock[],
+  region?: string
 ): void {
   const chars: FlatChar[] = [];
   const fmts = new Map<string, Record<string, unknown>>();
-  flattenInlines(para.inlines ?? [], chars, fmts);
+  const frames: TextFrame[] = [];
+  flattenInlines(
+    para.inlines ?? [],
+    chars,
+    fmts,
+    undefined,
+    [...path, 'inlines'],
+    frames
+  );
   const paraFmt = para.paragraphFormat ?? {};
   out.push({
     path,
     rowPath,
     ...(rawTable ? { rawTable } : {}),
+    ...(region ? { region } : {}),
     chars,
     text: chars.map((c) => c.ch).join(''),
     paraFmt,
@@ -166,6 +202,18 @@ function flattenParagraph(
     fmts,
     raw: para
   });
+  // A shape id survives content moving around it; the path is the fallback.
+  for (const frame of frames) {
+    const id = frame.id ?? JSON.stringify(frame.path);
+    flattenBlocks(
+      frame.blocks,
+      [...frame.path, 'textFrame', 'blocks'],
+      undefined,
+      null,
+      out,
+      `${region ?? regionKey(path)}>frame:${String(id)}`
+    );
+  }
 }
 
 function flattenBlocks(
@@ -173,12 +221,13 @@ function flattenBlocks(
   path: BlockPath,
   rowPath: BlockPath | undefined,
   rawTable: unknown,
-  out: FlatBlock[]
+  out: FlatBlock[],
+  region?: string
 ): void {
   blocks.forEach((block, index) => {
     const here = [...path, index];
     if (isParagraph(block)) {
-      flattenParagraph(block, here, rowPath, rawTable, out);
+      flattenParagraph(block, here, rowPath, rawTable, out, region);
     } else if (isTable(block)) {
       // A nested table's paragraphs keep the OUTERMOST table (its path is what
       // hunk grouping keys on).
@@ -191,13 +240,21 @@ function flattenBlocks(
             [...rp, 'cells', c, 'blocks'],
             rp,
             tableRef,
-            out
+            out,
+            region
           );
         });
       });
     } else if (Array.isArray(block.blocks)) {
       // Block-level content control wrapper.
-      flattenBlocks(block.blocks, [...here, 'blocks'], rowPath, rawTable, out);
+      flattenBlocks(
+        block.blocks,
+        [...here, 'blocks'],
+        rowPath,
+        rawTable,
+        out,
+        region
+      );
     }
   });
 }
@@ -222,6 +279,14 @@ export function flattenSfdt(sfdt: any): FlatDoc {
 /** Body/header/footer are separate document regions, never alignment peers. */
 export function regionKey(path: BlockPath): string {
   return JSON.stringify(path.slice(0, path[1] === 'headersFooters' ? 3 : 1));
+}
+
+/** A block's alignment region; each text box is a region of its own. */
+export function blockRegion(block: {
+  path: BlockPath;
+  region?: string;
+}): string {
+  return block.region ?? regionKey(block.path);
 }
 
 export function visitDocumentRegions(
@@ -355,6 +420,11 @@ export function normalizeForDiff(
         }
         if (Array.isArray(next.inlines))
           next.inlines = walkInlines(next.inlines);
+        if (Array.isArray(next.textFrame?.blocks))
+          next.textFrame = {
+            ...next.textFrame,
+            blocks: walkBlocks(next.textFrame.blocks)
+          };
         return next;
       });
 
