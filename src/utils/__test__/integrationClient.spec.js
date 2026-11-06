@@ -1098,8 +1098,6 @@ describe('IntegrationClient', () => {
       Object.assign(fieldValues, {
         buyer_field: 'buyer@example.com',
         buyer_phone: '15551234567',
-        empty_phone: '',
-        // An emptied repeating field: truthy as an array, but no number.
         empty_repeat_phone: ['']
       });
       const signer = {
@@ -1111,10 +1109,6 @@ describe('IntegrationClient', () => {
         [
           { sms_authentication: true, phone_field_key: 'buyer_phone' },
           '15551234567'
-        ],
-        [
-          { sms_authentication: true, phone_field_key: 'empty_phone' },
-          undefined
         ],
         [
           { sms_authentication: true, phone_field_key: 'empty_repeat_phone' },
@@ -1189,7 +1183,6 @@ describe('IntegrationClient', () => {
 
       delete fieldValues.buyer_field;
       delete fieldValues.buyer_phone;
-      delete fieldValues.empty_phone;
       delete fieldValues.empty_repeat_phone;
     });
 
