@@ -707,7 +707,8 @@ Object.entries(Fields).map(([key, Field]: any) => {
         <label
           // Doesn't work for repeats currently since repeating field IDs aren't unique
           htmlFor={servar.repeated || labelEditable ? undefined : servar.key}
-          style={{
+          // css, not style: an inline style drops the target's @media block.
+          css={{
             marginBottom: `${getLabelGapDefault(servar.type)}px`,
             display: 'inline-block',
             whiteSpace: 'pre-wrap',
