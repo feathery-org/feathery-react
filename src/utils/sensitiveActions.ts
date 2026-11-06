@@ -1,6 +1,7 @@
 import internalState, { setFormInternalState } from './internalState';
 import { defaultClient } from './init';
 import Auth from '../auth/internal/AuthIntegrationInterface';
+import { waitForPendingStepSubmission } from './formContext';
 
 // Certain actions are only supported in the no code logic rule
 // And we do not want to expose them in formContext for SDK access
@@ -38,6 +39,7 @@ export const getPrivateActions = (formUuid: string) => {
     },
     _sendEmail: async (templateId: string) => {
       const { client } = internalState[formUuid];
+      await waitForPendingStepSubmission(client);
       await Promise.all([
         client.flushCustomFields(),
         defaultClient.flushCustomFields()
