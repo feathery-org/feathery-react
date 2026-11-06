@@ -1,5 +1,5 @@
 import IntegrationClient from '../featheryClient/integrationClient';
-import { fieldValues, initInfo } from '../init';
+import { fieldValues, initInfo, initState } from '../init';
 import {
   getApiUrl,
   getStaticUrl,
@@ -1157,8 +1157,20 @@ describe('IntegrationClient', () => {
       Object.assign(fieldValues, {
         buyer_field: 'buyer@example.com',
         buyer_phone: '15551234567',
+        sg_phone: '6591234567',
         empty_repeat_phone: ['']
       });
+      initState.formSchemas = {
+        test_form_key: {
+          steps: [
+            {
+              servar_fields: [
+                { servar: { key: 'sg_phone', type: 'phone_number' } }
+              ]
+            }
+          ]
+        }
+      };
       const signer = {
         document_id: 'doc1',
         role_id: 'role-1',
@@ -1168,6 +1180,12 @@ describe('IntegrationClient', () => {
         [
           { sms_authentication: true, phone_field_key: 'buyer_phone' },
           '15551234567'
+        ],
+        // A phone field stores the country code without '+'; 10 digits would
+        // otherwise read as a US number.
+        [
+          { sms_authentication: true, phone_field_key: 'sg_phone' },
+          '+6591234567'
         ],
         [
           { sms_authentication: true, phone_field_key: 'empty_repeat_phone' },
@@ -1240,9 +1258,21 @@ describe('IntegrationClient', () => {
         .catch((error) => error);
       expect(result?.message ?? result).toBe(message);
 
+      // Editor finalize returns the same error as a top-level list.
+      global.fetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: jest.fn().mockResolvedValue([{ phone: [message] }])
+      });
+      await expect(integrationClient.finalizeEnvelope('env-1')).rejects.toThrow(
+        message
+      );
+
       delete fieldValues.buyer_field;
       delete fieldValues.buyer_phone;
+      delete fieldValues.sg_phone;
       delete fieldValues.empty_repeat_phone;
+      delete initState.formSchemas;
     });
 
     it('sends sign_method alongside the editor action when both are present', async () => {
