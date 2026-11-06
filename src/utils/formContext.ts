@@ -17,6 +17,7 @@ import internalState, {
   AlloyEntities,
   GetConfigParams,
   CreateEgnyteFolderParams,
+  DocusignNotification,
   GetDocusignEnvelopeParams,
   UploadFileToEgnyteParams,
   LoanProCustomerObject,
@@ -366,6 +367,7 @@ export const getFormContext = (formUuid: string) => {
       closeOnAction,
       emailSubject,
       emailBlurb,
+      notification,
       ccRecipients,
       customFields,
       repeatable,
@@ -420,6 +422,9 @@ export const getFormContext = (formUuid: string) => {
       // signing email, as sendDocusignEnvelope takes them.
       emailSubject?: string;
       emailBlurb?: string;
+      // Only for signMethod 'docusign': reminder and expiration schedule, as
+      // sendDocusignEnvelope takes it.
+      notification?: DocusignNotification;
       // Completion copies added to the integration's configured recipients.
       // excludedDocuments uses 0-based positions in the generated packet.
       ccRecipients?: SendDocusignParams['ccRecipients'];
@@ -653,6 +658,7 @@ export const getFormContext = (formUuid: string) => {
               : {}),
             email_subject: emailSubject,
             email_blurb: emailBlurb,
+            notification,
             cc_recipients: ccCopies,
             custom_fields: customFields,
             repeatable,
