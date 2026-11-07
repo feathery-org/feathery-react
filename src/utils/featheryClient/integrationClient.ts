@@ -751,13 +751,12 @@ export default class IntegrationClient {
       );
     }
     const { userId, sdkKey } = initInfo();
-    // Editor flow: the backend converts a docx envelope to PDF at generation
-    // whenever a signer is present, which would make the draft uneditable in
-    // the targeted document-editor container. Hold every signer back there —
-    // the editor's Sign action forwards them at finalize time
-    // (finalizeEnvelope), when that conversion is meant to happen.
+    const openInEditor = action.envelope_action === 'open_in_editor';
+    // The server resolves container eligibility before suppressing signers;
+    // mixed selections need them when falling back to the PDF overlay.
     const isDraftView =
-      !!editorContainerId(action) || !!action.view_draft_container;
+      !openInEditor &&
+      (!!editorContainerId(action) || !!action.view_draft_container);
     // The configured field names whoever signs inline, in the form. Nobody does
     // on a DocuSign action - every recipient is mailed by DocuSign, and the
     // per-role mappings are what name them - so the field is ignored there
@@ -836,8 +835,6 @@ export default class IntegrationClient {
         }))
     ].filter((entry: any) => entry.email);
 
-    const openInEditor = action.envelope_action === 'open_in_editor';
-
     // `@feathery/client-utils`'s generateFormDocuments only forwards a fixed
     // set of known fields, so it can't carry the review-step flag or
     // DocuSign's sign_method through to the endpoint. Call the endpoint
@@ -845,10 +842,8 @@ export default class IntegrationClient {
     // either is requested; other sign_method values (e.g. Feathery's own
     // hosted eSign) still go through the maintained library path below.
     //
-    // The draft-editor container is deliberately excluded: it consumes the
-    // generate response's `envelopes` metadata, which the review payload
-    // replaces, and it presents its own editing surface instead of the review
-    // viewer. Targeting a container therefore keeps the plain generate flow.
+    // Container requests also go directly: the backend resolves the source
+    // types and returns native envelopes or a PDF overlay payload.
     // A polymorphic entry has to take the direct call too. client-utils'
     // generateFormDocuments interpolates `documentIds` straight into its poll
     // URL, so an object entry stringifies to "[object Object]" and never
@@ -859,7 +854,11 @@ export default class IntegrationClient {
       (doc: GenerateDocumentRef) => typeof doc !== 'string'
     );
 
-    if (editorContainerId(action) && templateIdOrNull.includes(null)) {
+    if (
+      !openInEditor &&
+      editorContainerId(action) &&
+      templateIdOrNull.includes(null)
+    ) {
       return {
         status: 'error',
         message:
@@ -869,10 +868,9 @@ export default class IntegrationClient {
     }
 
     if (
-      (openInEditor ||
-        isDocusignSignAction(action) ||
-        hasPolymorphicDocument) &&
-      !editorContainerId(action)
+      openInEditor ||
+      ((isDocusignSignAction(action) || hasPolymorphicDocument) &&
+        !editorContainerId(action))
     ) {
       return await this.generateEnvelopesForEditor({
         documentIds,
@@ -882,6 +880,7 @@ export default class IntegrationClient {
         toolbarActions: action.editor_toolbar_actions ?? [],
         mergeDocs: action.merge_docs ?? false,
         openInEditor,
+        editorMode: openInEditor ? action.editor_mode : undefined,
         envelopeAction,
         signMethod: action.sign_method,
         draft: action.draft,
@@ -1190,6 +1189,7 @@ export default class IntegrationClient {
     toolbarActions,
     mergeDocs,
     openInEditor,
+    editorMode,
     envelopeAction,
     signMethod,
     draft,
@@ -1208,6 +1208,7 @@ export default class IntegrationClient {
     // False for a direct DocuSign sign, which also needs this call because
     // client-utils can't forward sign_method.
     openInEditor: boolean;
+    editorMode?: string;
     envelopeAction: 'sign' | 'fill';
     signMethod?: string;
     draft?: boolean;
@@ -1254,6 +1255,7 @@ export default class IntegrationClient {
       // Generate reads the toolbar only to decide whether default field values
       // are baked in; the pressed action is sent to finalize separately.
       payload.editor_toolbar_actions = toolbarActions;
+      if (editorMode) payload.editor_mode = editorMode;
     }
     if (draft !== undefined) payload.draft = draft;
     if (signMethod) payload.sign_method = signMethod;

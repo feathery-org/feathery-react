@@ -9,6 +9,7 @@ import {
 } from '@testing-library/react';
 import { JSForm } from '..';
 import { setFormInternalState } from '../../utils/internalState';
+import { ACTION_GENERATE_ENVELOPES } from '../../utils/elementActions';
 
 jest.mock('../components/ActionToast/useEnvelopeGenerationToast', () => {
   const state = {
@@ -36,6 +37,51 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   jest.clearAllMocks();
+  jest.restoreAllMocks();
+  GridMod._spies.actions = [];
+});
+
+it('clears only the former container when generation falls back to PDF overlay', async () => {
+  const win = BrowserMod.featheryWindow();
+  win.__featheryDocxEditorDrafts = {
+    'old-container': { envelopes: [{ id: 'old-deck' }] },
+    'other-container': { envelopes: [{ id: 'other-deck' }] }
+  };
+  jest.spyOn(BrowserMod, 'featheryWindow').mockReturnValue(win);
+  const id = 'overlay-fallback';
+  render(<JSForm formId='f1' _internalId={id} />);
+  await screen.findByTestId('btn');
+  const state = (setFormInternalState as jest.Mock).mock.calls.find(
+    ([formId, values]) => formId === id && values.generateEnvelopeFlow
+  )[1];
+  state.client.generateEnvelopes = jest
+    .fn()
+    .mockResolvedValue({ editor_mode: 'overlay', envelopes: [] });
+  GridMod._spies.actions = [
+    {
+      type: ACTION_GENERATE_ENVELOPES,
+      envelope_action: 'open_in_editor',
+      editor_mode: 'old-container',
+      documents: ['a', 'b']
+    }
+  ];
+  fireEvent.click(screen.getByTestId('btn'));
+  await waitFor(() =>
+    expect(win.__featheryDocxEditorDrafts['old-container']).toEqual({
+      containerId: 'old-container',
+      documents: [],
+      envelopes: []
+    })
+  );
+  expect(win.__featheryDocxEditorDrafts['other-container']).toEqual({
+    envelopes: [{ id: 'other-deck' }]
+  });
+  expect(win.dispatchEvent).toHaveBeenCalledWith(
+    expect.objectContaining({
+      type: 'feathery-docx-editor-refresh',
+      detail: { containerId: 'old-container', documents: [], envelopes: [] }
+    })
+  );
 });
 
 const toastSpies = () =>
