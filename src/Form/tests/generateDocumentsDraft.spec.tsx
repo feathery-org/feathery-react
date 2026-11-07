@@ -54,9 +54,14 @@ it('clears only the former container when generation falls back to PDF overlay',
   const state = (setFormInternalState as jest.Mock).mock.calls.find(
     ([formId, values]) => formId === id && values.generateEnvelopeFlow
   )[1];
-  state.client.generateEnvelopes = jest
-    .fn()
-    .mockResolvedValue({ editor_mode: 'overlay', envelopes: [] });
+  // The real review viewer renders this payload, so it needs the documents
+  // list even when the overlay has nothing to show.
+  state.client.generateEnvelopes = jest.fn().mockResolvedValue({
+    editor_mode: 'overlay',
+    documents: [],
+    envelopes: [],
+    expires_at: '2999-01-01T00:00:00Z'
+  });
   GridMod._spies.actions = [
     {
       type: ACTION_GENERATE_ENVELOPES,
