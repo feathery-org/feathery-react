@@ -1,4 +1,5 @@
 import {
+  isFieldValid,
   validateElement,
   validateElements,
   ResolvedCustomValidation,
@@ -180,6 +181,113 @@ describe('validation', () => {
       expect(questionInput.validationMessage).toBe('This is a required field');
       expect(invalid).toBe(true);
       form.remove();
+    });
+  });
+
+  describe('isFieldValid', () => {
+    const emailServar = {
+      required: true,
+      type: 'email',
+      key: 'email',
+      repeated: false,
+      metadata: {}
+    };
+    const repeatedServar = {
+      ...servar,
+      key: 'names',
+      repeated: true,
+      repeat_trigger: 'set_value'
+    };
+    const emailField = { servar: emailServar, position: [0], validations: [] };
+    const textField = { servar, position: [1], validations: [] };
+    const namesField = {
+      servar: repeatedServar,
+      position: [0, 1],
+      validations: []
+    };
+    const plainStep = {
+      servar_fields: [emailField, textField],
+      buttons: [],
+      subgrids: []
+    };
+    const repeatStep = {
+      servar_fields: [namesField],
+      buttons: [],
+      subgrids: [{ position: [0], repeated: true, id: 'sg' }]
+    };
+    const plainPositions = { '0': [true], '1': [true] };
+
+    it('passes a field that would submit cleanly', () => {
+      Object.assign(fieldValues, { email: 'ada@example.com' });
+
+      const valid = isFieldValid({
+        step: plainStep,
+        visiblePositions: plainPositions,
+        fieldKey: 'email'
+      });
+
+      expect(valid).toBe(true);
+    });
+
+    it('fails a field a submit would reject', () => {
+      Object.assign(fieldValues, { email: 'ada@' });
+
+      const valid = isFieldValid({
+        step: plainStep,
+        visiblePositions: plainPositions,
+        fieldKey: 'email'
+      });
+
+      expect(valid).toBe(false);
+    });
+
+    it('ignores every other field on the step', () => {
+      Object.assign(fieldValues, { email: 'ada@example.com', [fieldKey]: '' });
+
+      const valid = isFieldValid({
+        step: plainStep,
+        visiblePositions: plainPositions,
+        fieldKey: 'email'
+      });
+
+      expect(valid).toBe(true);
+    });
+
+    it('fails a hidden field so its value is never saved', () => {
+      Object.assign(fieldValues, { email: 'ada@example.com' });
+
+      const valid = isFieldValid({
+        step: plainStep,
+        visiblePositions: { '0': [false], '1': [true] },
+        fieldKey: 'email'
+      });
+
+      expect(valid).toBe(false);
+    });
+
+    it('checks every visible row of a repeated field', () => {
+      Object.assign(fieldValues, { names: ['Ada', ''] });
+
+      const valid = isFieldValid({
+        step: repeatStep,
+        visiblePositions: { '0,1': [true, true, true] },
+        fieldKey: 'names'
+      });
+
+      // Row 1 is empty and required; only the trailing auto-added row is exempt
+      expect(valid).toBe(false);
+    });
+
+    it('exempts the trailing auto-added repeat row like a submit does', () => {
+      Object.assign(fieldValues, { names: ['Ada', ''] });
+
+      const valid = isFieldValid({
+        step: repeatStep,
+        visiblePositions: { '0,1': [true, true] },
+        fieldKey: 'names'
+      });
+
+      expect(valid).toBe(true);
     });
   });
 
