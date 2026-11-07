@@ -1,9 +1,11 @@
 import {
+  getFieldValues,
   init,
   initInfo,
   initState,
   registerTextVariableFields,
   restoredFileKeys,
+  setFieldValues,
   updateUserId
 } from '../init';
 import { processFileValues } from '../formHelperFunctions';
@@ -23,6 +25,42 @@ describe('init', () => {
 
       // Assert
       expect(actual).toMatchObject(expected);
+    });
+
+    it('keeps the first session unless the host restarts', async () => {
+      // The suite's earlier init holds otherwise
+      await init('first-key', { userId: 'first-user', _restart: true });
+      initState.formSessions.form = { form_completed: false };
+      setFieldValues({ answer: 'kept' }, false, true);
+      const remount = jest.fn();
+      initState.remountCallbacks.mounted = remount;
+
+      await init('second-key', { userId: 'ignored' });
+      expect(initInfo()).toMatchObject({
+        sdkKey: 'first-key',
+        userId: 'first-user'
+      });
+      expect(remount).not.toHaveBeenCalled();
+
+      await init('second-key', {
+        userId: 'second-user',
+        collaboratorId: 'collab',
+        _restart: true
+      });
+      expect(initInfo()).toMatchObject({
+        sdkKey: 'second-key',
+        userId: 'second-user',
+        collaboratorId: 'collab',
+        formSessions: {},
+        authenticationError: undefined
+      });
+      expect(getFieldValues()).toEqual({});
+      expect(remount).toHaveBeenCalledTimes(1);
+
+      await init('third-key', { _restart: true });
+      expect(initInfo().collaboratorId).toBe('');
+      expect(initInfo().userId).not.toBe('second-user');
+      delete initState.remountCallbacks.mounted;
     });
   });
 

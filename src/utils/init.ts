@@ -23,7 +23,7 @@ import { authState } from '../auth/LoginForm';
 // mask.ts imports nothing, so this stays free of the import cycles the rest of
 // the elements tree would introduce here.
 import { showsFormatInText } from '../elements/fields/TextField/mask';
-import { registerOptionLabels } from './optionLabels';
+import { clearOptionLabels, registerOptionLabels } from './optionLabels';
 import { normalizeAsciiFieldValues } from './ascii';
 
 export type FeatheryFieldTypes =
@@ -55,6 +55,12 @@ type InitOptions = {
   // param when not passed.
   linkToken?: string;
   _enterpriseRegion?: string;
+  // Starts over as if the page had just loaded: the key, user, collaborator,
+  // access link and loaded forms of the current session are dropped first, and
+  // forms still mounted reload under the new one. For a host like the
+  // dashboard that runs forms for more than one environment or submission in
+  // one page load. The region stays unless this init names one.
+  _restart?: boolean;
 };
 
 type InitState = {
@@ -152,8 +158,13 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
     throw new errors.UserIdError();
   }
 
-  if (initState.initialized) return Promise.resolve(initState.userId ?? ''); // can only be initialized one time per load
-  logFeatheryBadge();
+  // Initialized once per load, unless the host starts over
+  const isRestart = initState.initialized && Boolean(options._restart);
+  if (initState.initialized && !isRestart) {
+    return Promise.resolve(initState.userId ?? '');
+  }
+  if (isRestart) resetInitState();
+  else logFeatheryBadge();
 
   initState.initialized = true;
   // Clear any previous authentication errors on new initialization
@@ -226,7 +237,43 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   initFormsPromise = initFormsPromise.then(() =>
     _fetchFormData(options.preloadForms ?? [])
   );
+  // Each mounted form reloads once the new session can be asked for
+  if (isRestart) remountAllForms();
   return initFormsPromise.then(() => initState.userId ?? '');
+}
+
+// Back to the state before the first init, so the next init opens a session
+// of its own. Callbacks stay: they belong to the forms still mounted.
+function resetInitState(): void {
+  resetSubmissionState();
+  Object.assign(initState, {
+    initialized: false,
+    userTracking: 'cookie',
+    _internalUserId: '',
+    sdkKey: '',
+    userId: '',
+    collaboratorId: '',
+    collaboratorReview: '',
+    overrideUserId: false,
+    linkToken: '',
+    linkSecret: '',
+    language: '',
+    formSchemas: {},
+    defaultErrors: {},
+    isTestEnv: false,
+    initNoSave: false,
+    theme: '',
+    authenticationError: undefined,
+    completedSteps: new Set(),
+    completedStepsLoaded: new Set(),
+    knownFieldKeys: new Set(),
+    textVariableFormats: {}
+  });
+  clearOptionLabels();
+  [fileDeduplicationCount, fileRetryStatus].forEach((tracked) =>
+    Object.keys(tracked).forEach((key) => delete tracked[key])
+  );
+  initFormsPromise = Promise.resolve();
 }
 
 // must be called after userId loads
