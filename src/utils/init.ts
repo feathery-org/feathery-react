@@ -41,6 +41,11 @@ export type FieldValues = {
   [fieldKey: string]: FeatheryFieldTypes;
 };
 
+export type SalesforceSession = {
+  sessionId: string;
+  instanceUrl: string;
+};
+
 type InitOptions = {
   userId?: string;
   cacheUserId?: boolean;
@@ -54,6 +59,11 @@ type InitOptions = {
   // Token from a one-time or expiring access link. Read from the `_lt` URL
   // param when not passed.
   linkToken?: string;
+  // The Salesforce session of the page embedding a Salesforce session form,
+  // which is who the backend treats as the form user. `sessionId` is an
+  // API-enabled session ID (`{!$Api.Session_ID}` on a Visualforce page) and
+  // `instanceUrl` the org's My Domain, e.g. https://acme.my.salesforce.com
+  salesforceSession?: SalesforceSession;
   _enterpriseRegion?: string;
 };
 
@@ -173,6 +183,8 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
   if (options.theme) initState.theme = options.theme;
   if (options.collaboratorId) initState.collaboratorId = options.collaboratorId;
   if (options.linkToken) initState.linkToken = options.linkToken;
+  if (options.salesforceSession)
+    initState.salesforceSession = options.salesforceSession;
   if (options.collaboratorReview)
     initState.collaboratorReview = options.collaboratorReview;
   if (options.language) {
