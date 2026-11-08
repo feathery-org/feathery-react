@@ -301,6 +301,14 @@ const api = {
     return settled();
   },
 
+  /** The person's line-spacing shortcut (Ctrl+1, Ctrl+2, Ctrl+5) on the paragraph at `at` */
+  async userLineSpacing(at: string, value: number): Promise<string> {
+    const e = live() as any;
+    e.selection.select(at, at);
+    e.editorModule.onApplyParagraphFormat('lineSpacing', value, false, false);
+    return settled();
+  },
+
   async userEdit(at: string, text: string): Promise<string> {
     const e = live() as any;
     e.enableTrackChanges = false;

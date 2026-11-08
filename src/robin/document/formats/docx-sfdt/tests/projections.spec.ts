@@ -21,6 +21,9 @@ import {
   N13,
   N14,
   N15,
+  N16,
+  N17,
+  N18,
   NORMALIZATIONS,
   UNDO_NORMALIZATIONS,
   accept,
@@ -429,6 +432,58 @@ describe('normalizations (each a true positive and a true negative)', () => {
     const end = out.find((n) => n.id === 'end') as NfNode;
     expect([end.style, end.markStyle]).toEqual([undefined, undefined]);
     expect((out.find((n) => n.id === 'last') as NfNode).style).toBe('f1');
+  });
+
+  describe('editor re-encodings (Hilb post-v9 B1)', () => {
+    const nodeFormat = (d: NormalForm, id: string) => d.formats[String((all(d).find((n) => n.id === id) as NfNode).style)];
+    const withFormat = (nf: NormalForm, id: string, format: Record<string, unknown>) => {
+      const d = JSON.parse(JSON.stringify(nf)) as NormalForm;
+      d.formats.explicit = format;
+      (all(d).find((n) => n.id === id) as NfNode).style = 'explicit';
+      return d;
+    };
+
+    it('N16 reads line spacing with no type as Multiple (95d7640e)', () => {
+      const nf = fresh();
+      const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string') as NfNode;
+      const base = nf.formats[String(para.style)];
+      const spacing = (format: Record<string, unknown>) => nodeFormat(N16.apply(withFormat(nf, para.id, { ...base, ...format })), para.id);
+
+      expect(spacing({ lineSpacing: 1.15 })).toEqual(spacing({ lineSpacing: 1.15, lineSpacingType: 'Multiple' }));
+      expect(spacing({ lineSpacing: 1.15 })).not.toEqual(spacing({ lineSpacing: 1.15, lineSpacingType: 'Exactly' }));
+    });
+
+    it('N16 reads it as Multiple even when the paragraph style sets a type', () => {
+      const nf = fresh();
+      (nf.root.styles as Array<Record<string, unknown>>).push({ name: 'Tight', type: 'Paragraph', basedOn: 'Normal', paragraphFormat: { lineSpacingType: 'AtLeast' } });
+      const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string') as NfNode;
+      const spacing = (format: Record<string, unknown>) => nodeFormat(N16.apply(withFormat(nf, para.id, { styleName: 'Tight', ...format })), para.id);
+
+      expect(spacing({ lineSpacing: 12 })).toEqual(spacing({ lineSpacing: 12, lineSpacingType: 'Multiple' }));
+      expect(spacing({ lineSpacing: 12 })).not.toEqual(spacing({ lineSpacing: 12, lineSpacingType: 'AtLeast' }));
+    });
+
+    it('N17 drops the starting number of a section that does not restart its numbering (14f494e8)', () => {
+      const nf = fresh();
+      const section = (nf.root.sections as NfNode[])[0];
+      const base = nf.formats[String(section.style)];
+      const numbering = (format: Record<string, unknown>) => nodeFormat(N17.apply(withFormat(nf, section.id, { ...base, ...format })), section.id);
+
+      expect(numbering({ restartPageNumbering: false, pageStartingNumber: 1 })).toEqual(numbering({}));
+      expect(numbering({ restartPageNumbering: true, pageStartingNumber: 1 })).not.toEqual(numbering({}));
+    });
+
+    it('N18 reads a paragraph list copied from its style as no list of its own (d0605291)', () => {
+      const nf = fresh();
+      (nf.root.styles as Array<Record<string, unknown>>).push({ name: 'List Paragraph', type: 'Paragraph', basedOn: 'Normal', paragraphFormat: { listFormat: { listId: 7, nsid: 223178203 } } });
+      const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string') as NfNode;
+      const list = (listFormat: Record<string, unknown>) =>
+        nodeFormat(N18.apply(withFormat(nf, para.id, { styleName: 'List Paragraph', listFormat })), para.id);
+
+      expect(list({ listId: 7, listLevelNumber: 0, nsid: 223178203 })).toEqual(list({}));
+      expect(list({ listId: 7, listLevelNumber: 1, nsid: 223178203 })).not.toEqual(list({}));
+      expect(list({ listId: 3, listLevelNumber: 0 })).not.toEqual(list({}));
+    });
   });
 
   it('N14 keeps a shared run format apart when its runs sit in paragraphs of different styles', () => {
