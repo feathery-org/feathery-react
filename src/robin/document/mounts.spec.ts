@@ -60,6 +60,23 @@ describe('mounted documents and the form accessor', () => {
     expect(doc1.descriptor()).toBeNull();
   });
 
+  it('describes how the mounted editor saves and what its toolbar offers (Hilb post-v9 G2)', () => {
+    const unmount = mountDocument('form-facts', 'c1', session('ed-f'), {
+      autosaves: true,
+      toolbar: ['save', 'download']
+    });
+    const d = liveDocumentAccessor('form-facts').descriptor();
+
+    expect(descriptorSchema.safeParse(d).success).toBe(true);
+    expect(d).toEqual(
+      expect.objectContaining({
+        autosaves: true,
+        toolbar: ['save', 'download']
+      })
+    );
+    unmount();
+  });
+
   it('names the editor in the first slot whatever the mount order, and keeps forms apart', () => {
     const off = [
       mountDocument('form-b', 'zeta', session('ed-z')),

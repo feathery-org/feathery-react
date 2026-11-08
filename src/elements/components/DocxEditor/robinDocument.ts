@@ -1,6 +1,7 @@
 // Robin's document engine for a mounted editor: one session per opened document, mounted under
 // the form instance so the form's `liveDocument` accessor reaches it.
 import {
+  EditorFacts,
   journalFor,
   lazySession,
   mountDocument,
@@ -31,6 +32,7 @@ export interface RobinDocumentMount {
   slot: string;
   editor: LiveEditor;
   envelopeId: string;
+  facts?: EditorFacts;
 }
 
 /**
@@ -89,7 +91,8 @@ export function mountRobinDocument({
   formKey,
   slot,
   editor,
-  envelopeId
+  envelopeId,
+  facts
 }: RobinDocumentMount): () => void {
   let unroute = () => {};
   let guard: { activity(): void; dispose(): void } | null = null;
@@ -112,7 +115,7 @@ export function mountRobinDocument({
     });
     return session;
   });
-  const unmount = mountDocument(formKey, slot, mounted);
+  const unmount = mountDocument(formKey, slot, mounted, facts);
   // created at open, where Robin is: the rail asking about a card never builds it mid-keystroke
   mounted.get();
   // the rail asks the engine first about Robin's cards, for the ones it must resolve itself

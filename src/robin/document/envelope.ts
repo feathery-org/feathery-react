@@ -1171,6 +1171,16 @@ export const selectionSchema = z.looseObject({
 });
 export type Selection = z.output<typeof selectionSchema>;
 
+/** What the buttons in the editor's own toolbar do with the document */
+export const EDITOR_TOOLBAR_OUTCOMES = [
+  'save',
+  'save_to_field',
+  'download',
+  'sign',
+  'docusign_draft'
+] as const;
+export type EditorToolbarOutcome = typeof EDITOR_TOOLBAR_OUTCOMES[number];
+
 export const descriptorSchema = z.looseObject({
   protocolVersion: z.int(),
   editorId: z.string().min(1),
@@ -1180,7 +1190,9 @@ export const descriptorSchema = z.looseObject({
   outlineHash: z.string().min(1),
   outline: z.string(),
   selection: selectionSchema.optional(),
-  pageCount: z.int().min(1).optional()
+  pageCount: z.int().min(1).optional(),
+  autosaves: z.boolean().optional(),
+  toolbar: z.array(z.enum(EDITOR_TOOLBAR_OUTCOMES)).optional()
 });
 export type Descriptor = {
   protocolVersion: number;
@@ -1193,6 +1205,8 @@ export type Descriptor = {
   outline: string;
   selection?: Selection;
   pageCount?: number;
+  autosaves?: boolean;
+  toolbar?: EditorToolbarOutcome[];
 };
 
 // ---------------------------------------------------------------------------------------------
