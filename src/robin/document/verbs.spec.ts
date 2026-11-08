@@ -680,6 +680,23 @@ describe('write: conflicts', () => {
     expect(r.checks.slice(-1)).toEqual([{ name: 'base-hashes', pass: false }]);
   });
 
+  it('returns the formats the changed node now uses, as a read does (Hilb post-v9 B4, cd0d2c33)', () => {
+    const s = fresh();
+    const style = String(s.view.get('n4')?.style);
+    const r = prepareWrite(
+      s,
+      write({
+        intent: 'x',
+        scope: { ids: ['n4'] },
+        changes: [{ kind: 'delete', id: 'n4', base: 'stale' }]
+      })
+    );
+
+    expect(r.outcome === 'conflict' && r.conflict.referencedFormats).toEqual({
+      [style]: { base: expect.any(String), ...s.view.nf.formats[style] }
+    });
+  });
+
   // the captain's split: a section's conflict carried the whole section (60k tokens)
   it('returns a stale container as its own fields and child stubs, never its subtree', () => {
     const s = fresh();

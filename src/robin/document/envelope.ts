@@ -799,6 +799,7 @@ export const conflictResultSchema = z.looseObject({
     stale: z.array(staleEntrySchema),
     bulk: z.array(bulkConflictSchema),
     formats: z.array(formatConflictSchema),
+    referencedFormats: z.record(formatIdSchema, emittedFormatSchema).optional(),
     outlineHash: z.string().min(1)
   }),
   trace: traceSchema.optional()
