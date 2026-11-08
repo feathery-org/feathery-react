@@ -183,9 +183,11 @@ export function fromNormalForm(
   };
 
   const rootRecord = residue[nf.root.id] as NodeRecord | undefined;
+  const now = new Date();
   const minter = new RevisionMinter(
     arr<NativeRevision>(rootRecord?.hidden.revisions),
-    new Date().toISOString(),
+    // the editor dates revisions as local time marked Z, so Robin's sort beside the person's
+    new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString(),
     options.cards
   );
   /** Revision ids for a node whose `pending` the engine (re)authored: its own and its mark's. */

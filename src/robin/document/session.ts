@@ -125,6 +125,10 @@ export class DocumentSession {
 
   /** Cards this session committed by replacing the document: the engine resolves them. */
   private readonly structural = new Set<string>();
+  private readonly beforeCards = new Map<
+    string,
+    { nf: NormalForm; restoreGuesses: () => void }
+  >();
 
   private readonly onTurnChange?: (turnId: string | null) => void;
 
@@ -202,6 +206,7 @@ export class DocumentSession {
     const outline = outlineVerb(state, {});
     const selection = this.selection(state);
     const pages = this.pages(state);
+    const cards = this.pack.cards?.(state.view, state.residue) ?? [];
     return {
       protocolVersion: PROTOCOL_VERSION,
       editorId: this.editorId,
@@ -211,7 +216,8 @@ export class DocumentSession {
       outlineHash: state.outlineHash,
       outline: outline.ok ? outline.lines : '',
       ...(selection ? { selection } : {}),
-      ...(pages ? { pageCount: pages.length } : {})
+      ...(pages ? { pageCount: pages.length } : {}),
+      ...(cards.length ? { cards } : {})
     };
   }
 
@@ -293,6 +299,7 @@ export class DocumentSession {
   /** Run one verb against the live document. */
   execute(verb: Verb, input: unknown, turnId: string): VerbResult {
     if (verb === 'write') return this.write(input, turnId);
+    if (verb === 'resolve') return this.resolve(input);
     const parsed = parseVerbInput(verb, input);
     if (!parsed.ok) return refusedResult(parsed.refusal);
     const state = this.state;
@@ -492,8 +499,10 @@ export class DocumentSession {
     }
 
     this.install(outcome.live.native, outcome.live);
-    if (outcome.plan.history === 'engine' && outcome.plan.landed === 'card')
+    if (outcome.plan.history === 'engine' && outcome.plan.landed === 'card') {
       this.structural.add(changeSetId);
+      this.beforeCards.set(changeSetId, { nf: before.view.nf, restoreGuesses });
+    }
     trace.committed('committed', outcome.seams, prepared.touched.length);
     trace.proof({
       outcome: 'passed',
@@ -553,7 +562,8 @@ export class DocumentSession {
   resolveCards(
     changeSetIds: string[],
     accept: boolean,
-    alongside?: () => void
+    alongside?: () => void,
+    by: 'robin' | 'person' = 'person'
   ): boolean {
     const resolveGroup = this.pack.projections.resolveGroup;
     if (!resolveGroup) return false;
@@ -575,6 +585,15 @@ export class DocumentSession {
             state.residue
           );
       this.host.open(target);
+      // the document is exactly as before the card, so its nodes keep the ids, and the certainty, they had then
+      const prior =
+        snapshot && !alongside
+          ? this.beforeCards.get(changeSetIds[0])
+          : undefined;
+      if (prior) {
+        this.adopt(target, [prior.nf]);
+        prior.restoreGuesses();
+      }
       if (alongside) {
         alongside();
         // Reopened so the editor's own resolution joins this one undo step
@@ -608,10 +627,107 @@ export class DocumentSession {
       before,
       after: this.host.serialize()
     });
-    for (const changeSetId of changeSetIds) this.structural.delete(changeSetId);
+    for (const changeSetId of changeSetIds) {
+      this.structural.delete(changeSetId);
+      this.beforeCards.delete(changeSetId);
+    }
     this.refresh();
-    this.replaced('person');
+    this.replaced(by);
     return true;
+  }
+
+  /** Accept or withdraw Robin's own pending cards, named by full id or prefix */
+  private resolve(input: unknown): VerbResult {
+    const parsed = parseVerbInput('resolve', input);
+    if (!parsed.ok) return refusedResult(parsed.refusal);
+    if (this.host.readOnly()) return readOnlyResult();
+    const { cards: asked, accept } = parsed.value;
+    const before = this.state;
+    const pending = this.pack.cards?.(before.view, before.residue) ?? [];
+    const cards: string[] = [];
+    for (const name of asked) {
+      const exact = pending.filter(
+        (card) => card.id === name || card.short === name
+      );
+      const matches = exact.length
+        ? exact
+        : pending.filter((card) => card.id.startsWith(name));
+      if (!matches.length)
+        return refusedResult(
+          makeRefusal([
+            problem(
+              'card-not-pending',
+              `Nothing was resolved: no card of yours named ${name} is pending in the document.`,
+              {
+                detail: { pending: pending.map((c) => c.id) },
+                retry: 'do_not_retry'
+              }
+            )
+          ])
+        );
+      if (matches.length > 1)
+        return refusedResult(
+          makeRefusal([
+            problem(
+              'card-ambiguous',
+              `Nothing was resolved: ${name} names more than one pending card.`,
+              {
+                detail: { matches: matches.map((c) => c.id) },
+                retry: 'modified_input'
+              }
+            )
+          ])
+        );
+      cards.push(matches[0].id);
+    }
+    const bases = new Map(before.view.nodes().map((n) => [n.id, baseOf(n)]));
+    if (
+      !this.writing(() =>
+        this.resolveCards([...new Set(cards)], accept, undefined, 'robin')
+      )
+    )
+      return refusedResult(
+        makeRefusal([
+          problem(
+            'apply-failed',
+            'Nothing was resolved: the editor could not resolve the card, and the document is as it was.',
+            { retry: 'do_not_retry' }
+          )
+        ])
+      );
+    const { view } = this.state;
+    const removed = [...bases.keys()].filter((id) => !view.get(id));
+    const touched = view
+      .nodes()
+      .filter((n) => bases.get(n.id) !== baseOf(n))
+      .map((n) => n.id);
+    return {
+      ok: true,
+      cards: [...new Set(cards)],
+      accepted: accept,
+      outlineHash: this.state.outlineHash,
+      touched,
+      removed,
+      fingerprints: this.fingerprintsOf(touched)
+    };
+  }
+
+  /** Fresh fingerprints of nodes and their ancestors */
+  private fingerprintsOf(
+    named: string[]
+  ): Record<string, { base: string; shape: string }> {
+    const { view } = this.current as DocumentState;
+    const out: Record<string, { base: string; shape: string }> = {};
+    for (const start of named) {
+      let id: string | undefined = start;
+      while (id && !out[id]) {
+        const node = id === ROOT_ID ? view.nf.root : view.get(id);
+        if (!node) break;
+        out[id] = { base: baseOf(node), shape: shapeOf(node, this.pack.tree) };
+        id = view.placement(id)?.parent?.id;
+      }
+    }
+    return out;
   }
 
   /** Fresh fingerprints of what a committed write named or created, what finalizers changed, and their ancestors */
@@ -620,27 +736,14 @@ export class DocumentSession {
     mapping: Record<string, string>,
     finalized: string[]
   ): Record<string, { base: string; shape: string }> {
-    const { view } = this.current as DocumentState;
-    const ids = new Set<string>();
     const named = [
       ...write.changes.flatMap(addressedIds),
       ...Object.keys(mapping)
     ];
-    for (const id of [...named.map((n) => mapping[n] ?? n), ...finalized]) {
-      ids.add(id);
-      let parent = view.placement(id)?.parent;
-      while (parent && !ids.has(parent.id)) {
-        ids.add(parent.id);
-        parent = view.placement(parent.id)?.parent;
-      }
-    }
-    const out: Record<string, { base: string; shape: string }> = {};
-    for (const id of ids) {
-      const node = id === ROOT_ID ? view.nf.root : view.get(id);
-      if (node)
-        out[id] = { base: baseOf(node), shape: shapeOf(node, this.pack.tree) };
-    }
-    return out;
+    return this.fingerprintsOf([
+      ...named.map((n) => mapping[n] ?? n),
+      ...finalized
+    ]);
   }
 
   /** A refresh after a resolution that failed: reported, never fatal to the resolution. */

@@ -175,7 +175,7 @@ describe('the format pack', () => {
     expect(hits('Hilb').map((h) => h.trackedChangesInside)).toEqual([true]);
     expect(hits('Untouched').map((h) => h.trackedChangesInside)).toEqual([undefined]);
     const shallow = (call('outline', { depth: 3 }) as { lines: string }).lines.split('\n');
-    expect(shallow.find((l) => / cell /.test(l))).toMatch(/"Premium \$1,000" \(tracked changes inside\)/);
+    expect(shallow.find((l) => / cell /.test(l))).toMatch(/"Premium \$1,000" \(tracked changes inside: by Robin\)/);
     const sections = (call('find', { kind: 'section' }) as { hits: Array<{ trackedChangesInside?: boolean }> }).hits;
     expect(sections.map((h) => h.trackedChangesInside)).toEqual([undefined]);
   });

@@ -12,6 +12,8 @@
  * The model reads `pending` and never writes it. The engine writes it when it composes a tracked
  * change set for a document replacement; `fromNormalForm` then mints the revisions.
  */
+import type { PendingCard } from '../../../envelope';
+
 type Obj = Record<string, unknown>;
 
 export interface NativeRevision {
@@ -31,7 +33,11 @@ export interface PendingRevision {
 }
 
 /** The change set (and move) a revision belongs to, from the editor's group tag. */
-function tagOf(customData: unknown): { group?: string; move?: string } {
+function tagOf(customData: unknown): {
+  group?: string;
+  move?: string;
+  intent?: string;
+} {
   if (typeof customData !== 'string' || !customData.trim()) return {};
   try {
     const parsed = JSON.parse(customData);
@@ -43,11 +49,38 @@ function tagOf(customData: unknown): { group?: string; move?: string } {
       return {};
     return {
       group: parsed.changeSetId,
-      ...(typeof parsed.move === 'string' ? { move: parsed.move } : {})
+      ...(typeof parsed.move === 'string' ? { move: parsed.move } : {}),
+      ...(typeof parsed.intent === 'string' && parsed.intent
+        ? { intent: parsed.intent }
+        : {})
     };
   } catch {
     return {};
   }
+}
+
+/** How a card is named to Robin: the start of its id, and which of its turn's cards it is */
+export const shortCardId = (id: string): string =>
+  `${id.slice(0, 8)}${/\.\d+$/.exec(id)?.[0] ?? ''}`;
+
+/** Robin's cards still pending in a revisions table, oldest first */
+export function pendingCards(revisions: unknown): PendingCard[] {
+  const cards = new Map<string, PendingCard>();
+  const table: NativeRevision[] = Array.isArray(revisions) ? revisions : [];
+  for (const r of table) {
+    const { group, intent } = tagOf(r?.customData);
+    if (!group || cards.has(group)) continue;
+    cards.set(group, {
+      id: group,
+      short: shortCardId(group),
+      ...(intent ? { intent } : {}),
+      ...(r.date ? { date: r.date } : {})
+    });
+  }
+  // A card without a date goes last
+  return [...cards.values()].sort((a, b) =>
+    (a.date ?? '\uffff').localeCompare(b.date ?? '\uffff')
+  );
 }
 
 /** The change set a revision belongs to, from the editor's group tag, or undefined. */

@@ -969,7 +969,8 @@ describe('section 10 bridge payload', () => {
       outline: 'document_outline',
       read: 'document_read',
       find: 'document_find',
-      write: 'document_write'
+      write: 'document_write',
+      resolve: 'document_resolve'
     });
   });
 

@@ -6,6 +6,7 @@ import type { Pack } from '../../pack';
 import { fromNormalForm } from './adapter/fromNormalForm';
 import { FEATURE_KEYS, FORMAT_REF_KEYS } from './adapter/keys';
 import { toNormalForm } from './adapter/toNormalForm';
+import { pendingCards } from './adapter/revisions';
 import { bindingAnnotations } from './features/binding';
 import { layoutOnly } from './host';
 import { formulasFinalizer } from './finalizers/formulas';
@@ -130,6 +131,11 @@ export const docxPack: Pack = {
   featureKeys: FEATURE_KEYS,
   selection: selectionOf,
   pages: pagesOf,
+  cards: (view, residue) =>
+    pendingCards(
+      (residue[view.nf.root.id] as { hidden?: { revisions?: unknown } })?.hidden
+        ?.revisions
+    ),
   // the server's card for how to edit a document (what it attached to these refusals on the rig)
   methodCards: ['edit-document'],
   residueKeys: {

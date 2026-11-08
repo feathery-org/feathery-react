@@ -33,6 +33,7 @@ import {
   reject
 } from '../projections';
 import { markSubtree } from '../reconcile';
+import { pendingCards } from '../adapter/revisions';
 
 const native = fs.readFileSync(path.join(__dirname, 'corpus', 'flagship-v4b.sfdt.json'), 'utf8');
 const fresh = () => toNormalForm(native).nf;
@@ -514,9 +515,18 @@ describe('authorship, residue and the expected rejection', () => {
     const nf = fresh();
     const row = all(nf).find((n) => n.kind === 'row') as NfNode;
     row.pending = { ...ins('A'), revisions: [ins('A'), del('B')] };
-    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Insertion by Robin, then Deletion by Robin]');
+    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Insertion, card A, then Deletion, card B]');
     row.pending = ins('A');
-    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Insertion by Robin]');
+    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Insertion, card A]');
+  });
+
+  it('the outline names a card by its short id and a person by name (Hilb post-v9 G1)', () => {
+    const nf = fresh();
+    const row = all(nf).find((n) => n.kind === 'row') as NfNode;
+    row.pending = { kind: 'Deletion', author: 'Robin', group: '85caf0e2d4c1a9' };
+    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Deletion, card 85caf0e2]');
+    row.pending = { kind: 'Insertion', author: 'Ann' };
+    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Insertion by Ann]');
   });
 
   // Another card's inserted heading, then this turn's write over it, as the live document reads back
@@ -584,5 +594,34 @@ describe('authorship, residue and the expected rejection', () => {
     const restored = expectedRejection(before, intended);
     expect((all(restored).find((n) => n.id === run.id) as NfNode).style).toBe('boldNow');
     expect(restored.formats.boldNow).toEqual({ bold: true });
+  });
+});
+
+describe('pending cards (Hilb post-v9 G1)', () => {
+  const tagged = (changeSetId: string, intent?: string) =>
+    JSON.stringify({ v: 1, source: 'robin', changeSetId, group: 'robin', ...(intent ? { intent } : {}) });
+
+  it('lists each of Robin\'s cards once, in the order the revisions table first names it, with its intent', () => {
+    const cards = pendingCards([
+      { revisionId: '1', revisionType: 'Deletion', author: 'Robin', date: '2026-11-06T15:03:00Z', customData: tagged('card-one', 'Remove the premiums') },
+      { revisionId: '2', revisionType: 'Insertion', author: 'Ann', date: '2026-11-06T15:04:00Z' },
+      { revisionId: '3', revisionType: 'Insertion', author: 'Robin', customData: tagged('card-two') },
+      { revisionId: '4', revisionType: 'Insertion', author: 'Robin', customData: tagged('card-one', 'Remove the premiums') }
+    ]);
+
+    expect(cards).toEqual([
+      { id: 'card-one', short: 'card-one', intent: 'Remove the premiums', date: '2026-11-06T15:03:00Z' },
+      { id: 'card-two', short: 'card-two' }
+    ]);
+    expect(pendingCards(undefined)).toEqual([]);
+  });
+
+  it('lists the cards oldest first when the table names a newer one first, as a reopened file does', () => {
+    const cards = pendingCards([
+      { revisionId: '1', revisionType: 'Insertion', author: 'Robin', date: '2026-11-06T15:09:00Z', customData: tagged('card-new') },
+      { revisionId: '2', revisionType: 'Deletion', author: 'Robin', date: '2026-11-06T15:03:00Z', customData: tagged('card-old') }
+    ]);
+
+    expect(cards.map((card) => card.id)).toEqual(['card-old', 'card-new']);
   });
 });

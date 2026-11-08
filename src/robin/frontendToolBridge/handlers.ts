@@ -26,7 +26,7 @@ export interface FormToolAction {
   render: boolean;
 }
 
-type DocumentVerb = 'outline' | 'read' | 'find' | 'write';
+type DocumentVerb = 'outline' | 'read' | 'find' | 'write' | 'resolve';
 
 const attachmentIdsOf = (value: unknown): string[] | null =>
   typeof value === 'object' &&
@@ -195,7 +195,8 @@ function createFormToolHandlers({
     document_outline: documentHandler('outline'),
     document_read: documentHandler('read'),
     document_find: documentHandler('find'),
-    document_write: documentHandler('write')
+    document_write: documentHandler('write'),
+    document_resolve: documentHandler('resolve')
   };
 }
 
@@ -213,7 +214,8 @@ const RENDER_ACTIONS: ReadonlySet<string> = new Set<FormToolActionName>([
   'trigger_table_action',
   'set_table_findings',
   'focus_table_cell',
-  'document_write'
+  'document_write',
+  'document_resolve'
 ]);
 
 export function createFormToolActions(

@@ -49,7 +49,9 @@ export const CORE_INVARIANTS = [
   'property-invalid',
   'unknown-format',
   'format-entry-rejected',
-  'proof-failed'
+  'proof-failed',
+  'card-not-pending',
+  'card-ambiguous'
 ] as const;
 export type CoreInvariant = typeof CORE_INVARIANTS[number];
 
@@ -654,6 +656,13 @@ const writeInputSchema = writeShapeSchema.superRefine((write, ctx) => {
 });
 export type WriteInput = z.output<typeof writeShapeSchema>;
 
+/** Accept or withdraw Robin's own pending cards, each named by its full id or an 8+ character prefix */
+const resolveInputSchema = z.strictObject({
+  cards: z.array(z.string().min(8)).min(1).max(16),
+  accept: z.boolean()
+});
+export type ResolveInput = z.output<typeof resolveInputSchema>;
+
 // ---------------------------------------------------------------------------------------------
 // Section 7. Failure results shared by every verb
 // ---------------------------------------------------------------------------------------------
@@ -944,11 +953,25 @@ export type WriteSuccessResult = Omit<
   'facts' | 'warnings' | 'finalizerScope'
 > & { facts: Fact[]; warnings: Warning[]; finalizerScope: FinalizerScope[] };
 
+export const resolveSuccessResultSchema = z.looseObject({
+  ok: z.literal(true),
+  cards: z.array(z.string().min(1)),
+  accepted: z.boolean(),
+  outlineHash: z.string().min(1),
+  touched: z.array(nodeIdSchema.or(z.literal(ROOT_ID))),
+  removed: z.array(nodeIdSchema),
+  fingerprints: z.record(
+    nodeIdSchema.or(z.literal(ROOT_ID)),
+    z.looseObject({ base: z.string().min(1), shape: z.string().min(1) })
+  )
+});
+export type ResolveSuccessResult = z.output<typeof resolveSuccessResultSchema>;
+
 // ---------------------------------------------------------------------------------------------
 // Verbs: inputs and results by verb (sections 3 to 7)
 // ---------------------------------------------------------------------------------------------
 
-export const VERBS = ['outline', 'read', 'find', 'write'] as const;
+export const VERBS = ['outline', 'read', 'find', 'write', 'resolve'] as const;
 export type Verb = typeof VERBS[number];
 
 export interface VerbInputs {
@@ -956,6 +979,7 @@ export interface VerbInputs {
   read: ReadInput;
   find: FindInput;
   write: WriteInput;
+  resolve: ResolveInput;
 }
 
 export type FailureResult =
@@ -969,6 +993,7 @@ export interface VerbResults {
   read: ReadResult | FailureResult;
   find: FindResult | FailureResult;
   write: WriteSuccessResult | FailureResult;
+  resolve: ResolveSuccessResult | FailureResult;
 }
 export type VerbResult = VerbResults[Verb];
 
@@ -976,14 +1001,16 @@ const verbInputSchemas = {
   outline: outlineInputSchema,
   read: readInputSchema,
   find: findInputSchema,
-  write: writeInputSchema
+  write: writeInputSchema,
+  resolve: resolveInputSchema
 } as const;
 
 const verbSuccessSchemas = {
   outline: outlineResultSchema,
   read: readResultSchema,
   find: findResultSchema,
-  write: writeSuccessResultSchema
+  write: writeSuccessResultSchema,
+  resolve: resolveSuccessResultSchema
 } as const;
 
 const failureResultSchema = z.union([
@@ -1172,6 +1199,15 @@ export const selectionSchema = z.looseObject({
 });
 export type Selection = z.output<typeof selectionSchema>;
 
+/** A review card of Robin's still waiting in the document, oldest first in a list */
+export const pendingCardSchema = z.looseObject({
+  id: z.string().min(1),
+  short: z.string().min(1),
+  intent: z.string().optional(),
+  date: z.string().optional()
+});
+export type PendingCard = z.output<typeof pendingCardSchema>;
+
 /** What the buttons in the editor's own toolbar do with the document */
 export const EDITOR_TOOLBAR_OUTCOMES = [
   'save',
@@ -1193,7 +1229,8 @@ export const descriptorSchema = z.looseObject({
   selection: selectionSchema.optional(),
   pageCount: z.int().min(1).optional(),
   autosaves: z.boolean().optional(),
-  toolbar: z.array(z.enum(EDITOR_TOOLBAR_OUTCOMES)).optional()
+  toolbar: z.array(z.enum(EDITOR_TOOLBAR_OUTCOMES)).optional(),
+  cards: z.array(pendingCardSchema).optional()
 });
 export type Descriptor = {
   protocolVersion: number;
@@ -1208,6 +1245,7 @@ export type Descriptor = {
   pageCount?: number;
   autosaves?: boolean;
   toolbar?: EditorToolbarOutcome[];
+  cards?: PendingCard[];
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -1219,7 +1257,8 @@ export const BRIDGE_ACTIONS = {
   outline: 'document_outline',
   read: 'document_read',
   find: 'document_find',
-  write: 'document_write'
+  write: 'document_write',
+  resolve: 'document_resolve'
 } as const;
 
 /**

@@ -126,11 +126,12 @@ export interface LiveDocumentAccessor {
    * the editor; null when no document is mounted.
    */
   descriptor(): Descriptor | null;
-  /** Section 10: the four document actions, `document_outline` to `document_write`. */
+  /** Section 10: the document actions, `document_outline` to `document_resolve`. */
   outline: DocumentAction;
   read: DocumentAction;
   find: DocumentAction;
   write: DocumentAction;
+  resolve: DocumentAction;
   /** The form's Robin turn settled: every mounted document ends its editing turn. */
   finishTurn(): void;
   /**
@@ -236,6 +237,7 @@ export function liveDocumentAccessor(
     read: action('read'),
     find: action('find'),
     write: action('write'),
+    resolve: action('resolve'),
     finishTurn() {
       // a session not yet created has no turn to finish
       for (const session of slotsOf(formKey)) session.peek()?.finishTurn();

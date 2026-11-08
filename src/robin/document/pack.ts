@@ -52,6 +52,7 @@
  */
 import type {
   Fact,
+  PendingCard,
   PropertySource,
   RefusalProblem,
   Span,
@@ -524,6 +525,7 @@ export interface Pack {
   } | null;
   /** Each page the editor lays out (`EditorHost.pages`), in layout order */
   pages?(view: DocumentView, native: unknown): LaidOutPage[] | null;
+  cards?(view: DocumentView, residue: Residue): PendingCard[];
 }
 
 const REQUIRED_FUNCTIONS: Array<[string, (p: Pack) => unknown]> = [
