@@ -432,8 +432,12 @@ export interface PlanContext {
   derived?: readonly string[];
 }
 
+/** The change set a predicted document's own revisions are composed under */
+export const PREDICTED_TURN = 'predicted';
+
 export interface Reconcile {
   plan(ctx: PlanContext): CommitPlan;
+  predict?(before: DocumentView, intended: DocumentView): NormalForm | null;
   /**
    * Run the steps of a `grouped` plan with `editor` history as the editor's one undo group (a
    * change and the derived content the editor refreshes after it), so one undo takes back both.

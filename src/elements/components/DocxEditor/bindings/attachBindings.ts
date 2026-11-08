@@ -26,6 +26,7 @@ import {
   refreshContentControlCollection
 } from './editorAdapter';
 import { installKeystrokeGuard } from './keystrokeGuard';
+import { installPasteGuard } from './pasteGuard';
 import { createCommitTriggers } from './commitTriggers';
 import { watchRowCommands } from './rowCommandWatch';
 import {
@@ -200,6 +201,7 @@ export function attachBindings(
     ...(clearTimeoutFn ? { clearTimeoutFn } : {})
   });
   const uninstallGuard = installKeystrokeGuard(editor);
+  const uninstallPasteGuard = installPasteGuard(editor);
   // Explicit whole-table/row deletion: lift the content-control locks that
   // made deleteTable/deleteRow silent no-ops, and confirm/unwrap when the
   // deleted values feed formulas elsewhere (tableDeleteGuard has the full
@@ -431,6 +433,7 @@ export function attachBindings(
       });
       step('blur', () => editableDiv?.removeEventListener?.('blur', onBlur));
       step('guard', () => uninstallGuard(), true);
+      step('paste guard', () => uninstallPasteGuard(), true);
       step('rowCommands', () => unwatchRowCommands(), true);
       step('tableDelete', () => uninstallTableDelete(), true);
       step('triggers', () => triggers.dispose());
