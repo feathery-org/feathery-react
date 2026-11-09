@@ -35,7 +35,8 @@ jest.mock('../useDateLocale', () => ({
 }));
 
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { render, fireEvent, waitFor, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import DateSelectorField from '../index';
 import {
   createDateSelectorElement,
@@ -827,6 +828,39 @@ describe('DateSelectorField', () => {
 
       expect(onEnter).toHaveBeenCalled();
     });
+  });
+});
+
+describe('DateSelectorField - Calendar height', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetMockFieldValue();
+  });
+
+  const getRenderedWeekCount = () =>
+    document.querySelectorAll('.react-datepicker__week').length;
+
+  it('renders a fixed six-week grid', async () => {
+    // February 2026 spans 4 calendar weeks, March and April 2026 span 5 and
+    // May 2026 spans 6, so three steps cover every natural month height
+    const element = createDateSelectorElement();
+    render(
+      <DateSelectorField
+        {...createDateSelectorProps(element, { value: '2026-02-10' })}
+      />
+    );
+
+    await focusDateInput();
+    await waitFor(() => expect(getRenderedWeekCount()).toBe(6));
+
+    const user = userEvent.setup();
+    for (let monthStep = 0; monthStep < 3; monthStep++) {
+      await user.click(screen.getByRole('button', { name: 'Next Month' }));
+      expect(getRenderedWeekCount()).toBe(6);
+    }
+    expect(
+      screen.getByRole('heading', { name: 'May 2026' })
+    ).toBeInTheDocument();
   });
 });
 
