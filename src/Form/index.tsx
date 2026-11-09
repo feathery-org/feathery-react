@@ -303,7 +303,6 @@ import {
   STEP_EVENT_SUBMIT
 } from '../utils/stepEvents';
 
-
 // Long enough to batch signature strokes and files picked one after another
 const FILE_AUTOSAVE_DELAY_MS = 1000;
 
