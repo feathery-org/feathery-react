@@ -35,6 +35,8 @@ const isLinkGatedRequest = (url: any): url is string => {
 // collaborator to a link-bound submission on this alone: the invite that
 // brought them in gave them a collaborator id, never a token of their own.
 const COLLABORATOR_HEADER = 'X-Feathery-Collaborator';
+// Review mode reopens a completed role; the backend refuses its writes without it
+const COLLABORATOR_REVIEW_HEADER = 'X-Feathery-Collaborator-Review';
 
 /**
  * The credentials a request to `url` should carry so the backend can resolve a
@@ -62,6 +64,7 @@ export const linkHeadersForUrl = (
   };
   if (initState.collaboratorId)
     headers[COLLABORATOR_HEADER] = initState.collaboratorId;
+  if (initState.collaboratorReview) headers[COLLABORATOR_REVIEW_HEADER] = '1';
 
   return Object.keys(headers).length ? headers : undefined;
 };

@@ -15,7 +15,12 @@ import { initState } from '../init';
 // under test here. '../init' is mocked because it instantiates FeatheryClient at
 // module load, which would drag the rest of the SDK in with it.
 jest.mock('../init', () => ({
-  initState: { linkToken: '', linkSecret: '', collaboratorId: '' }
+  initState: {
+    linkToken: '',
+    linkSecret: '',
+    collaboratorId: '',
+    collaboratorReview: ''
+  }
 }));
 
 // Pinned rather than inherited from BACKEND_ENV: local, docker and staging put
@@ -29,8 +34,12 @@ const openedWithLink = (token: string, deviceSecret = '') => {
   initState.linkSecret = deviceSecret;
 };
 
-const actingAsCollaborator = (collaboratorId: string) => {
+const actingAsCollaborator = (
+  collaboratorId: string,
+  collaboratorReview: '' | 'readOnly' | 'editable' = ''
+) => {
   initState.collaboratorId = collaboratorId;
+  initState.collaboratorReview = collaboratorReview;
 };
 
 beforeEach(() => {
@@ -59,6 +68,15 @@ describe('the credentials a gated request carries', () => {
     expect(linkHeadersForUrl(sessionUrl())).toEqual({
       'X-Feathery-Link': 'tok.secret',
       'X-Feathery-Collaborator': 'collab'
+    });
+  });
+
+  it('marks a review so the backend lets it reopen a completed role', () => {
+    actingAsCollaborator('collab', 'editable');
+
+    expect(linkHeadersForUrl(sessionUrl())).toEqual({
+      'X-Feathery-Collaborator': 'collab',
+      'X-Feathery-Collaborator-Review': '1'
     });
   });
 
