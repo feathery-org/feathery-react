@@ -184,6 +184,7 @@ describe('step save and completion ordering', () => {
 
   it('sends the step answers only after an in-flight field save lands', async () => {
     const { client } = createClientWithStorage();
+    client.autosaveEnabled = true;
     let finishFieldSave: () => void = () => {};
     const order: string[] = [];
     jest.spyOn(client, '_fetch').mockImplementation(async (url: any) => {
@@ -219,6 +220,7 @@ describe('step save and completion ordering', () => {
 
   it('sends the step answers when the field save flush is rejected', async () => {
     const { client } = createClientWithStorage();
+    client.autosaveEnabled = true;
     jest
       .spyOn(client, 'submitCustom')
       .mockRejectedValue(new FetchError('"Invalid value"'));
@@ -238,6 +240,59 @@ describe('step save and completion ordering', () => {
       step_key: 'Insurance',
       servars: [{ key: 'profile', text_field: 'synthetic answer' }]
     });
+  });
+
+  it('sends the step answers alongside the field save flush without autosave', async () => {
+    const { client } = createClientWithStorage();
+    const order: string[] = [];
+    let finishFlush!: () => void;
+    jest
+      .spyOn(client, 'submitCustom')
+      .mockReturnValue(new Promise<void>((resolve) => (finishFlush = resolve)));
+    jest.spyOn(client, '_fetch').mockImplementation(async () => {
+      order.push('step');
+      return { ok: true };
+    });
+
+    const step = client.submitStep(
+      [{ key: 'profile', text_field: 'synthetic answer' }],
+      { key: 'Insurance', buttons: [], subgrids: [] },
+      true
+    );
+
+    // The step's answers go out while the flush is still in flight
+    await waitUntil(() => order.length === 1);
+    finishFlush();
+    await step;
+    expect(order).toEqual(['step']);
+  });
+
+  it('uploads autosaved files of one field in order, outside the step queue', async () => {
+    const { client } = createClientWithStorage();
+    const queueBefore = client.submitQueue;
+    const landed: string[] = [];
+    let finishFirst!: () => void;
+    jest
+      .spyOn(client, '_submitFileData')
+      .mockImplementation(async (servar: any) => {
+        if (servar.name === 'first')
+          await new Promise<void>((resolve) => (finishFirst = resolve));
+        landed.push(servar.name);
+      });
+    const save = (name: string) =>
+      client.autosaveFiles([
+        { servar: { key: 'card', name }, stepKey: 'Insurance' }
+      ]);
+
+    const first = save('first');
+    const second = save('second');
+    await waitUntil(() => !!finishFirst);
+    expect(landed).toEqual([]);
+    finishFirst();
+    await Promise.all([first, second]);
+
+    expect(landed).toEqual(['first', 'second']);
+    expect(client.submitQueue).toBe(queueBefore);
   });
 
   it('sends the step answers when resetting stored retry budgets fails', async () => {
@@ -725,5 +780,15 @@ describe('step save and completion ordering', () => {
 
     expect(uploads).toEqual(['older.png', 'newer.png']);
     expect(fileRetryStatus.card).toBe(true);
+  });
+
+  it('withdraws a pending field save only while it is unchanged', () => {
+    const { client } = createClientWithStorage();
+    client.pendingCustomFieldUpdates = { name: 'Ada', city: 'Paris' };
+
+    client.discardPendingCustomField('name', 'Ada');
+    client.discardPendingCustomField('city', 'Rome');
+
+    expect(client.pendingCustomFieldUpdates).toEqual({ city: 'Paris' });
   });
 });
