@@ -278,6 +278,7 @@ export const getFormContext = (formUuid: string) => {
       const { errors } = validateElements({
         step: currentStep,
         visiblePositions,
+        internalId: formUuid,
         triggerErrors: showErrors,
         errorType: formSettings.errorType,
         formRef,

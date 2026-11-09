@@ -354,6 +354,41 @@ describe('SliderField - linked range', () => {
     expectSliderToHaveMax(50);
   });
 
+  // A source slider can show less than it holds, and its settled value wins
+  it('takes its range from the linked values it is given', () => {
+    Object.assign(fieldValues, { floor: 0, limit: 100 });
+    render(
+      <SliderField
+        {...createSliderProps(linkedSlider(), {
+          fieldVal: 80,
+          linkedValues: { floor: 0, limit: 50 }
+        })}
+      />
+    );
+
+    expectSliderToHaveMax(50);
+    expectSliderToHaveValue(50);
+  });
+
+  // A cleared linked max of 200 leaves the fixed 0..100, and the handle sits at 100
+  it.each([[''], [null], ['abc']])(
+    'shows the value the handle snaps to once a linked source holds %p',
+    (empty: any) => {
+      Object.assign(fieldValues, { floor: '', limit: empty });
+      render(
+        <SliderField
+          {...createSliderProps(linkedSlider(), { fieldVal: 150 })}
+        />
+      );
+
+      expectSliderToHaveValue(100);
+      expect(document.querySelector('.current-value')?.textContent).toBe('100');
+      expect(
+        document.querySelector<HTMLInputElement>('input[type="hidden"]')?.value
+      ).toBe('100');
+    }
+  );
+
   it('shows a value past the linked range at the range end', () => {
     Object.assign(fieldValues, { floor: 0, limit: 50 });
     render(

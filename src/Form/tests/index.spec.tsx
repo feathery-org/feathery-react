@@ -56,6 +56,12 @@ afterEach(() => {
   HideAndRepeatsMod._spies.visiblePositions = {};
   ClientMod._spies.state.steps = null;
   ValidationMod._spies.invalid = false;
+  ValidationMod.storeAlignedSliderValues.mockImplementation(
+    (_step: any, positions: any) => ({
+      visiblePositions: positions,
+      restore: ValidationMod._spies.restoreSliderValues
+    })
+  );
   BrowserMod._spies.confirm.mockReset();
   BrowserMod._spies.history.state = null;
   BrowserMod._spies.history.go.mockReset();
@@ -230,10 +236,19 @@ describe('submit field snapshot', () => {
     setSubmitFields(['FieldA', 'FieldB']);
     const beforeLogicVisibility = { before: [true] };
     const afterLogicVisibility = { after: [true] };
+    // What hide-if rules show once the sliders store their settled values
+    const settledVisibility = { settled: [true] };
     HideAndRepeatsMod._spies.visiblePositions = beforeLogicVisibility;
+    ValidationMod.storeAlignedSliderValues.mockImplementation(
+      (_step: any, positions: any) => ({
+        visiblePositions:
+          positions === afterLogicVisibility ? settledVisibility : positions,
+        restore: ValidationMod._spies.restoreSliderValues
+      })
+    );
     FieldHelperMod.formatStepFields.mockImplementation(
       (_step: any, currentVisibility: any) =>
-        currentVisibility === afterLogicVisibility
+        currentVisibility === settledVisibility
           ? {
               FieldA: formattedField('a', 'Field A'),
               FieldB: formattedField('b', 'Field B', 1)
@@ -264,20 +279,24 @@ describe('submit field snapshot', () => {
       });
     });
 
-    expect(FieldHelperMod.formatStepFields).toHaveBeenLastCalledWith(
-      expect.objectContaining({ id: 's1' }),
-      afterLogicVisibility,
-      false
-    );
     expect(ValidationMod.validateElements).toHaveBeenLastCalledWith(
-      expect.objectContaining({ visiblePositions: afterLogicVisibility })
+      expect.objectContaining({
+        visiblePositions: afterLogicVisibility,
+        internalId: 'iid-submit-visibility'
+      })
     );
-    // Sliders store their settled values from the same visibility, before the
-    // snapshot reads them
+    // Sliders store their settled values from the same visibility, and the
+    // snapshot takes what hide-if rules show with them
     const store = ValidationMod.storeAlignedSliderValues;
     expect(store).toHaveBeenLastCalledWith(
       expect.objectContaining({ id: 's1' }),
-      afterLogicVisibility
+      afterLogicVisibility,
+      'iid-submit-visibility'
+    );
+    expect(FieldHelperMod.formatStepFields).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: 's1' }),
+      settledVisibility,
+      false
     );
     expect(store.mock.invocationCallOrder.at(-1)).toBeLessThan(
       FieldHelperMod.formatStepFields.mock.invocationCallOrder.at(-1)
@@ -290,6 +309,8 @@ describe('submit field snapshot', () => {
       expect.objectContaining({ id: 's1' }),
       false
     );
+    // The submit went through, so the stored values stay
+    expect(ValidationMod._spies.restoreSliderValues).not.toHaveBeenCalled();
     delete (internalState as any)['iid-submit-visibility'];
   });
 
@@ -336,6 +357,14 @@ describe('submit field snapshot', () => {
     GridMod._spies.submit = true;
     GridMod._spies.actions = [{ type: 'next' }];
 
+    // Settling can change hide-if visibility, which validation and the
+    // snapshot must both use
+    const settledVisibility = { settled: [true] };
+    ValidationMod.storeAlignedSliderValues.mockImplementationOnce(() => ({
+      visiblePositions: settledVisibility,
+      restore: ValidationMod._spies.restoreSliderValues
+    }));
+
     render(<JSForm formId='f1' _internalId='iid-submit-settle' />);
     await screen.findByTestId('btn');
     StepHelperMod.nextStepKey.mockClear();
@@ -355,8 +384,107 @@ describe('submit field snapshot', () => {
     expect(store).toBeLessThan(
       StepHelperMod.nextStepKey.mock.invocationCallOrder[0]
     );
+    expect(ValidationMod.validateElements).toHaveBeenCalledWith(
+      expect.objectContaining({ visiblePositions: settledVisibility })
+    );
+    expect(FieldHelperMod.formatStepFields).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: 's1' }),
+      settledVisibility,
+      false
+    );
     expect(ClientMod._spies.submitStep).toHaveBeenCalled();
     expect(ValidationMod._spies.restoreSliderValues).not.toHaveBeenCalled();
+  });
+
+  it('puts slider answers back when submit logic blocks the submit', async () => {
+    setSubmitFields(['TextField']);
+    GridMod._spies.submit = true;
+    (internalState as any)['iid-submit-logic-invalid'] = { inlineErrors: {} };
+    // The rule sets a field error, which the check after it reports as invalid
+    const onSubmit = jest.fn(async () => {
+      FormHelperMod.setFormElementError.mockResolvedValueOnce(true);
+    });
+
+    render(
+      <JSForm
+        formId='f1'
+        _internalId='iid-submit-logic-invalid'
+        onSubmit={onSubmit}
+      />
+    );
+    await screen.findByTestId('btn');
+    await act(async () => {
+      await GridMod._spies.form.buttonOnClick({
+        id: 'b1',
+        properties: { actions: [], submit: true },
+        repeat: 0
+      });
+    });
+
+    expect(onSubmit).toHaveBeenCalled();
+    expect(ValidationMod._spies.restoreSliderValues).toHaveBeenCalledTimes(1);
+    expect(ClientMod._spies.submitStep).not.toHaveBeenCalled();
+    delete (internalState as any)['iid-submit-logic-invalid'];
+  });
+
+  it('puts slider answers back when payment setup blocks the submit', async () => {
+    setSubmitFields(['Card']);
+    ClientMod._spies.state.steps[0].servar_fields[0].servar.type =
+      'payment_method';
+    const StripeMod: any = jest.requireMock('../../integrations/stripe');
+    StripeMod.setupPaymentMethod.mockResolvedValueOnce({
+      errorMessage: 'Card declined',
+      errorField: { servar: { key: 'Card', type: 'payment_method' } }
+    });
+    GridMod._spies.submit = true;
+    (internalState as any)['iid-submit-payment'] = { inlineErrors: {} };
+
+    render(<JSForm formId='f1' _internalId='iid-submit-payment' />);
+    await screen.findByTestId('btn');
+    await act(async () => {
+      await GridMod._spies.form.buttonOnClick({
+        id: 'b1',
+        properties: { actions: [], submit: true },
+        repeat: 0
+      });
+    });
+
+    expect(StripeMod.setupPaymentMethod).toHaveBeenCalled();
+    expect(ValidationMod._spies.restoreSliderValues).toHaveBeenCalledTimes(1);
+    expect(ClientMod._spies.submitStep).not.toHaveBeenCalled();
+    delete (internalState as any)['iid-submit-payment'];
+  });
+
+  // Stripe syncs mapped fields from the stored values, so a purchase stores the
+  // settled slider values, and puts them back if it fails
+  it.each([
+    ['puts slider answers back when a purchase fails', true],
+    ['keeps stored slider answers when a purchase succeeds', false]
+  ])('%s', async (_: string, fails: boolean) => {
+    const StripeMod: any = jest.requireMock('../../integrations/stripe');
+    StripeMod.purchaseCart.mockResolvedValueOnce(
+      fails ? { errorMessage: 'Card declined', errorField: { id: 'b1' } } : null
+    );
+
+    render(<JSForm formId='f1' _internalId='iid-purchase' />);
+    await screen.findByTestId('btn');
+    await act(async () => {
+      await GridMod._spies.form.buttonOnClick({
+        id: 'b1',
+        properties: { actions: [{ type: 'purchase_products' }] },
+        repeat: 0
+      });
+    });
+
+    expect(StripeMod.purchaseCart).toHaveBeenCalled();
+    const store = ValidationMod.storeAlignedSliderValues;
+    expect(store).toHaveBeenCalledTimes(1);
+    expect(store.mock.invocationCallOrder[0]).toBeLessThan(
+      StripeMod.purchaseCart.mock.invocationCallOrder[0]
+    );
+    expect(ValidationMod._spies.restoreSliderValues).toHaveBeenCalledTimes(
+      fails ? 1 : 0
+    );
   });
 
   it('does not take a second snapshot when no submit logic runs', async () => {
@@ -365,6 +493,12 @@ describe('submit field snapshot', () => {
       TextField: formattedField('unchanged', 'Text field')
     };
     GridMod._spies.submit = true;
+    // What hide-if rules show once the sliders store their settled values
+    const settledVisibility = { settled: [true] };
+    ValidationMod.storeAlignedSliderValues.mockReturnValue({
+      visiblePositions: settledVisibility,
+      restore: ValidationMod._spies.restoreSliderValues
+    });
 
     render(<JSForm formId='f1' _internalId='iid-submit-no-logic' />);
     await screen.findByTestId('btn');
@@ -381,6 +515,11 @@ describe('submit field snapshot', () => {
     expect(
       FieldHelperMod.formatStepFields.mock.calls.length - snapshotsBeforeClick
     ).toBe(1);
+    expect(FieldHelperMod.formatStepFields).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: 's1' }),
+      settledVisibility,
+      false
+    );
   });
 });
 

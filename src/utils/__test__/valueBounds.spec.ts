@@ -60,10 +60,24 @@ describe('alignToSlider', () => {
     expect(alignToSlider(3.4, slider(-5))).toBe(3);
   });
 
-  it('leaves a slider without a linked bound alone', () => {
-    Object.assign(fieldValues, { floor: '', limit: '' });
-    expect(alignToSlider(7, slider(5))).toBe(7);
+  it('leaves a slider without a link alone', () => {
+    const unlinked = slider(5, {
+      min_value_field_key: null,
+      max_value_field_key: null
+    });
+    expect(alignToSlider(7, unlinked)).toBe(7);
+    expect(alignToSlider(150, unlinked)).toBe(150);
   });
+
+  // The handle falls back to the fixed 0..100 range, so the value follows it
+  it.each([[''], [null], ['abc']])(
+    'snaps into the fixed range while a linked source holds %p',
+    (empty: any) => {
+      Object.assign(fieldValues, { floor: empty, limit: empty });
+      expect(alignToSlider(150, slider(1))).toBe(100);
+      expect(alignToSlider(7, slider(5))).toBe(5);
+    }
+  );
 
   // The rendered handle is rc-slider's formatValue, so match it exactly
   it("matches rc-slider's own snapping", () => {

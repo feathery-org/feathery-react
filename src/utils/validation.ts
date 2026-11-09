@@ -6,7 +6,7 @@ import { ARRAY_FIELD_TYPES } from './fieldHelperFunctions';
 import React from 'react';
 import { stateFieldHasNoOptions } from './addressState';
 import { fieldValues, initInfo } from './init';
-import { getVisibleElements } from './hideAndRepeats';
+import { getVisibleElements, getVisiblePositions } from './hideAndRepeats';
 import { alignToSlider, getLinkedValue } from './valueBounds';
 import { Trigger } from '../types/Form';
 // @ts-ignore
@@ -31,6 +31,7 @@ const DOMAIN_ALLOWED_CHARACTERS = /^[a-zA-Z0-9.\\-]+$/;
 function validateElements({
   step,
   visiblePositions,
+  internalId,
   triggerErrors,
   reportNativeErrors = true,
   errorType,
@@ -41,6 +42,7 @@ function validateElements({
 }: {
   step: any;
   visiblePositions: any;
+  internalId: string;
   triggerErrors: boolean;
   reportNativeErrors?: boolean;
   errorType: string;
@@ -55,15 +57,15 @@ function validateElements({
 } {
   let invalid = false;
   const inlineErrors: InlineErrors = {};
+  // Validate against the slider values submit will store, then put the answers
+  // back: validation also runs without submitting
+  const settled = settleSliderValues(step, visiblePositions, internalId);
   const visibleElements = getVisibleElements(
     step,
-    visiblePositions,
+    settled.visiblePositions,
     ['servar_fields', 'buttons'],
     true
   );
-  // Validate against the slider values submit will store, then put the answers
-  // back: validation also runs without submitting
-  const replaced = writeSliderValues(getAlignedSliderValues(visibleElements));
   const errors = visibleElements.reduce(
     (errors: any, { element, repeat, last, type: elementType }) => {
       let key, type;
@@ -137,7 +139,7 @@ function validateElements({
     },
     {}
   );
-  writeSliderValues(replaced);
+  writeSliderValues(settled.replaced);
   if (triggerErrors) {
     setFormElementError({
       formRef,
@@ -164,10 +166,11 @@ type SliderValue = { servar: any; repeat: any; value: number };
 // A slider submits the value it shows within its range. Sliders can bound
 // other fields, so this runs before any field is validated. Each pass aligns the
 // original answers against the previous pass's results, so a slider bounded by
-// another slider sees its settled value whatever order the fields are in
-function getAlignedSliderValues(
+// another slider sees its settled value whatever order the fields are in.
+// `sources` holds the values the result was aligned against, for rendering
+function settleSliders(
   elements: { element: any; repeat: any; last?: boolean }[]
-): SliderValue[] {
+) {
   const answers = elements.flatMap(({ element, repeat, last }) => {
     const { servar } = element;
     if (servar?.type !== 'slider') return [];
@@ -181,53 +184,105 @@ function getAlignedSliderValues(
     return Number.isFinite(num) ? [{ servar, repeat, num }] : [];
   });
   let aligned = answers.map(({ num }) => num);
-  for (let pass = 0; pass <= answers.length; pass++) {
+  let sources: Record<string, any> = fieldValues;
+  let shown = { aligned, sources };
+  let settled = false;
+  for (let pass = 0; !settled && pass <= answers.length; pass++) {
     // Repeated fields can't bound others, so only single sliders are sources
-    const values: Record<string, any> = { ...fieldValues };
+    sources = { ...fieldValues };
     answers.forEach(({ servar }, i) => {
-      if (!servar.repeated) values[servar.key] = aligned[i];
+      if (!servar.repeated) sources[servar.key] = aligned[i];
     });
     const next = answers.map(({ servar, num }) =>
-      alignToSlider(num, servar, values)
+      alignToSlider(num, servar, sources)
     );
-    const settled = next.every((value, i) => value === aligned[i]);
+    settled = next.every((value, i) => value === aligned[i]);
     aligned = next;
-    if (settled) break;
+    if (pass === 0) shown = { aligned, sources };
   }
+  // A chain settles within the passes, but sliders bounding each other in a
+  // cycle can alternate forever, leaving where they stop up to the slider count.
+  // Fall back to the first pass, aligned against the stored values
+  if (!settled) ({ aligned, sources } = shown);
+  return { answers, aligned, sources };
+}
+
+function getAlignedSliderValues(
+  elements: { element: any; repeat: any; last?: boolean }[]
+): SliderValue[] {
+  const { answers, aligned } = settleSliders(elements);
   return answers.flatMap(({ servar, repeat, num }, i) =>
     aligned[i] === num ? [] : [{ servar, repeat, value: aligned[i] }]
   );
+}
+
+// The values a slider's linked range reads, so a slider bounded by another
+// slider renders the range submit stores against
+function getSliderSources(step: any, visiblePositions: any) {
+  if (!step || !visiblePositions) return fieldValues;
+  return settleSliders(
+    getVisibleElements(step, visiblePositions, ['servar_fields'], true)
+  ).sources;
+}
+
+function readSliderValue(servar: any, repeat: any) {
+  const stored: any = fieldValues[servar.key];
+  return servar.repeated ? stored?.[repeat] : stored;
 }
 
 // Writes each slider value and returns the values it replaced
 function writeSliderValues(sliderValues: SliderValue[]): SliderValue[] {
   return sliderValues.map(({ servar, repeat, value }) => {
     const stored: any = fieldValues[servar.key];
-    const previous = servar.repeated ? stored[repeat] : stored;
+    const previous = readSliderValue(servar, repeat);
     if (servar.repeated) stored[repeat] = value;
     else fieldValues[servar.key] = value;
     return { servar, repeat, value: previous };
   });
 }
 
-// Submit stores each visible slider's settled value before validating and
-// resolving navigation, so both see what it sends. restore puts back the
-// answers it replaced if the submit is blocked, unless something changed them
-function storeAlignedSliderValues(step: any, visiblePositions: any) {
-  const written = getAlignedSliderValues(
-    getVisibleElements(step, visiblePositions, ['servar_fields'], true)
+// Writes each visible slider's settled value. Returns the values it replaced
+// and the visibility once hide-if rules see the settled values
+function settleSliderValues(
+  step: any,
+  visiblePositions: any,
+  internalId: string
+) {
+  const replaced = writeSliderValues(
+    getAlignedSliderValues(
+      getVisibleElements(step, visiblePositions, ['servar_fields'], true)
+    )
   );
-  const replaced = writeSliderValues(written);
   return {
-    restore: () =>
-      writeSliderValues(
-        replaced.filter(({ servar, repeat }, i) => {
-          const stored: any = fieldValues[servar.key];
-          const current = servar.repeated ? stored?.[repeat] : stored;
-          return current === written[i].value;
-        })
-      )
+    replaced,
+    visiblePositions: replaced.length
+      ? getVisiblePositions(step, internalId)
+      : visiblePositions
   };
+}
+
+// Submit stores the settled values before validating and resolving navigation,
+// so both see what it sends, and snapshots the fields this returns as visible.
+// If the submit is blocked before it's sent, restore puts back each answer that
+// nothing has changed since
+function storeAlignedSliderValues(
+  step: any,
+  visiblePositions: any,
+  internalId: string
+) {
+  const settled = settleSliderValues(step, visiblePositions, internalId);
+  const written = settled.replaced.map(({ servar, repeat }) =>
+    readSliderValue(servar, repeat)
+  );
+  const restore = () => {
+    writeSliderValues(
+      settled.replaced.filter(
+        ({ servar, repeat }, i) =>
+          readSliderValue(servar, repeat) === written[i]
+      )
+    );
+  };
+  return { visiblePositions: settled.visiblePositions, restore };
 }
 
 /**
@@ -482,6 +537,7 @@ export {
   validateElement,
   validateElements,
   storeAlignedSliderValues,
+  getSliderSources,
   getStandardFieldError,
   isFieldValueEmpty,
   emailPatternStr,

@@ -1189,6 +1189,7 @@ function Form({
         validateElements({
           step: activeStep,
           visiblePositions: getVisiblePositions(activeStep, _internalId),
+          internalId: _internalId,
           triggerErrors: true,
           reportNativeErrors: false,
           errorType: formSettings.errorType,
@@ -2295,11 +2296,13 @@ function Form({
     // Optional on purpose: undefined means the submitting element is NOT in a
     // repeated container, which must stay distinguishable from row 0.
     repeat: number | undefined,
-    hasNext: boolean
+    hasNext: boolean,
+    // Visibility once the caller has stored the settled slider values
+    settledPositions: any
   ): Promise<[Promise<any>] | undefined> => {
     let formattedFields = formatStepFields(
       activeStep,
-      formSettings.saveHideIfFields ? null : visiblePositions,
+      formSettings.saveHideIfFields ? null : settledPositions,
       false
     );
     const trigger = {
@@ -2377,6 +2380,7 @@ function Form({
       const { invalid: latestValuesInvalid } = validateElements({
         step: activeStep,
         visiblePositions: latestVisiblePositions,
+        internalId: _internalId,
         triggerErrors: true,
         errorType: formSettings.errorType,
         formRef,
@@ -2390,10 +2394,15 @@ function Form({
         setAutoValidate(true);
         return;
       }
-      storeAlignedSliderValues(activeStep, latestVisiblePositions);
+      // Nothing blocks the submit from here, so these values stay
+      const latestSettledPositions = storeAlignedSliderValues(
+        activeStep,
+        latestVisiblePositions,
+        _internalId
+      ).visiblePositions;
       formattedFields = formatStepFields(
         activeStep,
-        formSettings.saveHideIfFields ? null : latestVisiblePositions,
+        formSettings.saveHideIfFields ? null : latestSettledPositions,
         false
       );
     }
@@ -2511,6 +2520,7 @@ function Form({
       const { invalid, inlineErrors: newInlineErrors } = validateElements({
         step: activeStep,
         visiblePositions,
+        internalId: _internalId,
         triggerErrors: true,
         errorType: formSettings.errorType,
         formRef,
@@ -2519,6 +2529,13 @@ function Form({
         trigger
       });
       if (invalid) return false;
+      // Stripe syncs mapped fields from the stored values, so sliders store what
+      // they show, and get their answers back if the purchase fails
+      const settled = storeAlignedSliderValues(
+        activeStep,
+        visiblePositions,
+        _internalId
+      );
 
       // payment/checkout
       const pmField = activeStep.servar_fields.find(
@@ -2533,6 +2550,7 @@ function Form({
         targetElement: pmField ? getCardElement(pmField.servar.key) : null
       });
       if (errors) {
+        settled.restore();
         const { errorMessage, errorField } = errors;
         await setFormElementError({
           formRef,
@@ -2991,10 +3009,16 @@ function Form({
 
       // Sliders store what they show before validation and navigation read
       // them, so no_complete, the next step and the payload agree
-      const sliders = storeAlignedSliderValues(activeStep, visiblePositions);
+      // If the submit is blocked, the failure returns below restore them
+      const sliders = storeAlignedSliderValues(
+        activeStep,
+        visiblePositions,
+        _internalId
+      );
       const { invalid } = validateElements({
         step: activeStep,
-        visiblePositions,
+        visiblePositions: sliders.visiblePositions,
+        internalId: _internalId,
         triggerErrors: true,
         errorType: formSettings.errorType,
         formRef,
@@ -3037,7 +3061,8 @@ function Form({
           // element look like row 0 and scope its errors to a row that the
           // non-repeat renderer never reads.
           element.repeat,
-          !!hasNext
+          !!hasNext,
+          sliders.visiblePositions
         );
       } catch (error) {
         sliders.restore();

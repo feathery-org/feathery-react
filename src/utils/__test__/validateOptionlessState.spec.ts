@@ -37,6 +37,7 @@ const step = { servar_fields: [stateField, countryField] };
 
 const validate = () =>
   validateElements({
+    internalId: 'form',
     step,
     visiblePositions: {},
     triggerErrors: false,

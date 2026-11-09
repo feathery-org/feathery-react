@@ -2,13 +2,14 @@ import {
   validateElement,
   validateElements,
   storeAlignedSliderValues,
+  getSliderSources,
   ResolvedCustomValidation,
   getStandardFieldError,
   loadPhoneValidator,
   phoneLibPromise
 } from '../validation';
 import { fieldValues } from '../init';
-import { getSliderRange } from '../valueBounds';
+import { alignToSlider, getSliderRange } from '../valueBounds';
 import { featheryDoc } from '../browser';
 
 jest.mock('../init', () => ({
@@ -99,6 +100,7 @@ describe('validation', () => {
     });
     const run = (step: any, visiblePositions: any) =>
       validateElements({
+        internalId: 'form',
         step,
         visiblePositions,
         triggerErrors: true,
@@ -171,6 +173,7 @@ describe('validation', () => {
       const step = { servar_fields: [field], buttons: [], subgrids: [] };
 
       const { invalid, inlineErrors } = validateElements({
+        internalId: 'form',
         step,
         visiblePositions: { '0': [true] },
         triggerErrors: true,
@@ -212,30 +215,34 @@ describe('validation', () => {
     const stepOf = (fields: any[]) => ({
       servar_fields: fields.map((field, i) => ({ ...field, position: [i] })),
       buttons: [],
+      texts: [],
       subgrids: []
     });
     const visibleOf = (fields: any[]) =>
       Object.fromEntries(fields.map((_, i) => [String(i), [true]]));
-    const run = (fields: any[]) =>
+    const run = (fields: any[], visiblePositions = visibleOf(fields)) =>
       validateElements({
+        internalId: 'form',
         step: stepOf(fields),
-        visiblePositions: visibleOf(fields),
+        visiblePositions,
         triggerErrors: false,
         errorType: 'inline',
         formRef: { current: null } as any,
         setInlineErrors: jest.fn()
       });
-    const store = (fields: any[]) =>
-      storeAlignedSliderValues(stepOf(fields), visibleOf(fields));
+    const store = (fields: any[], visiblePositions = visibleOf(fields)) =>
+      storeAlignedSliderValues(stepOf(fields), visiblePositions, 'form');
     // One repeated slider whose container shows `rows` rows
     const storeRows = (field: any, rows = 2) =>
       storeAlignedSliderValues(
         {
           servar_fields: [{ ...field, position: [0, 1] }],
           buttons: [],
+          texts: [],
           subgrids: [{ position: [0], repeated: true, id: 'sg' }]
         },
-        { '0,1': Array(rows).fill(true) }
+        { '0,1': Array(rows).fill(true) },
+        'form'
       );
 
     // The slider can't show a value past its range, so submit stores what it shows
@@ -256,21 +263,6 @@ describe('validation', () => {
         expect(fieldValues.amount).toEqual(stored);
       }
     );
-
-    // A blocked submit puts back the answers it replaced, but keeps any a
-    // submit rule changed since
-    it('restores the answers it replaced', () => {
-      Object.assign(fieldValues, { limit: 60, amount: 80, total: 90 });
-      const fields = [
-        slider('amount', { max_value_field_key: 'limit' }),
-        slider('total', { max_value_field_key: 'limit' })
-      ];
-      const { restore } = store(fields);
-      expect([fieldValues.amount, fieldValues.total]).toEqual([60, 60]);
-      fieldValues.total = 70;
-      restore();
-      expect([fieldValues.amount, fieldValues.total]).toEqual([80, 70]);
-    });
 
     // rc-slider snaps the handle to a step from the min, so submit stores that
     it('stores the step the handle snaps to when a linked min moves', () => {
@@ -340,7 +332,8 @@ describe('validation', () => {
       expect(getSliderRange(servar)).toEqual({ min: 50, max: 20 });
     });
 
-    it('leaves a value alone while its linked fields are empty', () => {
+    // The handle falls back to the fixed range, so submit stores what it shows
+    it('stores a value within the fixed range while its linked fields are empty', () => {
       Object.assign(fieldValues, { floor: '', limit: undefined, amount: 500 });
       store([
         slider(
@@ -349,7 +342,7 @@ describe('validation', () => {
           { max_length: 100 }
         )
       ]);
-      expect(fieldValues.amount).toEqual(500);
+      expect(fieldValues.amount).toEqual(100);
     });
 
     // The range collapses to the fixed min, as the slider renders it
@@ -398,6 +391,113 @@ describe('validation', () => {
       store(fields);
       expect(fieldValues.amount).toEqual(80);
     });
+
+    // Lowering the cap settles amount from 100 to 50, which shows details, but the
+    // form last rendered with amount at 100 and details hidden
+    it('checks and submits the fields settled slider values show', () => {
+      Object.assign(fieldValues, { cap: 50, amount: 100, details: '' });
+      const fields = [
+        slider('amount', { max_value_field_key: 'cap' }),
+        {
+          ...slider('details', {}, { type: 'text_field', required: true }),
+          hide_ifs: [
+            {
+              field_type: 'servar',
+              comparison: 'greater_than',
+              index: 0,
+              field_key: 'amount',
+              values: [50]
+            }
+          ]
+        }
+      ];
+      const rendered = { '0': [true], '1': [false] };
+      expect(run(fields, rendered).errors.details).toBeTruthy();
+      expect(fieldValues.amount).toEqual(100);
+      expect(store(fields, rendered).visiblePositions).toEqual({
+        '0': [true],
+        '1': [true]
+      });
+      expect(fieldValues.amount).toEqual(50);
+    });
+
+    // lower's max is upper and upper's min is lower, so the passes alternate
+    // between [20, 80] and [80, 20] and never settle
+    it.each([0, 1, 2])(
+      'stores what the handles show for sliders bounding each other, with %i other sliders',
+      (others: number) => {
+        Object.assign(fieldValues, { lower: 80, upper: 20, other: 50 });
+        const lower = slider('lower', { max_value_field_key: 'upper' });
+        const upper = slider('upper', { min_value_field_key: 'lower' });
+        // The handles render against the stored values
+        expect(alignToSlider(80, lower.servar)).toEqual(20);
+        expect(alignToSlider(20, upper.servar)).toEqual(80);
+        store([
+          lower,
+          upper,
+          ...Array.from({ length: others }, () => slider('other', {}))
+        ]);
+        expect(fieldValues).toMatchObject({ lower: 20, upper: 80 });
+      }
+    );
+
+    // A submit blocked after the store, e.g. by a submit rule, puts back what the
+    // user left, unless something has changed the answer since
+    it('restores stored answers that nothing has changed since', () => {
+      Object.assign(fieldValues, { budget: 50, amount: 80, total: 90 });
+      const fields = [
+        slider('amount', { max_value_field_key: 'budget' }),
+        slider('total', { max_value_field_key: 'budget' })
+      ];
+      const { restore } = store(fields);
+      expect(fieldValues).toMatchObject({ amount: 50, total: 50 });
+      // A submit rule sets total, so its answer is the rule's
+      fieldValues.total = 70;
+      restore();
+      expect(fieldValues).toMatchObject({ amount: 80, total: 70 });
+    });
+
+    // Each handle renders against getSliderSources, so it must land where the
+    // store does: a settled chain, and a cycle that falls back to stored values
+    it.each([
+      [
+        'a chain',
+        { cap: 50, ceiling: 100, amount: 80 },
+        [
+          slider('amount', { max_value_field_key: 'ceiling' }),
+          slider('ceiling', { max_value_field_key: 'cap' })
+        ],
+        { ceiling: 50, amount: 50 }
+      ],
+      [
+        'a cycle',
+        { lower: 80, upper: 20, other: 50 },
+        [
+          slider('lower', { max_value_field_key: 'upper' }),
+          slider('upper', { min_value_field_key: 'lower' }),
+          // An unrelated slider changes how many passes run
+          slider('other', {})
+        ],
+        { lower: 20, upper: 80, other: 50 }
+      ]
+    ])(
+      'renders sliders in %s where submit stores them',
+      (_: string, values: any, fields: any[], stored: any) => {
+        Object.assign(fieldValues, values);
+        const sources = getSliderSources(stepOf(fields), visibleOf(fields));
+        const shown = Object.fromEntries(
+          fields.map(({ servar }) => [
+            servar.key,
+            alignToSlider(fieldValues[servar.key] as number, servar, sources)
+          ])
+        );
+        // Rendering doesn't store anything
+        expect(fieldValues).toMatchObject(values);
+        expect(shown).toEqual(stored);
+        store(fields);
+        expect(fieldValues).toMatchObject(stored);
+      }
+    );
 
     it('settles a slider bounded by another slider listed after it', () => {
       Object.assign(fieldValues, { cap: 50, ceiling: 100, amount: 80 });

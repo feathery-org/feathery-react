@@ -21,6 +21,7 @@ export default function SliderField({
   onChange = () => {},
   elementProps = {},
   errorAttributes = {},
+  linkedValues,
   children
 }: any) {
   const [internalValue, setInternalValue] = useState(fieldVal);
@@ -30,12 +31,13 @@ export default function SliderField({
   }, [fieldVal]);
 
   const servar = element.servar;
-  const { min: minVal, max: maxVal } = getSliderRange(servar);
+  // linkedValues holds source sliders as submit settles them
+  const { min: minVal, max: maxVal } = getSliderRange(servar, linkedValues);
   // A linked range can move under the value and rc-slider snaps the handle into
   // it, so show the label and input the same way, as submit will store it
   const shownValue =
     typeof internalValue === 'number'
-      ? alignToSlider(internalValue, servar)
+      ? alignToSlider(internalValue, servar, linkedValues)
       : internalValue;
   const minLabel = servar.metadata.min_val_label || minVal;
   const maxLabel = servar.metadata.max_val_label || maxVal;

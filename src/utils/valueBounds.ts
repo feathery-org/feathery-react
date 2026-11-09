@@ -33,11 +33,10 @@ function getLinkedRange(servar: any, values?: Record<string, any>) {
   return { min, max: Math.max(min, max) };
 }
 
-// Sliders without a linked bound keep their fixed range and value as they were
-// before bounds could be linked
-export function getSliderRange(servar: any) {
+// The linked range once a linked field holds a number, otherwise the fixed one
+export function getSliderRange(servar: any, values?: Record<string, any>) {
   return (
-    getLinkedRange(servar) ?? {
+    getLinkedRange(servar, values) ?? {
       min: servar.min_length ?? 0,
       max: servar.max_length ?? 100
     }
@@ -77,9 +76,14 @@ export function alignToSlider(
   servar: any,
   values?: Record<string, any>
 ) {
-  const range = getLinkedRange(servar, values);
-  if (!range) return value;
-  return snapToSlider(value, range.min, range.max, getSliderStep(servar));
+  // Sliders without a link keep their value as they did before bounds could be
+  // linked. A linked one falls back to the fixed range while its source is
+  // empty, and the handle snaps into that too
+  const { min_value_field_key: minKey, max_value_field_key: maxKey } =
+    servar.metadata ?? {};
+  if (!minKey && !maxKey) return value;
+  const { min, max } = getSliderRange(servar, values);
+  return snapToSlider(value, min, max, getSliderStep(servar));
 }
 
 // Keys whose value sets a slider's range on the step. Number fields only use
