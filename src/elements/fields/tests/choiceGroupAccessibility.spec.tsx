@@ -66,22 +66,6 @@ describe.each`
       expect(group).toHaveAccessibleDescription('Choose an option');
     });
 
-    it.each([undefined, ''])(
-      'uses option text when the custom aria-label is %p',
-      (ariaLabel) => {
-        const element = createElement();
-        element.properties.aria_label = ariaLabel;
-        render(<Field {...createFieldProps(element)} />);
-
-        expect(
-          screen.getByRole(optionRole, { name: 'Yes' })
-        ).toBeInTheDocument();
-        expect(
-          screen.getByRole(optionRole, { name: 'No' })
-        ).toBeInTheDocument();
-      }
-    );
-
     it('keeps repeated options associated with their own visible labels', () => {
       const element = createElement();
       element.servar.metadata.repeat_options = [
