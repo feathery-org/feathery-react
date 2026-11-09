@@ -171,6 +171,7 @@ function ButtonElement({
   textCallbacks = {},
   onClick = () => {},
   elementProps = {},
+  errorAttributes = {},
   inlineError,
   children,
   featheryContext
@@ -365,6 +366,7 @@ function ButtonElement({
       onClick={handleClick}
       aria-label={element.properties.aria_label}
       {...elementProps}
+      {...errorAttributes}
     >
       {customBorder}
       {children}

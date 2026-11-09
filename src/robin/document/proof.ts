@@ -67,6 +67,7 @@ export function comparableText(pack: Pack, nf: NormalForm): string {
       .filter(
         (k) =>
           obj[k] !== undefined &&
+          obj[k] !== null &&
           k !== 'id' &&
           k !== 'base' &&
           !READ_ONLY_BUT_PENDING.has(k)
@@ -220,16 +221,14 @@ function residueConserved(pack: Pack, input: ProofInput): string[] {
   return out;
 }
 
-/** Pending annotations as a sorted multiset of canonical texts. */
-function pendingMultiset(
-  pack: Pack,
-  nf: NormalForm,
-  keep: (p: unknown) => boolean
-): string[] {
+/** Pending annotations as a sorted multiset of canonical texts, each with the text it covers */
+function pendingMultiset(pack: Pack, nf: NormalForm): string[] {
   const out: string[] = [];
   walk(nf.root, pack.tree, ({ node }) => {
-    if (node.pending !== undefined && keep(node.pending))
-      out.push(canonicalJson(node.pending));
+    if (node.pending === undefined) return;
+    const text =
+      typeof node.text === 'string' ? ` ${JSON.stringify(node.text)}` : '';
+    out.push(`${canonicalJson(node.pending)}${text}`);
   });
   return out.sort();
 }
@@ -239,21 +238,19 @@ function authorshipKept(pack: Pack, input: ProofInput): string[] {
   // Counted per node, so both sides first get the editor's own re-splitting and gluing
   const normalized = (nf: NormalForm) =>
     toFixedPoint(pack.projections.normalizations, nf);
-  const live = normalized(input.live);
-  const before = pendingMultiset(pack, normalized(input.before), () => true);
+  const before = pendingMultiset(pack, normalized(input.before));
   const { othersOf, authoredBy } = pack.projections;
-  const after = othersOf
-    ? (() => {
-        const out: string[] = [];
-        walk(live.root, pack.tree, ({ node }) => {
-          if (node.pending === undefined) return;
-          const rest = othersOf(node.pending, input.turnId);
-          if (rest !== null && rest !== undefined)
-            out.push(canonicalJson(rest));
-        });
-        return out.sort();
-      })()
-    : pendingMultiset(pack, live, (p) => !authoredBy(p, input.turnId));
+  // This turn's revisions come off before gluing, so another card's run this turn split counts once
+  const others = clone(input.live);
+  walk(others.root, pack.tree, ({ node }) => {
+    if (node.pending === undefined) return;
+    let rest: unknown = node.pending;
+    if (othersOf) rest = othersOf(node.pending, input.turnId);
+    else if (authoredBy(node.pending, input.turnId)) rest = undefined;
+    if (rest === null || rest === undefined) delete node.pending;
+    else node.pending = rest;
+  });
+  const after = pendingMultiset(pack, normalized(others));
   if (canonicalJson(before) === canonicalJson(after)) return [];
   const count = (list: string[]) =>
     list.reduce(
@@ -272,7 +269,7 @@ function authorshipKept(pack: Pack, input: ProofInput): string[] {
 
 export function prove(pack: Pack, input: ProofInput): ProofOutcome {
   const { before, intended, live } = input;
-  const { accept, reject, expectedRejection } = pack.projections;
+  const { accept, reject, expectedRejection, resolveGroup } = pack.projections;
   const landed = compareWithNormalizations(
     pack,
     accept(live),
@@ -283,7 +280,8 @@ export function prove(pack: Pack, input: ProofInput): ProofOutcome {
     : before;
   const reversible = compareWithNormalizations(
     pack,
-    reject(live),
+    // this card rejected the way its card's reject does, carrying a move's bookmarks back
+    reject(resolveGroup ? resolveGroup(live, input.turnId, false) : live),
     reject(restores)
   );
   const conservedDiff = residueConserved(pack, input);

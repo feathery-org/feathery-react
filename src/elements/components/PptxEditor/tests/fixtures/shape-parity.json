@@ -1,0 +1,44 @@
+{
+  "shape-parity-3.pptx": {
+    "source": "presentation-3.pptx",
+    "sourceSha256": "e5a68d8af08fd660afe46a48f3e96cea041cff8f39a8f00880f54a66b6ff98cf",
+    "originalSlides": [
+      23,
+      25,
+      30
+    ],
+    "parts": 19,
+    "notes": "XML-only reduced fixture. Reported slides and their layout/master/theme chain; images, fonts and unrelated slides omitted."
+  },
+  "shape-parity-4.pptx": {
+    "source": "presentation-4.pptx",
+    "sourceSha256": "ea5f40fe24e93861076872d953af38e5088927e987ef3d707ca1f9cbf6f7efa3",
+    "originalSlides": [
+      18,
+      20
+    ],
+    "parts": 15,
+    "notes": "XML-only reduced fixture. Reported slides and their layout/master/theme chain; images, fonts and unrelated slides omitted."
+  },
+  "shape-parity-5.pptx": {
+    "source": "presentation-5.pptx",
+    "sourceSha256": "b3571404b5d38ef71b274507ad101ff3b2f84ebd79b9bd4fbee84d46874edd90",
+    "originalSlides": [
+      4,
+      22
+    ],
+    "parts": 15,
+    "notes": "XML-only reduced fixture. Reported slides and their layout/master/theme chain; images, fonts and unrelated slides omitted."
+  },
+  "shape-parity-6.pptx": {
+    "source": "presentation-6.pptx",
+    "sourceSha256": "65c4c669efb04c1344b6b5160ec26786d012e5706e581604b0e4b06d6ce924f4",
+    "originalSlides": [
+      1,
+      22,
+      24
+    ],
+    "parts": 19,
+    "notes": "XML-only reduced fixture. Reported slides and their layout/master/theme chain; images, fonts and unrelated slides omitted."
+  }
+}

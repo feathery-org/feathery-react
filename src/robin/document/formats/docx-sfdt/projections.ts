@@ -129,10 +129,15 @@ function removedBy(node: NfNode, kind: string): boolean {
   // inserted column's cells and an inserted section; WP1, measured in the headless lane)
   if (node.kind === KIND.cell || node.kind === KIND.section) {
     const blocks = arr<NfNode>(node.blocks);
+    // a section left with no blocks is no section, the editor cannot hold one
+    if (node.kind === KIND.section && !blocks.length) return true;
     return blocks.length > 0 && blocks.every((b) => removedBy(b, kind));
   }
   return false;
 }
+
+export const goneOnAccept = (node: NfNode): boolean =>
+  removedBy(node, 'Deletion');
 
 function project(nf: NormalForm, drop: string, group?: string): NormalForm {
   const out = clone(nf);
@@ -586,8 +591,20 @@ export const N5: Normalization = {
 export const N6: Normalization = {
   name: 'N6',
   apply: (nf) =>
-    eachNode(nf, (n) => {
+    eachNode(nf, (n, _s, out) => {
       if (!Array.isArray(n.inlines)) return false;
+      // a format reference compares by the entry it names: typed text gets its own equal entry
+      const props = (run: Obj) =>
+        canonicalJson(
+          Object.fromEntries(
+            Object.entries(run).map(([k, v]) => [
+              k,
+              REF_KEYS.includes(k) && typeof v === 'string'
+                ? out.formats[v] ?? v
+                : v
+            ])
+          )
+        );
       const before = (n.inlines as NfNode[]).length;
       const merged: NfNode[] = [];
       for (const inline of n.inlines as NfNode[]) {
@@ -595,11 +612,7 @@ export const N6: Normalization = {
         if (prev && prev.kind === KIND.run && inline.kind === KIND.run) {
           const { text: a, id: ia, ...pa } = prev;
           const { text: b, id: ib, ...pb } = inline;
-          if (
-            ia !== undefined &&
-            ib !== undefined &&
-            JSON.stringify(pa) === JSON.stringify(pb)
-          ) {
+          if (ia !== undefined && ib !== undefined && props(pa) === props(pb)) {
             prev.text = `${String(a)}${String(b)}`;
             continue;
           }
@@ -658,7 +671,7 @@ const TABLE_PART_DEFAULTS: Readonly<
 
 /**
  * N12: a table, row or cell format the editor fills in is the same as one written without the
- * fill: borders with every side empty, an empty shading, a shading's `empty` foreground and
+ * fill: an empty border side, an empty shading, a shading's `empty` foreground and
  * `TextureNone` texture, a cell spanning one column and one row, no grid before or after a row,
  * and a table's default margins (measured: a table written with only widths and a fill reads back
  * with exactly these). A value the write set to anything else still counts.
@@ -676,6 +689,12 @@ export const N12: Normalization = {
         if (k in defaults && JSON.stringify(v) === JSON.stringify(defaults[k]))
           continue;
         if (k === 'borders' && emptyDeep(v)) continue;
+        if (k === 'borders' && isObject(v)) {
+          next[k] = Object.fromEntries(
+            Object.entries(v).filter(([, side]) => !emptyDeep(side))
+          );
+          continue;
+        }
         if (k === 'shading' && isObject(v)) {
           const shading = { ...v };
           if (shading.foregroundColor === 'empty')
@@ -707,6 +726,28 @@ export const N13: Normalization = {
       if (kept.length === inlines.length) return false;
       n.inlines = kept;
       return true;
+    })
+};
+
+/**
+ * N15: an empty paragraph ending a section other than the last holds the section break and no
+ * format of its own: the editor reads none for it on open
+ */
+export const N15: Normalization = {
+  name: 'N15',
+  apply: (nf) =>
+    eachNode(nf, (n) => {
+      const sections = arr<NfNode>(n.sections);
+      let changed = false;
+      for (const section of sections.slice(0, -1)) {
+        const last = arr<NfNode>(section.blocks).at(-1);
+        if (last?.kind !== KIND.paragraph || arr(last.inlines).length) continue;
+        if (last.style === undefined && last.markStyle === undefined) continue;
+        delete last.style;
+        delete last.markStyle;
+        changed = true;
+      }
+      return changed;
     })
 };
 
@@ -849,7 +890,8 @@ export const NORMALIZATIONS: readonly Normalization[] = [
   N11,
   N12,
   N13,
-  N14
+  N14,
+  N15
 ];
 export const UNDO_NORMALIZATIONS: readonly Normalization[] = [N7, N9];
 
@@ -877,6 +919,14 @@ export function expectedRejection(
   Object.assign(out.formats, clone(intended.formats));
   const rec = (n: NfNode) => {
     const m = later.get(n.id);
+    // a changed feature replaces the whole node, so rejecting brings the node back as it was
+    if (
+      m &&
+      FEATURE_KEYS.some(
+        (k) => canonicalJson(n[k] ?? null) !== canonicalJson(m[k] ?? null)
+      )
+    )
+      return;
     if (m && m.kind === n.kind) {
       const lists = new Set(
         [...docxTree.childLists(n), ...docxTree.childLists(m)].map(
@@ -932,8 +982,12 @@ export function conservedResidue(entry: unknown): unknown {
       .map((h) => ({ k: h.k, v: h.v }));
     if (kept.length) hiddenIn[k] = kept;
   }
+  // Only residue-held keys are conserved, a shown key follows the node
   const keys = arr<string>(entry.keys).filter(
-    (k) => k !== 'revisionIds' && k !== 'lastParagraphMarkCopied'
+    (k) =>
+      k !== 'revisionIds' &&
+      k !== 'lastParagraphMarkCopied' &&
+      (k in hidden || k in hiddenIn)
   );
   return { hidden, hiddenIn, keys };
 }

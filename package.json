@@ -1,6 +1,6 @@
 {
   "name": "@feathery/react",
-  "version": "2.115.2",
+  "version": "2.119.1",
   "description": "React library for Feathery",
   "author": "Boyang Dun",
   "license": "MIT",
@@ -40,6 +40,7 @@
     "test": "jest",
     "test:ci": "jest --silent --maxWorkers=50% --ci",
     "test:headless": "jest -c jest.headless.config.js",
+    "test:pptx-fonts": "jest -c jest.pptx-fonts.config.js",
     "test:debug": "npm-run-all -p test:watch jest-preview",
     "test:watch": "jest --watchAll",
     "jest-preview": "jest-preview",
@@ -137,6 +138,8 @@
     "classnames": "^2.5.1",
     "country-flag-emoji-polyfill": "^0.1.8",
     "date-fns": "^4.1.0",
+    "fast-xml-parser": "^5.2.5",
+    "fflate": "^0.8.2",
     "flat-map-polyfill": "^0.3.8",
     "is-url": "^1.2.4",
     "js-big-decimal": "^1.4.1",
@@ -144,6 +147,7 @@
     "libphonenumber-js": "^1.12.38",
     "lodash.debounce": "^4.0.8",
     "lodash.throttle": "^4.1.1",
+    "mtx-decompressor": "1.8.0",
     "quill-delta": "^4.2.2",
     "react-datepicker": "7.6.0",
     "react-ga4": "^1.4.1",
@@ -182,6 +186,7 @@
       "\\.headless\\.spec\\."
     ],
     "moduleNameMapper": {
+      "^mtx-decompressor$": "<rootDir>/node_modules/mtx-decompressor/dist/index.js",
       "^@tanstack/(react-table|table-core)$": "<rootDir>/node_modules/@tanstack/$1/dist/index.js",
       "^@tanstack/(react-table|table-core)/(.+)$": "<rootDir>/node_modules/@tanstack/$1/dist/$2.js"
     },

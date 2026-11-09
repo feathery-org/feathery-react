@@ -47,10 +47,13 @@ const ENCODED = new Set(['expr', 'value', 'default', 'label', 'row', 'copyOf']);
 
 export type BindingView = Record<string, unknown>;
 
-/** `{view, order}` for a binding tag, or null when the tag is foreign or malformed. */
+// An import seed nothing reads again, easily taken for what the control shows
+const SEED_KEYS = new Set(['value']);
+
+/** `{view, order, seed}` for a binding tag, or null when the tag is foreign or malformed */
 export function bindingView(
   tag: unknown
-): { view: BindingView; order: string[] } | null {
+): { view: BindingView; order: string[]; seed: BindingView } | null {
   if (typeof tag !== 'string') return null;
   let def: ReturnType<typeof parseTag> = null;
   try {
@@ -68,6 +71,7 @@ export function bindingView(
     pairs[k] = part.slice(eq + 1);
   }
   const view: BindingView = {};
+  const seed: BindingView = {};
   for (const vk of VIEW_ORDER) {
     const dk = dslKey(vk);
     if (!(dk in pairs)) continue;
@@ -80,9 +84,9 @@ export function bindingView(
       }
     }
     if (dk === 'global') v = v === 'true';
-    view[vk] = v;
+    (SEED_KEYS.has(vk) ? seed : view)[vk] = v;
   }
-  return { view, order };
+  return { view, order, seed };
 }
 
 /** The tag for a binding view; keys the original tag had keep their order. */

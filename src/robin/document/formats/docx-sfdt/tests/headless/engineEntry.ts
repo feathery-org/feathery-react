@@ -28,6 +28,7 @@ import TrackedChangeGroups from '../../../../../../elements/components/DocxEdito
 import HistoryGroup from '../../../../../../elements/components/DocxEditor/DocxToolbar/groups/HistoryGroup';
 import { installHistoryRouting } from '../../../../../../elements/components/DocxEditor/historyRouting';
 import { registerCardResolver, registerHistoryRoute } from '../../../../mounts';
+import { installDocumentTailInvariant } from '../../../../../../elements/components/DocxEditor/documentTailInvariant';
 import { robinMarks } from '../../../../../../elements/components/DocxEditor/robinDocument';
 import { isRobinWriting, onDocumentReplaced } from '../../../../../../elements/components/DocxEditor/robinActivity';
 
@@ -119,6 +120,7 @@ function makeEditor(id: string): DocumentEditor {
     documentEditorSettings: { optimizeSfdt: false }
   });
   instance.appendTo(host);
+  installDocumentTailInvariant(instance as any);
   return instance;
 }
 
@@ -385,6 +387,18 @@ const api = {
     const sel = ed.selection;
     return { start: sel.startOffset, end: sel.endOffset, text: String(sel.text ?? '') };
   },
+
+  /** Test support: the caret to a page's start, as the editor's own go-to-page puts it */
+  goToPage(page: number): void {
+    (live() as any).selection.goToPage(page);
+  },
+
+  /** The page number each laid-out page shows, as the engine's host reads it */
+  shownNumbers: (): Array<number | null> =>
+    ((createHost(live() as unknown as LiveEditor).pages?.() as Array<{ number: number | null }> | null) ?? []).map((p) => p.number),
+
+  /** How many pages the editor lays the document out on */
+  pageCount: (): number => (live() as any).documentHelper.pages.length,
 
   /** Test support: the person bolds what is selected, as the toolbar's Bold does. */
   boldSelection(): void {

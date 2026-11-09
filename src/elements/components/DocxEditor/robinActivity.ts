@@ -5,6 +5,7 @@ const WRITING_KEY = '__featheryAssistantWriting';
 const TURN_KEY = '__featheryAssistantSession';
 const TURN_LISTENERS_KEY = '__featheryAssistantSessionListeners';
 const REPLACED_LISTENERS_KEY = '__featheryRobinReplacedListeners';
+const WRITE_START_LISTENERS_KEY = '__featheryRobinWriteStartListeners';
 
 type Marked = Record<string, any>;
 type Listener<A extends unknown[]> = (...args: A) => void;
@@ -23,11 +24,25 @@ export function isRobinEditing(editor: unknown): boolean {
   return !!ed?.[WRITING_KEY] || !!ed?.[TURN_KEY];
 }
 
-/** Run `write` with the editor marked as Robin writing; the previous mark is put back after. */
+/**
+ * Run `write` with the editor marked as Robin writing; the previous mark is put back after. Write
+ * start listeners hear it first, while the document is still the one before Robin's change.
+ */
 export function whileRobinWrites<T>(editor: unknown, write: () => T): T {
   const ed = editor as Marked | null | undefined;
   if (!ed) return write();
   const previous = ed[WRITING_KEY];
+  if (!previous) {
+    const listeners: Set<Listener<[]>> | undefined =
+      ed[WRITE_START_LISTENERS_KEY];
+    listeners?.forEach((cb) => {
+      try {
+        cb();
+      } catch {
+        // A listener must never stop Robin's write.
+      }
+    });
+  }
   ed[WRITING_KEY] = true;
   try {
     return write();
@@ -63,6 +78,17 @@ export function onRobinTurnChange(
   const ed = editor as Marked | null | undefined;
   if (!ed) return () => undefined;
   const listeners = listenersOf<[boolean]>(ed, TURN_LISTENERS_KEY);
+  listeners.add(cb);
+  return () => {
+    listeners.delete(cb);
+  };
+}
+
+/** Hear Robin about to write to the document, before its change lands. Returns the unsubscribe. */
+export function onRobinWriteStart(editor: unknown, cb: () => void): () => void {
+  const ed = editor as Marked | null | undefined;
+  if (!ed) return () => undefined;
+  const listeners = listenersOf<[]>(ed, WRITE_START_LISTENERS_KEY);
   listeners.add(cb);
   return () => {
     listeners.delete(cb);

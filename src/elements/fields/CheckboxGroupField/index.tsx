@@ -30,6 +30,7 @@ function CheckboxGroupField({
   onOtherChange = () => {},
   onEnter = () => {},
   elementProps = {},
+  errorAttributes = {},
   disabled = false,
   children
 }: any) {
@@ -121,6 +122,9 @@ function CheckboxGroupField({
       {children}
       {fieldLabel}
       <div
+        role='group'
+        aria-label={element.properties.aria_label || servar.name}
+        {...errorAttributes}
         css={{
           display: 'flex',
           flexWrap: 'wrap',
@@ -206,7 +210,6 @@ function CheckboxGroupField({
                     '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
                   }}
                   disabled={optionDisabled}
-                  aria-label={element.properties.aria_label}
                 />
                 <span
                   css={{

@@ -33,7 +33,8 @@ export function resolveDepth(pack: Pack, depth?: number): number {
 export function renderOutline(
   view: DocumentView,
   pack: Pack,
-  depth?: number
+  depth?: number,
+  within?: ReadonlySet<string>
 ): OutlineResult {
   const below =
     depth === undefined
@@ -47,7 +48,7 @@ export function renderOutline(
       key,
       kids: (
         (listAt(node, key) ?? []).filter(isPlainObject) as NfNode[]
-      ).filter((k) => !below?.(k))
+      ).filter((k) => !below?.(k) && (!within || within.has(k.id)))
     }));
   const count = (node: NfNode): number =>
     childrenOf(node).reduce(

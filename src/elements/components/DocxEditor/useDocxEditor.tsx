@@ -5,6 +5,7 @@ import { dynamicImport } from '../../../integrations/utils';
 import {
   disableUserTrackChanges,
   findReplaceCounterpart,
+  installExportContentControlRecovery,
   installRevisionGroupIsolation,
   installTrackedContentControlDeletion,
   preserveDocumentViewDuring
@@ -1098,6 +1099,7 @@ export function useDocxEditor({
           // Ctrl+Z / Ctrl+Y through Robin's undo routing where a document session is mounted
           installHistoryRouting(ed);
           installTrackedContentControlDeletion(ed);
+          installExportContentControlRecovery(ed);
           // Status bar (bottom right): hide the Web-layout toggle — it flips
           // the document into continuous view, which breaks the paginated
           // editing/print flows this editor is built around.

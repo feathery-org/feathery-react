@@ -119,6 +119,9 @@ export const ENUMS = {
   ]
 } as const;
 
+/** SectionBreakType in the SDK, an enum and not a type, so not in ENUMS */
+export const SECTION_BREAKS = ['NewPage', 'NoBreak', 'EvenPage', 'OddPage'];
+
 // ------------------------------------------------------------------ value types
 
 /** A colour as the document stores it: `#RRGGBB` or `#RRGGBBAA`; names are refused. */
@@ -378,7 +381,11 @@ export const SECTION: readonly PropertySpec[] = [
   prop('differentFirstPage', 'boolean', bool),
   prop('differentOddAndEvenPages', 'boolean', bool),
   prop('bidi', 'boolean', bool),
-  prop('breakCode', 'section break', text(32)),
+  prop(
+    'breakCode',
+    'section break (NoBreak is continuous)',
+    oneOf(SECTION_BREAKS)
+  ),
   prop('numberOfColumns', 'columns', int(1, 45)),
   prop('equalWidth', 'boolean', bool),
   prop('lineBetweenColumns', 'boolean', bool),

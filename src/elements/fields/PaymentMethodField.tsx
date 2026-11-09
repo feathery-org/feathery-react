@@ -51,6 +51,7 @@ const CardField = ({
   responsiveStyles,
   fieldLabel,
   elementProps = {},
+  errorAttributes = {},
   setCardElement = () => {},
   setFieldError = () => {},
   onChange = () => {},
@@ -156,6 +157,9 @@ const CardField = ({
       {children}
       {fieldLabel}
       <div
+        role='group'
+        aria-label={element.properties.aria_label || element.servar.name}
+        {...errorAttributes}
         css={{
           position: 'relative',
           width: '100%',

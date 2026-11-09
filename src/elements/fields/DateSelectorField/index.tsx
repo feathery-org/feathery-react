@@ -35,6 +35,7 @@ export interface DateSelectorProps {
   responsiveStyles?: any;
   fieldLabel?: string;
   elementProps?: any;
+  errorAttributes?: React.AriaAttributes;
   required?: boolean;
   disabled?: boolean;
   repeatIndex?: number;
@@ -82,6 +83,7 @@ function DateSelectorField({
   responsiveStyles,
   fieldLabel,
   elementProps = {},
+  errorAttributes = {},
   required = false,
   disabled = false,
   repeatIndex,
@@ -279,6 +281,8 @@ function DateSelectorField({
         {customBorder}
         <DateSelectorStyles />
         <DatePicker
+          ariaInvalid={errorAttributes['aria-invalid']?.toString()}
+          ariaDescribedBy={errorAttributes['aria-describedby']}
           id={element.servar.key}
           name={element.servar.key}
           selected={internalDate}

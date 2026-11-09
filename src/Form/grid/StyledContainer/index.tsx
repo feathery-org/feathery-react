@@ -21,7 +21,7 @@ import {
   replaceTextVariables,
   TEXT_VARIABLE_PATTERN
 } from '../../../elements/components/TextNodes';
-import DocumentEditorContainer from '../../../elements/components/DocxEditor/DocumentEditorContainer';
+import DocumentEditorContainer from '../../../elements/components/DocumentEditor/DocumentEditorContainer';
 import { ShadowDomHtmlContent } from '../../../utils/ShadowDomHtmlContent';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
 
@@ -35,6 +35,7 @@ export type StyledContainerProps = PropsWithChildren & {
   [key: string]: any;
   viewportOnly?: boolean;
   breakpoint: number;
+  documentEditorPreviewType?: 'docx' | 'pptx' | 'generic';
 };
 
 /**
@@ -62,6 +63,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
       breakpoint,
       formId,
       assistantEnabled,
+      documentEditorPreviewType,
       ...props
     },
     ref
@@ -147,6 +149,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
           containerId={node.id}
           formId={formId}
           editMode={editMode}
+          previewType={documentEditorPreviewType}
           assistantEnabled={assistantEnabled}
         />
       );

@@ -15,11 +15,13 @@ import {
   Fact,
   HostTarget,
   PROTOCOL_VERSION,
+  ROOT_ID,
   SELECTION_TEXT_MAX,
   Selection,
   Verb,
   VerbResult,
   WriteInput,
+  addressedIds,
   makeRefusal,
   dispatchFailure,
   parseBridgePayload,
@@ -32,11 +34,19 @@ import { ENGINE_HISTORY_LIMIT, EngineHistory, HistoryOutcome } from './history';
 import { IdTable } from './ids';
 import { WriteJournal, journalKey } from './loop';
 import { renderOutline } from './outline';
-import type { CommitStep, EditorHost, Pack, Residue, SeamReport } from './pack';
+import type {
+  CommitStep,
+  EditorHost,
+  Pack,
+  LaidOutPage,
+  Residue,
+  SeamReport
+} from './pack';
 import { logDebug, logError, logWarn, truncatedDetail } from './log';
 import { equivalentNative } from './proof';
 import { reconcile } from './reconciler';
 import { Clock, defaultClock, TraceBuilder } from './trace';
+import { baseOf, shapeOf } from './tree';
 import type { NormalForm } from './tree';
 import { problem } from './verifier';
 import { conflictMessage } from './verifier/base';
@@ -191,6 +201,7 @@ export class DocumentSession {
     const state = this.state;
     const outline = outlineVerb(state, {});
     const selection = this.selection(state);
+    const pages = this.pages(state);
     return {
       protocolVersion: PROTOCOL_VERSION,
       editorId: this.editorId,
@@ -199,8 +210,21 @@ export class DocumentSession {
       readOnly: this.host.readOnly(),
       outlineHash: state.outlineHash,
       outline: outline.ok ? outline.lines : '',
-      ...(selection ? { selection } : {})
+      ...(selection ? { selection } : {}),
+      ...(pages ? { pageCount: pages.length } : {})
     };
+  }
+
+  /** Where each laid-out page starts, as the pack maps the editor's pages, never throws */
+  private pages(state: DocumentState): LaidOutPage[] | null {
+    try {
+      const native = this.host.pages?.();
+      if (native == null || !this.pack.pages) return null;
+      return this.pack.pages(state.view, native);
+    } catch {
+      // Pages the editor cannot report are no pages, never a failed outline
+      return null;
+    }
   }
 
   /** The editor's selection as the pack maps it, its text capped (section 9); never throws. */
@@ -275,7 +299,8 @@ export class DocumentSession {
     if (verb === 'outline')
       return outlineVerb(
         state,
-        parsed.value as Parameters<typeof outlineVerb>[1]
+        parsed.value as Parameters<typeof outlineVerb>[1],
+        () => this.pages(state)
       );
     if (verb === 'read')
       return readVerb(state, parsed.value as Parameters<typeof readVerb>[1]);
@@ -340,6 +365,7 @@ export class DocumentSession {
       };
     }
 
+    const restoreGuesses = this.ids.checkpointUncertain();
     const outcome = this.writing(() => {
       const out = reconcile({
         pack: this.pack,
@@ -416,6 +442,8 @@ export class DocumentSession {
       };
     }
     if (outcome.outcome !== 'committed') {
+      // Drop the id guesses made while reading back the refused write
+      restoreGuesses();
       const rolledBack =
         outcome.rollback.byteEqual || outcome.rollback.equivalent;
       trace.committed('rolled-back', outcome.seams, 0);
@@ -481,6 +509,11 @@ export class DocumentSession {
       cardId: outcome.plan.landed === 'card' ? changeSetId : null,
       landed: outcome.plan.landed,
       outlineHash: (this.current as DocumentState).outlineHash,
+      fingerprints: this.fingerprints(
+        write,
+        prepared.mapping,
+        prepared.finalizerScope.flatMap((f) => f.ids)
+      ),
       ...common,
       // with what the live editor reported of the commit (a contents table rebuilt, or not)
       facts: [...prepared.facts, ...outcome.facts],
@@ -579,6 +612,35 @@ export class DocumentSession {
     this.refresh();
     this.replaced('person');
     return true;
+  }
+
+  /** Fresh fingerprints of what a committed write named or created, what finalizers changed, and their ancestors */
+  private fingerprints(
+    write: WriteInput,
+    mapping: Record<string, string>,
+    finalized: string[]
+  ): Record<string, { base: string; shape: string }> {
+    const { view } = this.current as DocumentState;
+    const ids = new Set<string>();
+    const named = [
+      ...write.changes.flatMap(addressedIds),
+      ...Object.keys(mapping)
+    ];
+    for (const id of [...named.map((n) => mapping[n] ?? n), ...finalized]) {
+      ids.add(id);
+      let parent = view.placement(id)?.parent;
+      while (parent && !ids.has(parent.id)) {
+        ids.add(parent.id);
+        parent = view.placement(parent.id)?.parent;
+      }
+    }
+    const out: Record<string, { base: string; shape: string }> = {};
+    for (const id of ids) {
+      const node = id === ROOT_ID ? view.nf.root : view.get(id);
+      if (node)
+        out[id] = { base: baseOf(node), shape: shapeOf(node, this.pack.tree) };
+    }
+    return out;
   }
 
   /** A refresh after a resolution that failed: reported, never fatal to the resolution. */
