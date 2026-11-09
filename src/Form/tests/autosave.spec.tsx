@@ -46,6 +46,8 @@ const renderForm = async (autosave: boolean, id: string) => {
   ];
   render(<JSForm formId='f1' _internalId={`iid-autosave-${id}`} />);
   await screen.findByTestId('btn');
+  // Lets the step's mount effects run, so they can't reset a test's first save
+  await act(async () => {});
   return GridMod._spies.form;
 };
 
@@ -160,6 +162,25 @@ describe('autosave on field change', () => {
     expect(ClientMod._spies.submitCustom).toHaveBeenCalledWith({ name: '' });
   });
 
+  // The handler an input fires from its debounce, without the edit itself
+  const lateChangeHandler = (form: any, field: any) =>
+    act(() => {
+      form.fieldOnChange({
+        fieldID: field.id,
+        fieldKey: field.servar.key,
+        servarId: field.servar.id
+      })();
+    });
+
+  const submit = (form: any) =>
+    act(async () => {
+      await form.buttonOnClick({
+        id: 'b1',
+        properties: { actions: [], submit: true },
+        repeat: 0
+      });
+    });
+
   it('leaves a submitted step to its submit, and resumes if the submit fails', async () => {
     const form = await renderForm(true, 'submitted');
     let failSubmit!: (error: Error) => void;
@@ -169,23 +190,30 @@ describe('autosave on field change', () => {
     act(() => {
       form.changeValue('Ada', textField);
     });
-    await act(async () => {
-      await form.buttonOnClick({
-        id: 'b1',
-        properties: { actions: [], submit: true },
-        repeat: 0
-      });
-    });
+    await submit(form);
     expect(ClientMod._spies.submitStep).toHaveBeenCalledTimes(1);
 
-    // An input's debounced change handler firing after the submit started
-    changeField(form, 'Ada', textField);
+    lateChangeHandler(form, textField);
     expect(ClientMod._spies.submitCustom).not.toHaveBeenCalled();
 
     await act(async () => {
       failSubmit(new Error('offline'));
     });
+    lateChangeHandler(form, textField);
+    expect(ClientMod._spies.submitCustom).toHaveBeenCalledWith({ name: 'Ada' });
+  });
+
+  it('autosaves a new edit after a submit that kept the user on the step', async () => {
+    const form = await renderForm(true, 'stayed');
+    act(() => {
+      form.changeValue('Ada', textField);
+    });
+    await submit(form);
+    lateChangeHandler(form, textField);
+    expect(ClientMod._spies.submitCustom).not.toHaveBeenCalled();
+
     changeField(form, 'Ada L', textField);
+
     expect(ClientMod._spies.submitCustom).toHaveBeenCalledWith({
       name: 'Ada L'
     });
@@ -194,11 +222,8 @@ describe('autosave on field change', () => {
   it('forgets the upload of a file field that hides, so the step submit sends it again', async () => {
     FieldHelperMod.FILE_FIELD_TYPES.push('file_upload');
     const form = await renderForm(true, 'hide-file');
-    jest.useFakeTimers();
+    // Saving marks the field before its delayed upload, which the hide cancels
     changeField(form, [Promise.resolve(new File([], 'a.pdf'))], fileField);
-    act(() => {
-      jest.advanceTimersByTime(1000);
-    });
 
     HideAndRepeatsMod._spies.visiblePositions = { k: [false] };
     act(() => {
