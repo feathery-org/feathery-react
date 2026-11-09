@@ -160,6 +160,55 @@ describe('autosave on field change', () => {
     expect(ClientMod._spies.submitCustom).toHaveBeenCalledWith({ name: '' });
   });
 
+  it('leaves a submitted step to its submit, and resumes if the submit fails', async () => {
+    const form = await renderForm(true, 'submitted');
+    let failSubmit!: (error: Error) => void;
+    ClientMod._spies.submitStep.mockReturnValueOnce(
+      new Promise((_resolve, reject) => (failSubmit = reject))
+    );
+    act(() => {
+      form.changeValue('Ada', textField);
+    });
+    await act(async () => {
+      await form.buttonOnClick({
+        id: 'b1',
+        properties: { actions: [], submit: true },
+        repeat: 0
+      });
+    });
+    expect(ClientMod._spies.submitStep).toHaveBeenCalledTimes(1);
+
+    // An input's debounced change handler firing after the submit started
+    changeField(form, 'Ada', textField);
+    expect(ClientMod._spies.submitCustom).not.toHaveBeenCalled();
+
+    await act(async () => {
+      failSubmit(new Error('offline'));
+    });
+    changeField(form, 'Ada L', textField);
+    expect(ClientMod._spies.submitCustom).toHaveBeenCalledWith({
+      name: 'Ada L'
+    });
+  });
+
+  it('forgets the upload of a file field that hides, so the step submit sends it again', async () => {
+    FieldHelperMod.FILE_FIELD_TYPES.push('file_upload');
+    const form = await renderForm(true, 'hide-file');
+    jest.useFakeTimers();
+    changeField(form, [Promise.resolve(new File([], 'a.pdf'))], fileField);
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+
+    HideAndRepeatsMod._spies.visiblePositions = { k: [false] };
+    act(() => {
+      form.changeValue('Paris', cityField);
+    });
+
+    expect(ClientMod._spies.submitCustom).toHaveBeenCalledWith({ resume: '' });
+    expect(ClientMod._spies.forgetUploadedFile).toHaveBeenCalledWith('resume');
+  });
+
   it('uploads a file once its changes settle, outside the step queue', async () => {
     FieldHelperMod.FILE_FIELD_TYPES.push('file_upload');
     const form = await renderForm(true, 'file');

@@ -2323,6 +2323,9 @@ function Form({
   const fileAutosaveTimers = useRef<
     Record<string, ReturnType<typeof setTimeout>>
   >({});
+  // The step whose values were just handed to the client. An input's debounced
+  // change handler can still fire for it, but the submit already carries them
+  const submittedStepKey = useRef<string | null>(null);
 
   const cancelFileAutosaves = () => {
     Object.values(fileAutosaveTimers.current).forEach(clearTimeout);
@@ -2334,6 +2337,7 @@ function Form({
 
   const autosaveField = (fieldKey: string) => {
     if (!formSettings.autosave || !visiblePositions || !activeStep) return;
+    if (submittedStepKey.current === activeStep.key) return;
     const field = activeStep.servar_fields.find(
       (f: any) => f.servar.key === fieldKey
     );
@@ -2381,6 +2385,7 @@ function Form({
   useEffect(() => {
     autosavedKeys.current = new Set();
     autosaveQueued.current = {};
+    submittedStepKey.current = null;
     cancelFileAutosaves();
   }, [activeStep?.key]);
 
@@ -2403,6 +2408,9 @@ function Form({
       clearTimeout(fileAutosaveTimers.current[fieldKey]);
       delete fileAutosaveTimers.current[fieldKey];
       autosavedKeys.current.delete(fieldKey);
+      // The server copy is gone, so a later step submit must upload it again
+      if (FILE_FIELD_TYPES.includes(fields[0].servar.type))
+        client?.forgetUploadedFile(fieldKey);
       resets[fieldKey] = getDefaultFormFieldValue(
         fields[0],
         formSettings.asciiOnly
@@ -2549,7 +2557,14 @@ function Form({
       return field;
     });
 
+    const submittingKey = activeStep.key;
+    submittedStepKey.current = submittingKey;
     const stepPromise = client.submitStep(featheryFields, activeStep, hasNext);
+    // A failed submit leaves the user on the step, so autosave resumes
+    stepPromise?.catch(() => {
+      if (submittedStepKey.current === submittingKey)
+        submittedStepKey.current = null;
+    });
     if (enableFormTools)
       internalState[_internalId].formToolsLastSave = stepPromise;
 

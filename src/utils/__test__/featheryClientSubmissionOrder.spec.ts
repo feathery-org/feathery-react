@@ -791,4 +791,28 @@ describe('step save and completion ordering', () => {
 
     expect(client.pendingCustomFieldUpdates).toEqual({ city: 'Paris' });
   });
+
+  it('logs a timer-fired field save that fails instead of leaving it unhandled', async () => {
+    const unhandled = jest.fn();
+    process.on('unhandledRejection', unhandled);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { client } = createClientWithStorage();
+      jest
+        .spyOn(client, '_debouncedSubmitCustom')
+        .mockRejectedValue(new FetchError('Internal server error'));
+
+      // Nothing awaits a save the debounce timer fires
+      client.debouncedSubmitCustom(true);
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+
+      expect(warn).toHaveBeenCalledWith(
+        'Error saving field values',
+        expect.any(FetchError)
+      );
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+  });
 });
