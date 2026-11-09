@@ -174,6 +174,11 @@ export default class FeatheryClient extends IntegrationClient {
    */
   debouncedSubmitCustom: DebouncedFunc<(override: boolean) => Promise<void>>;
   customSubmitInFlight: Record<string, any>;
+  // Set by the form when its autosave setting is on
+  autosaveEnabled = false;
+  // The latest autosave upload of each file field, so uploads of one field
+  // land in order and the step submit waits for them
+  private fileAutosaves: Record<string, Promise<unknown>> = {};
   // A Robin form-fill driver's session, whose saves and events never complete
   // the form
   formFill: boolean;
@@ -1191,23 +1196,26 @@ export default class FeatheryClient extends IntegrationClient {
         .catch((error) =>
           console.warn('Error resetting saved answer retries', error)
         );
-      const settledEarlier = earlierSubmissions.catch(() => undefined);
-      // Field saves still in flight land before the step's values replace them,
-      // and an earlier upload finishes first so its files aren't sent twice.
-      // A failed flush still surfaces below, but never withholds the step's
-      // answers, which can otherwise queue for a retry
       const customFlush = this.submitCustom(hiddenFields, {
         shouldFlush: true
       });
-      const settledFlush = customFlush.catch(() => undefined);
+      // With autosave, field saves still in flight land before the step's
+      // values replace them. A failed one never withholds the step's answers
+      const jsonSubmit = this.autosaveEnabled
+        ? customFlush
+            .catch(() => undefined)
+            .then(() => this._submitJSONData(jsonServars, step.key, hasNext))
+        : this._submitJSONData(jsonServars, step.key, hasNext);
       return Promise.all([
-        settledEarlier,
+        earlierSubmissions.catch(() => undefined),
         customFlush,
-        settledFlush.then(() =>
-          this._submitJSONData(jsonServars, step.key, hasNext)
-        ),
+        jsonSubmit,
+        // An autosave upload of the same field finishes first, so the step's
+        // upload is deduped against it rather than racing it
         ...fileServars.map((servar: any) =>
-          settledEarlier.then(() => this._submitFileData(servar, step.key))
+          this._afterFileAutosave(servar.key).then(() =>
+            this._submitFileData(servar, step.key)
+          )
         )
       ]);
     })();
@@ -1240,6 +1248,36 @@ export default class FeatheryClient extends IntegrationClient {
     ]);
     this.submitQueue = submission;
     return submission;
+  }
+
+  // Uploads autosaved files one at a time per field. Kept out of submitQueue,
+  // so a failed background upload doesn't fail the step's events
+  autosaveFiles(fileEntries: { servar: any; stepKey: string }[]) {
+    if (this.draft || this.getNoSave()) return Promise.resolve();
+    return Promise.all(
+      fileEntries.map(({ servar, stepKey }) => {
+        const upload = this._afterFileAutosave(servar.key).then(() =>
+          this._submitFileData(servar, stepKey)
+        );
+        this.fileAutosaves[servar.key] = upload;
+        return upload;
+      })
+    );
+  }
+
+  _afterFileAutosave(fieldKey: string) {
+    return (this.fileAutosaves[fieldKey] ?? Promise.resolve()).catch(
+      () => undefined
+    );
+  }
+
+  // Withdraws an autosaved value not sent yet, unless something newer replaced it
+  discardPendingCustomField(fieldKey: string, value: unknown) {
+    if (
+      fieldKey in this.pendingCustomFieldUpdates &&
+      this.pendingCustomFieldUpdates[fieldKey] === value
+    )
+      delete this.pendingCustomFieldUpdates[fieldKey];
   }
 
   async registerEvent(eventData: any) {

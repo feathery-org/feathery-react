@@ -303,6 +303,10 @@ import {
   STEP_EVENT_SUBMIT
 } from '../utils/stepEvents';
 
+
+// Long enough to batch signature strokes and files picked one after another
+const FILE_AUTOSAVE_DELAY_MS = 1000;
+
 const DocumentViewer = React.lazy(
   () => import('../elements/components/DocumentViewer')
 );
@@ -2286,31 +2290,109 @@ function Form({
         : justInsert(fieldValues[servar.key] || [], value, index, field);
 
     const change = updateFieldValues(updateValues, { rerender, triggerErrors });
-    if (change) autosaveField(field);
     if (repeatRowOperation === 'add' && repeatContainer)
       addRepeatedRow(repeatContainer);
     return change;
   };
 
-  // Autosave: persist a field as soon as the user leaves it in a state the
-  // step could be submitted in. Runs the same per-field checks a submit would
-  // (required, format, custom validations) but never surfaces errors, so an
-  // in-progress value just waits for the next edit. Submit buttons still
-  // validate and submit the whole step as before; this only moves the moment
-  // a valid value reaches the server. Goes through the debounced custom
-  // submit, which batches keystrokes and is flushed ahead of any step submit.
-  const autosaveField = (field: any) => {
-    const servar = field.servar;
-    if (!formSettings.autosave || !visiblePositions) return;
-    // A payment method only exists once Stripe sets it up on step submit
-    if (servar.type === 'payment_method') return;
-    const fieldKey = servar.key;
-    if (!isFieldValid({ step: activeStep, visiblePositions, fieldKey })) return;
-    // Files go through the file endpoint, which dedupes the later step submit
-    if (FILE_FIELD_TYPES.includes(servar.type))
-      client?.submitFiles([fileSubmitEntry(servar, activeStep)]);
-    else client?.submitCustom({ [fieldKey]: fieldValues[fieldKey] });
+  // Autosave: once a field holds a value the step could be submitted with, save
+  // it in the background. Runs from fieldOnChange, which every input reaches
+  // (including address and "other" inputs), but not a form-fill rollback.
+  const autosavedKeys = useRef(new Set<string>());
+  // The value each key last queued, so a later invalid edit can withdraw it
+  const autosaveQueued = useRef<Record<string, any>>({});
+  const fileAutosaveTimers = useRef<
+    Record<string, ReturnType<typeof setTimeout>>
+  >({});
+
+  const cancelFileAutosaves = () => {
+    Object.values(fileAutosaveTimers.current).forEach(clearTimeout);
+    fileAutosaveTimers.current = {};
   };
+
+  const warnAutosave = (error: unknown) =>
+    console.warn('Feathery autosave failed', error);
+
+  const autosaveField = (fieldKey: string) => {
+    if (!formSettings.autosave || !visiblePositions || !activeStep) return;
+    const field = activeStep.servar_fields.find(
+      (f: any) => f.servar.key === fieldKey
+    );
+    // A payment method only exists once Stripe sets it up on step submit
+    if (!field || field.servar.type === 'payment_method') return;
+    if (!isFieldValid({ step: activeStep, visiblePositions, fieldKey })) {
+      client?.discardPendingCustomField(
+        fieldKey,
+        autosaveQueued.current[fieldKey]
+      );
+      return;
+    }
+    autosavedKeys.current.add(fieldKey);
+    if (FILE_FIELD_TYPES.includes(field.servar.type)) {
+      // Batches signature strokes and files added in quick succession
+      clearTimeout(fileAutosaveTimers.current[fieldKey]);
+      fileAutosaveTimers.current[fieldKey] = setTimeout(() => {
+        delete fileAutosaveTimers.current[fieldKey];
+        client
+          ?.autosaveFiles([fileSubmitEntry(field.servar, activeStep)])
+          .catch(warnAutosave);
+      }, FILE_AUTOSAVE_DELAY_MS);
+      return;
+    }
+    const value = fieldValues[fieldKey];
+    autosaveQueued.current[fieldKey] = value;
+    client?.submitCustom({ [fieldKey]: value }).catch(warnAutosave);
+  };
+
+  const autosaveChange = (fieldKey: string, relatedServarIds: string[]) => {
+    autosaveField(fieldKey);
+    relatedServarIds.forEach((servarId) => {
+      const related = activeStep?.servar_fields.find(
+        (f: any) => f.servar.id === servarId
+      );
+      if (related) autosaveField(related.servar.key);
+    });
+  };
+  // Inputs debounce their change handler from their first render, so it reads
+  // the current step and settings through this ref
+  const autosaveRef = useRef(autosaveChange);
+  autosaveRef.current = autosaveChange;
+  if (client) client.autosaveEnabled = formSettings.autosave;
+
+  useEffect(() => {
+    autosavedKeys.current = new Set();
+    autosaveQueued.current = {};
+    cancelFileAutosaves();
+  }, [activeStep?.key]);
+
+  // A saved field that hides is reset on the server, since the step submit
+  // would have left it out
+  useEffect(() => {
+    if (!formSettings.autosave || formSettings.saveHideIfFields) return;
+    if (!activeStep || !visiblePositions) return;
+    const resets: Record<string, any> = {};
+    autosavedKeys.current.forEach((fieldKey) => {
+      const fields = activeStep.servar_fields.filter(
+        (f: any) => f.servar.key === fieldKey
+      );
+      const hidden = fields.every((f: any) =>
+        (visiblePositions[getPositionKey(f)] ?? []).every(
+          (shown: boolean) => !shown
+        )
+      );
+      if (!fields.length || !hidden) return;
+      clearTimeout(fileAutosaveTimers.current[fieldKey]);
+      delete fileAutosaveTimers.current[fieldKey];
+      autosavedKeys.current.delete(fieldKey);
+      resets[fieldKey] = getDefaultFormFieldValue(
+        fields[0],
+        formSettings.asciiOnly
+      );
+      autosaveQueued.current[fieldKey] = resets[fieldKey];
+    });
+    if (Object.keys(resets).length)
+      client?.submitCustom(resets).catch(warnAutosave);
+  }, [visiblePositions]);
 
   const getNextStepKey = (metadata: any) =>
     nextStepKey(activeStep.next_conditions, metadata);
@@ -2322,6 +2404,8 @@ function Form({
     repeat: number | undefined,
     hasNext: boolean
   ): Promise<[Promise<any>] | undefined> => {
+    // The step submit uploads every file itself
+    cancelFileAutosaves();
     let formattedFields = formatStepFields(
       activeStep,
       formSettings.saveHideIfFields ? null : visiblePositions,
@@ -4076,6 +4160,7 @@ function Form({
       // Multi-file upload is not a repeated row but a repeated field
       valueRepeatIndex = null
     } = {}) => {
+      autosaveRef.current(fieldKey, relatedServarIds);
       runFieldChangeLogic({
         fieldKey,
         servarId,

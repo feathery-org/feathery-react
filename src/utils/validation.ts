@@ -176,11 +176,23 @@ function isFieldValid({
   // A field with nothing visible (hidden, or on another step) isn't saved
   return (
     elements.length > 0 &&
-    elements.every(
-      ({ element, repeat, last }) =>
-        isExemptFromValidation(element, step, repeat, last) ||
+    elements.every(({ element, repeat, last }) => {
+      // The trailing row a set_value repeat adds is only exempt while it's
+      // untouched: mid-typing it's the last row until the next one renders
+      const trailingRowStarted =
+        element.servar.repeat_trigger === 'set_value' &&
+        last &&
+        repeat &&
+        !isFieldValueEmpty(
+          (fieldValues[fieldKey] as any)?.[repeat],
+          element.servar
+        );
+      return (
+        (!trailingRowStarted &&
+          isExemptFromValidation(element, step, repeat, last)) ||
         !validateElement(element, repeat)
-    )
+      );
+    })
   );
 }
 
