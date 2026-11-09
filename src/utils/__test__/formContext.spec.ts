@@ -266,12 +266,13 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
 
-  it('maps closeOnAction to editor_close_on_action and omits it when unset', async () => {
+  it('maps closeOnAction and readOnly to editor keys and omits them when unset', async () => {
     await getFormContext(uuid).generateDocuments({
       documentIds: ['tpl-1'],
       envelopeAction: 'open_in_editor',
       toolbarActions: ['sign'],
-      closeOnAction: false
+      closeOnAction: false,
+      readOnly: true
     });
     await getFormContext(uuid).generateDocuments({
       documentIds: ['tpl-1'],
@@ -280,7 +281,9 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     });
 
     expect(flow.mock.calls[0][0].editor_close_on_action).toBe(false);
+    expect(flow.mock.calls[0][0].editor_read_only).toBe(true);
     expect(flow.mock.calls[1][0]).not.toHaveProperty('editor_close_on_action');
+    expect(flow.mock.calls[1][0]).not.toHaveProperty('editor_read_only');
   });
 
   it('captures independent Quik copies before flushing saved fields', async () => {

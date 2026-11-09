@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useId, useMemo, useRef } from 'react';
 import { FormControl } from '../../components/FormControl';
 import { resetStyles } from '../../styles';
 import {
@@ -43,6 +43,7 @@ function CheckboxGroupField({
   const selectAllLabel = servar.metadata.select_all_label || 'Select All';
   const containerRef = useRef(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
+  const optionLabelIdPrefix = useId();
 
   const styles = useMemo(() => {
     applyCheckableInputStyles(element, responsiveStyles);
@@ -183,6 +184,7 @@ function CheckboxGroupField({
           const label = option.label ?? option;
           const checked = fieldVal.includes(value);
           const optionDisabled = isOptionDisabled(checked);
+          const labelId = `${optionLabelIdPrefix}-${i}`;
 
           return (
             <div
@@ -210,8 +212,12 @@ function CheckboxGroupField({
                     '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
                   }}
                   disabled={optionDisabled}
+                  // Preserve custom CSS selectors while naming each option by its text.
+                  aria-label={element.properties.aria_label}
+                  aria-labelledby={labelId}
                 />
                 <span
+                  id={labelId}
                   css={{
                     whiteSpace: 'pre-wrap',
                     overflowWrap: 'anywhere',
