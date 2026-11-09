@@ -351,6 +351,42 @@ export function useDocxHistorySession(
       acceptance: TrackedChangeAcceptance | null;
     }
 
+    // Robin's turn-end checkpoint already prepares the pending version. Keep
+    // only its latest successful preparation so closing unchanged edits does
+    // not repeat normalization, diffing, highlight rendering and compression.
+    // Reuse requires the same session AND every attribution input, not merely
+    // identical visible text (an acceptance or author switch is meaningful).
+    let preparedClose: {
+      sessionId: string;
+      authorsKey: string;
+      snapshot: CloseSnapshot;
+      payload: Parameters<DocxHistoryHost['closeVersion']>[1];
+      changes: LocalVersionArtifacts['changes'];
+    } | null = null;
+    const sameItems = <T>(left: T[], right: T[]) =>
+      left.length === right.length &&
+      left.every((item, i) => item === right[i]);
+    const matchesPreparation = (
+      sessionId: string,
+      authorsKey: string,
+      snap: CloseSnapshot
+    ) => {
+      const prev = preparedClose;
+      return (
+        !!prev &&
+        prev.sessionId === sessionId &&
+        prev.authorsKey === authorsKey &&
+        prev.snapshot.host === snap.host &&
+        prev.snapshot.fStr === snap.fStr &&
+        prev.snapshot.s0 === snap.s0 &&
+        prev.snapshot.fAuthor === snap.fAuthor &&
+        prev.snapshot.slicesComplete === snap.slicesComplete &&
+        prev.snapshot.acceptance === snap.acceptance &&
+        sameItems(prev.snapshot.slices, snap.slices) &&
+        sameItems(prev.snapshot.robinRuns, snap.robinRuns)
+      );
+    };
+
     const closeSession = async (
       sessionId: string,
       authors: DocxSaveMeta['authors'],
@@ -359,6 +395,19 @@ export function useDocxHistorySession(
       const h = snap.host;
       if (!h || !snap.fStr) return;
       const fStr = snap.fStr;
+      const authorsKey = JSON.stringify(authors);
+      if (preparedClose && matchesPreparation(sessionId, authorsKey, snap)) {
+        const existing = localVersionArtifactsFor(sessionId);
+        if (mountedRef.current && (!existing || existing.finalSfdt === fStr))
+          registerLocalVersionArtifacts(sessionId, {
+            finalSfdt: fStr,
+            changes: preparedClose.changes
+          });
+        // Persistence and FIFO ordering remain unchanged: the backend still
+        // receives the final upload after the document's closing save.
+        await uploadArtifacts(h, sessionId, preparedClose.payload, fStr);
+        return;
+      }
       const fDoc = JSON.parse(fStr);
       const finalSha256 = contentHash(normalizeForDiff(fDoc));
       const confirmedStart = snap.acceptance
@@ -376,6 +425,7 @@ export function useDocxHistorySession(
       // author-boundary snapshots; F is the closing state. A tab-death session
       // (no S0) or a diff failure degrades to docx-only (no highlights).
       let changesJson: Blob | undefined;
+      let preparedChanges: LocalVersionArtifacts['changes'];
       let changeCount: number | null = null;
       let formatChangeCount: number | null = null;
       try {
@@ -438,6 +488,7 @@ export function useDocxHistorySession(
           const display = applyHunks(fDoc, changes);
           changes.trackedAuthors = trackedAuthorKeys(display);
           changesJson = await gzip(JSON.stringify(changes));
+          preparedChanges = changes;
           // Serve this exact document from memory while the upload is pending.
           // Upgrade-only: an older checkpoint draining from the queue must not
           // clobber a newer close's registration for the same session.
@@ -456,20 +507,26 @@ export function useDocxHistorySession(
         formatChangeCount = null;
       }
 
-      await uploadArtifacts(
-        h,
-        sessionId,
-        {
-          finalSfdtGz: await gzip(fStr),
-          changesJson,
-          changeCount,
-          formatChangeCount,
-          finalSha256,
-          startSha256,
-          authors
-        },
-        fStr
-      );
+      const payload = {
+        finalSfdtGz: await gzip(fStr),
+        changesJson,
+        changeCount,
+        formatChangeCount,
+        finalSha256,
+        startSha256,
+        authors
+      };
+      // Do not memoize a degraded diff; a later attempt may succeed.
+      preparedClose = preparedChanges
+        ? {
+            sessionId,
+            authorsKey,
+            snapshot: snap,
+            payload,
+            changes: preparedChanges
+          }
+        : null;
+      await uploadArtifacts(h, sessionId, payload, fStr);
     };
 
     const queueClose = (
@@ -825,6 +882,9 @@ export function useDocxHistorySession(
 
     return {
       slices,
+      clearPreparation: () => {
+        preparedClose = null;
+      },
       documentWrites,
       flushArtifacts: () => Promise.all([...pendingArtifacts]),
       retryArtifacts: async () => {
@@ -858,6 +918,7 @@ export function useDocxHistorySession(
   useEffect(() => {
     documentEpochRef.current++;
     engine.documentWrites.resetResult();
+    engine.clearPreparation();
     tracker.reset();
     scheduler.cancel();
     engine.slices.clear();
@@ -1013,6 +1074,7 @@ export function useDocxHistorySession(
       documentEpochRef.current++;
       scheduler.cancel();
       engine.slices.clear();
+      engine.clearPreparation();
       baselineRef.current = null;
       s0Ref.current = null;
       lastSnapshotRef.current = null;

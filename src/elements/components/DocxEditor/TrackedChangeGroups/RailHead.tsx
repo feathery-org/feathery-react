@@ -24,6 +24,8 @@ const bulkBtn = {
 
 interface Props {
   pendingCount: number;
+  disabled?: boolean;
+  progress?: string | null;
   /** Collapses the rail; omitted when the host owns no drawer state. */
   onHide?: () => void;
   onResolveAll: (isAccept: boolean) => void;
@@ -40,6 +42,8 @@ interface Props {
 // Rail head: title, pending counter, bulk actions.
 export default function RailHead({
   pendingCount,
+  disabled,
+  progress,
   onHide,
   onResolveAll,
   resolvingAll,
@@ -95,7 +99,7 @@ export default function RailHead({
         <button
           type='button'
           css={{ ...btn, ...bulkBtn }}
-          disabled={!!resolvingAll}
+          disabled={disabled || !!resolvingAll}
           onClick={() => onResolveAll(true)}
         >
           {resolvingAll === 'accept' ? (
@@ -108,7 +112,7 @@ export default function RailHead({
         <button
           type='button'
           css={{ ...rejectBtn, ...bulkBtn }}
-          disabled={!!resolvingAll}
+          disabled={disabled || !!resolvingAll}
           onClick={() => onResolveAll(false)}
         >
           {resolvingAll === 'reject' ? (
@@ -119,6 +123,11 @@ export default function RailHead({
           Reject all
         </button>
       </div>
+      {progress && (
+        <div role='status' aria-live='polite'>
+          {progress}
+        </div>
+      )}
       {notice && (
         <div
           role='status'

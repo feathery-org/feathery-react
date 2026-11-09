@@ -1,5 +1,6 @@
 import React from 'react';
 import ChangeChip from './ChangeChip';
+import { SpinnerIcon } from '../icons';
 import { ChipView, GroupView } from './types';
 import {
   CARD_SHADOW,
@@ -33,6 +34,10 @@ const TITLE_INDENT = 20;
 
 interface Props {
   group: GroupView;
+  disabled?: boolean;
+  resolving?: 'accept' | 'reject' | null;
+  resolvingChip?: ChipView;
+  resolvingAction?: 'accept' | 'reject';
   /** Registers the card element so the rail can scroll its header into view. */
   cardRef: (el: HTMLDivElement | null) => void;
   isOpen: boolean;
@@ -53,6 +58,10 @@ interface Props {
 // under the title; group Accept/Reject sit at the top-right.
 export default function GroupCard({
   group,
+  disabled,
+  resolving,
+  resolvingChip,
+  resolvingAction,
   cardRef,
   isOpen,
   onToggle,
@@ -181,15 +190,21 @@ export default function GroupCard({
           <button
             type='button'
             css={groupPrimaryBtn}
+            disabled={disabled}
+            aria-busy={resolving === 'accept'}
             onClick={() => onResolveGroup(true)}
           >
+            {resolving === 'accept' && <SpinnerIcon width={11} height={11} />}
             Accept
           </button>
           <button
             type='button'
             css={groupSecondaryBtn}
+            disabled={disabled}
+            aria-busy={resolving === 'reject'}
             onClick={() => onResolveGroup(false)}
           >
+            {resolving === 'reject' && <SpinnerIcon width={11} height={11} />}
             Reject
           </button>
         </div>
@@ -221,6 +236,12 @@ export default function GroupCard({
             <ChangeChip
               key={index}
               chip={chip}
+              disabled={disabled}
+              resolving={
+                resolvingChip?.revision === chip.revision
+                  ? resolvingAction
+                  : undefined
+              }
               isActive={
                 activeRevisions.has(chip.revision) ||
                 activeRevisions.has(chip.partner)

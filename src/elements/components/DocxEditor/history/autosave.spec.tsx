@@ -5,6 +5,7 @@ import { AUTOSAVE_IDLE_MS } from './autosaveScheduler';
 import { DocumentPersistenceError } from '../../../../utils/documentPersistence';
 import { featheryDoc } from '../../../../utils/browser';
 import { applyHunks } from './sfdtDiff';
+import * as historyDiff from './sfdtDiff';
 import {
   SAVE_HELD_NOTICE_MS,
   useDocxHistorySession,
@@ -177,6 +178,45 @@ describe('useDocxHistorySession', () => {
       save.mock.calls[0][1].sessionId
     );
   });
+
+  it.each([false, true])(
+    'reuses the turn checkpoint preparation only without later edits (edited: %s)',
+    async (edited) => {
+      (globalThis as any).CompressionStream = undefined;
+      let doc = SFDT;
+      const editor = { serialize: () => doc };
+      const { view, host } = setup({}, editor);
+      const diff = jest.spyOn(historyDiff, 'diffSession');
+      try {
+        act(() => setRobinTurnActive(editor, true));
+        doc = EDITED_SFDT;
+        act(() => view.result.current.onEdit({ assistant: true }));
+        act(() => setRobinTurnActive(editor, false));
+        await flush();
+        expect(host.closeVersion).toHaveBeenCalledTimes(1);
+        expect(diff).toHaveBeenCalledTimes(1);
+        if (edited) {
+          doc = EDITED_SFDT.replace('world', 'world with a later correction');
+          act(() => view.result.current.onEdit({ assistant: false }));
+        }
+        await act(async () => {
+          await view.result.current.save();
+        });
+        expect(host.closeVersion).toHaveBeenCalledTimes(2);
+        expect(diff).toHaveBeenCalledTimes(edited ? 2 : 1);
+        expect(
+          await blobText(host.closeVersion.mock.calls[1][1].finalSfdtGz)
+        ).toBe(doc);
+        const changes = JSON.parse(
+          await blobText(host.closeVersion.mock.calls[1][1].changesJson)
+        );
+        expect(changes.trackedAuthors).toContain(edited ? 'you' : 'robin');
+      } finally {
+        diff.mockRestore();
+        view.unmount();
+      }
+    }
+  );
 
   it('waits for the Robin document save and keeps its checkpoint snapshot consistent', async () => {
     let doc = SFDT;

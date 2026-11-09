@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckIcon, CloseIcon } from '../icons';
+import { CheckIcon, CloseIcon, SpinnerIcon } from '../icons';
 import { ChipView } from './types';
 import {
   ADD,
@@ -46,6 +46,8 @@ const diffRowsOf = (chip: ChipView) => {
 
 interface Props {
   chip: ChipView;
+  disabled?: boolean;
+  resolving?: 'accept' | 'reject';
   /** This chip is the document's active edit: subtly tinted (no border). */
   isActive: boolean;
   /** Registers the row element so the rail can scroll the active chip into
@@ -61,6 +63,8 @@ interface Props {
 // shown by a faint background tint instead.
 export default function ChangeChip({
   chip,
+  disabled,
+  resolving,
   isActive,
   rowRef,
   onFocus,
@@ -162,23 +166,35 @@ export default function ChangeChip({
             type='button'
             aria-label='Accept this edit'
             css={rowAcceptBtn}
+            disabled={disabled}
+            aria-busy={resolving === 'accept'}
             onClick={(event) => {
               event.stopPropagation();
               onResolve(true);
             }}
           >
-            <CheckIcon width={14} height={14} />
+            {resolving === 'accept' ? (
+              <SpinnerIcon width={14} height={14} />
+            ) : (
+              <CheckIcon width={14} height={14} />
+            )}
           </button>
           <button
             type='button'
             aria-label='Reject this edit'
             css={rowRejectBtn}
+            disabled={disabled}
+            aria-busy={resolving === 'reject'}
             onClick={(event) => {
               event.stopPropagation();
               onResolve(false);
             }}
           >
-            <CloseIcon width={14} height={14} />
+            {resolving === 'reject' ? (
+              <SpinnerIcon width={14} height={14} />
+            ) : (
+              <CloseIcon width={14} height={14} />
+            )}
           </button>
         </div>
       )}
