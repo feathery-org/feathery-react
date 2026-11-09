@@ -2703,7 +2703,32 @@ describe('the shrunken label against a rounded corner', () => {
       '0.75rem',
       'max(0.75rem, 14px)'
     ]);
+    // r=50 on a 90px box renders as 45: sweep = 45 - sqrt(2*45*5 - 25) ~= 24.4.
     expect(pinnedAt(50).insetInlineStart).toEqual([
+      '0.75rem',
+      'max(0.75rem, 26.4px)'
+    ]);
+  });
+
+  it('seats against the rendered curve of a pill radius, not the raw 999px', () => {
+    const pinned = targets(
+      'text_field',
+      {
+        placeholder_transition: 'shrink_top',
+        height: 100,
+        height_unit: 'px',
+        width: 400,
+        width_unit: 'px',
+        font_size: 16,
+        corner_top_left_radius: 999,
+        corner_top_right_radius: 999
+      },
+      { placeholder: 'Name' }
+    ).getTarget('placeholderFocus', true);
+
+    // The browser caps the corner at height / 2 = 50, so the seat is the
+    // r=50 value, not the 901px that pushed the label out of the box.
+    expect(pinned.insetInlineStart).toEqual([
       '0.75rem',
       'max(0.75rem, 30.2px)'
     ]);

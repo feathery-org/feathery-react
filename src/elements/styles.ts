@@ -2017,8 +2017,24 @@ export default class ResponsiveStyles {
       // offsets the padding never moves -- production geometry.
       this.apply(
         'placeholderFocus',
-        ['font_size', 'corner_top_left_radius', 'corner_top_right_radius'],
-        (fontSize: any, radiusLeft: any, radiusRight: any) => {
+        [
+          'font_size',
+          'corner_top_left_radius',
+          'corner_top_right_radius',
+          'height',
+          'height_unit',
+          'width',
+          'width_unit'
+        ],
+        (
+          fontSize: any,
+          radiusLeft: any,
+          radiusRight: any,
+          height: any,
+          heightUnit: any,
+          width: any,
+          widthUnit: any
+        ) => {
           const minFontSize = Math.min(fontSize, 10);
           const pinned: any = {
             // Half a shrunken font down, in the resting label's own line box.
@@ -2032,10 +2048,16 @@ export default class ResponsiveStyles {
             const seat = RESET_INLINE_PADDING_CSS;
             // Move the seat past a rounded top corner's curve at the label's
             // top edge. RTL uses the other corner, so clear the larger radius.
-            const r = Math.max(
+            let r = Math.max(
               isNum(radiusLeft) ? Number(radiusLeft) : 0,
               isNum(radiusRight) ? Number(radiusRight) : 0
             );
+            // CSS caps a radius at half the box, so a 999px pill corner on a
+            // 100px box curves as 50px; seat against what actually renders.
+            if (heightUnit === 'px' && isNum(height))
+              r = Math.min(r, Number(height) / 2);
+            if (widthUnit === 'px' && isNum(width))
+              r = Math.min(r, Number(width) / 2);
             const yTop = minFontSize / 2;
             const sweep =
               r > yTop ? r - Math.sqrt(2 * r * yTop - yTop * yTop) : 0;
