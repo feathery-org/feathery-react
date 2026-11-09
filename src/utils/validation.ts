@@ -210,13 +210,24 @@ function writeSliderValues(sliderValues: SliderValue[]): SliderValue[] {
   });
 }
 
-// Submit stores each visible slider's settled value once validation passes
+// Submit stores each visible slider's settled value before validating and
+// resolving navigation, so both see what it sends. restore puts back the
+// answers it replaced if the submit is blocked, unless something changed them
 function storeAlignedSliderValues(step: any, visiblePositions: any) {
-  writeSliderValues(
-    getAlignedSliderValues(
-      getVisibleElements(step, visiblePositions, ['servar_fields'], true)
-    )
+  const written = getAlignedSliderValues(
+    getVisibleElements(step, visiblePositions, ['servar_fields'], true)
   );
+  const replaced = writeSliderValues(written);
+  return {
+    restore: () =>
+      writeSliderValues(
+        replaced.filter(({ servar, repeat }, i) => {
+          const stored: any = fieldValues[servar.key];
+          const current = servar.repeated ? stored?.[repeat] : stored;
+          return current === written[i].value;
+        })
+      )
+  };
 }
 
 /**

@@ -257,6 +257,21 @@ describe('validation', () => {
       }
     );
 
+    // A blocked submit puts back the answers it replaced, but keeps any a
+    // submit rule changed since
+    it('restores the answers it replaced', () => {
+      Object.assign(fieldValues, { limit: 60, amount: 80, total: 90 });
+      const fields = [
+        slider('amount', { max_value_field_key: 'limit' }),
+        slider('total', { max_value_field_key: 'limit' })
+      ];
+      const { restore } = store(fields);
+      expect([fieldValues.amount, fieldValues.total]).toEqual([60, 60]);
+      fieldValues.total = 70;
+      restore();
+      expect([fieldValues.amount, fieldValues.total]).toEqual([80, 70]);
+    });
+
     // rc-slider snaps the handle to a step from the min, so submit stores that
     it('stores the step the handle snaps to when a linked min moves', () => {
       Object.assign(fieldValues, { floor: 2, amount: 10 });

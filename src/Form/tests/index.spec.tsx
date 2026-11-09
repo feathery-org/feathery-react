@@ -6,6 +6,7 @@ import {
   FormHelperMod,
   GridMod,
   HideAndRepeatsMod,
+  StepHelperMod,
   ValidationMod
 } from './testMocks';
 import {
@@ -320,10 +321,42 @@ describe('submit field snapshot', () => {
     });
 
     expect(ValidationMod.validateElements).toHaveBeenCalledTimes(2);
-    // Only the first, passing validation stores slider values
+    // Sliders settle once before validating; the blocked submit restores them
     expect(ValidationMod.storeAlignedSliderValues).toHaveBeenCalledTimes(1);
+    expect(ValidationMod._spies.restoreSliderValues).toHaveBeenCalledTimes(1);
     expect(ClientMod._spies.submitStep).not.toHaveBeenCalled();
     delete (internalState as any)['iid-submit-revalidate'];
+  });
+
+  it('settles sliders before validation and navigation read them', async () => {
+    setSubmitFields(['TextField']);
+    FieldHelperMod._spies.formattedFields = {
+      TextField: formattedField('value', 'Text field')
+    };
+    GridMod._spies.submit = true;
+    GridMod._spies.actions = [{ type: 'next' }];
+
+    render(<JSForm formId='f1' _internalId='iid-submit-settle' />);
+    await screen.findByTestId('btn');
+    StepHelperMod.nextStepKey.mockClear();
+    await act(async () => {
+      await GridMod._spies.form.buttonOnClick({
+        id: 'b1',
+        properties: { actions: [{ type: 'next' }], submit: true },
+        repeat: 0
+      });
+    });
+
+    const [store] =
+      ValidationMod.storeAlignedSliderValues.mock.invocationCallOrder;
+    expect(store).toBeLessThan(
+      ValidationMod.validateElements.mock.invocationCallOrder[0]
+    );
+    expect(store).toBeLessThan(
+      StepHelperMod.nextStepKey.mock.invocationCallOrder[0]
+    );
+    expect(ClientMod._spies.submitStep).toHaveBeenCalled();
+    expect(ValidationMod._spies.restoreSliderValues).not.toHaveBeenCalled();
   });
 
   it('does not take a second snapshot when no submit logic runs', async () => {
@@ -405,8 +438,8 @@ describe('docx discard navigation boundary', () => {
     await act(async () => {});
     expect(BrowserMod._spies.confirm).not.toHaveBeenCalled();
     expect(hasDirtyDocxEditors('iid-docx-invalid')).toBe(true);
-    // A failed submit leaves slider answers as the user left them
-    expect(ValidationMod.storeAlignedSliderValues).not.toHaveBeenCalled();
+    // A failed submit puts slider answers back as the user left them
+    expect(ValidationMod._spies.restoreSliderValues).toHaveBeenCalledTimes(1);
   });
 
   it('does not prompt for actions that stay on the current step', async () => {

@@ -2297,8 +2297,6 @@ function Form({
     repeat: number | undefined,
     hasNext: boolean
   ): Promise<[Promise<any>] | undefined> => {
-    // The step passed validation, so its sliders now store what they show
-    storeAlignedSliderValues(activeStep, visiblePositions);
     let formattedFields = formatStepFields(
       activeStep,
       formSettings.saveHideIfFields ? null : visiblePositions,
@@ -2991,6 +2989,9 @@ function Form({
         });
       }
 
+      // Sliders store what they show before validation and navigation read
+      // them, so no_complete, the next step and the payload agree
+      const sliders = storeAlignedSliderValues(activeStep, visiblePositions);
       const { invalid } = validateElements({
         step: activeStep,
         visiblePositions,
@@ -3003,6 +3004,7 @@ function Form({
       });
 
       if (invalid) {
+        sliders.restore();
         setErrorAnnouncement('');
         setShouldScrollToError(formSettings.errorType === 'inline');
         setAutoValidate(true);
@@ -3038,10 +3040,12 @@ function Form({
           !!hasNext
         );
       } catch (error) {
+        sliders.restore();
         submissionResult = [Promise.reject(error)] as [Promise<any>];
       }
 
       if (!submissionResult) {
+        sliders.restore();
         elementClicks[id] = false;
         clearButtonActionState();
 

@@ -73,13 +73,15 @@ jest.mock('../../utils/hideAndRepeats', () => {
 
 // Validation
 jest.mock('../../utils/validation', () => {
-  const state = { invalid: false };
+  const state = { invalid: false, restoreSliderValues: jest.fn() };
   return {
     validateElements: jest.fn(() => ({
       invalid: state.invalid,
       inlineErrors: {}
     })),
-    storeAlignedSliderValues: jest.fn(),
+    storeAlignedSliderValues: jest.fn(() => ({
+      restore: state.restoreSliderValues
+    })),
     validators: { phone: () => true, email: () => true },
     _spies: state
   };
@@ -191,7 +193,7 @@ jest.mock('../../utils/stepHelperFunctions', () => ({
   isValidFieldIdentifier: () => true,
   lookUpTrigger: () => ({}),
   mapFormSettingsResponse: () => ({ shared_codes: [] }),
-  nextStepKey: () => undefined,
+  nextStepKey: jest.fn(() => undefined),
   recurseProgressDepth: () => [0, 1],
   setUrlStepHash: jest.fn()
 }));
