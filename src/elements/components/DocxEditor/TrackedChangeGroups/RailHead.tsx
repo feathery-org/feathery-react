@@ -19,7 +19,7 @@ const bulkBtn = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  gap: 5
+  gap: 8
 } as const;
 
 interface Props {
