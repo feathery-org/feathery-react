@@ -2289,6 +2289,10 @@ function Form({
         : justInsert(fieldValues[servar.key] || [], value, index, field);
 
     const change = updateFieldValues(updateValues, { rerender, triggerErrors });
+    // A new edit after a submit that left the user on the step (an after-click
+    // rule's error, a save button) is autosaved again. Only a late debounced
+    // change handler skips changeValue, and that one stays skipped
+    if (change) submittedStepKey.current = null;
     if (repeatRowOperation === 'add' && repeatContainer)
       addRepeatedRow(repeatContainer);
     return change;
@@ -2304,7 +2308,8 @@ function Form({
     Record<string, ReturnType<typeof setTimeout>>
   >({});
   // The step whose values were just handed to the client. An input's debounced
-  // change handler can still fire for it, but the submit already carries them
+  // change handler can still fire for it, but the submit already carries them.
+  // Cleared by the next edit, a failed submit or a step change
   const submittedStepKey = useRef<string | null>(null);
 
   const cancelFileAutosaves = () => {
