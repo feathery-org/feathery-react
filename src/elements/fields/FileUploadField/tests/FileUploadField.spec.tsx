@@ -262,6 +262,27 @@ describe('FileUploadField - Base Functionality', () => {
       }
     );
 
+    it('accepts a matching file when the custom file type is a number', async () => {
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload', {
+        custom_file_types: [123]
+      });
+      const props = createFileUploadProps(element);
+
+      render(<FileUploadField {...props} onChange={mockOnChange} />);
+
+      const numberedFile = createMockFile('export.123', '');
+      await act(async () => {
+        fireEvent.change(
+          getFileInput(),
+          createFileInputChangeEvent([numberedFile])
+        );
+      });
+
+      expect(getFileInput().accept).toBe('.123');
+      expect(getMockFieldValue()).toHaveLength(1);
+    });
+
     it('rejects other extensions when the custom file type has a leading dot', async () => {
       const mockOnChange = createStatefulFileOnChange();
       const element = createFileUploadElement('file_upload', {
