@@ -200,10 +200,13 @@ export default class FeatheryClient extends IntegrationClient {
     this.pendingCustomFieldUpdates = {};
     this.pendingRepeatedFileKeys = new Set();
     this.customSubmitInFlight = {};
-    this.debouncedSubmitCustom = debounce(
-      this._debouncedSubmitCustom.bind(this),
-      SUBMIT_CUSTOM_DEBOUNCE_WINDOW
-    );
+    this.debouncedSubmitCustom = debounce((override: boolean) => {
+      const save = this._debouncedSubmitCustom(override);
+      // A timer-fired save has no caller awaiting it. flush() callers still
+      // get the rejection from the returned promise
+      save.catch((error) => console.warn('Error saving field values', error));
+      return save;
+    }, SUBMIT_CUSTOM_DEBOUNCE_WINDOW);
 
     this.handleInteraction = this.handleInteraction.bind(this);
     if (typeof CustomEvent !== 'undefined') {
@@ -1269,6 +1272,13 @@ export default class FeatheryClient extends IntegrationClient {
     return (this.fileAutosaves[fieldKey] ?? Promise.resolve()).catch(
       () => undefined
     );
+  }
+
+  // After the server's copy of a field's files is cleared, so the next submit
+  // uploads them again rather than deduping against the old upload
+  forgetUploadedFile(fieldKey: string) {
+    fileRetryStatus[fieldKey] = false;
+    delete fileDeduplicationCount[fieldKey];
   }
 
   // Withdraws an autosaved value not sent yet, unless something newer replaced it

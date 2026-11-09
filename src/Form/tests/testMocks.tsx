@@ -392,6 +392,7 @@ jest.mock('../../utils/featheryClient', () => {
   const submitFilesSpy = jest.fn().mockResolvedValue(undefined);
   const autosaveFilesSpy = jest.fn().mockResolvedValue(undefined);
   const discardPendingCustomFieldSpy = jest.fn();
+  const forgetUploadedFileSpy = jest.fn();
   // Lets a test answer the session fetch with something other than a loadable
   // step (e.g. the access link flags that carry no form data), turn the form
   // off, or fail the session outright.
@@ -458,6 +459,7 @@ jest.mock('../../utils/featheryClient', () => {
     submitFiles = submitFilesSpy;
     autosaveFiles = autosaveFilesSpy;
     discardPendingCustomField = discardPendingCustomFieldSpy;
+    forgetUploadedFile = forgetUploadedFileSpy;
     autosaveEnabled = false;
     registerEvent = registerEventSpy;
     runAIExtraction = jest.fn();
@@ -483,6 +485,7 @@ jest.mock('../../utils/featheryClient', () => {
       submitFiles: submitFilesSpy,
       autosaveFiles: autosaveFilesSpy,
       discardPendingCustomField: discardPendingCustomFieldSpy,
+      forgetUploadedFile: forgetUploadedFileSpy,
       state
     }
   };
