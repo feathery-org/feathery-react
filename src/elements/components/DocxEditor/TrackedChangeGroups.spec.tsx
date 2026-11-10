@@ -176,8 +176,9 @@ function destroyRealEditor(editor: DocumentEditor): void {
   element?.remove();
 }
 
-function acceptOnlyGroup(): void {
+async function acceptOnlyGroup(): Promise<void> {
   fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+  await flushDeferredResolve();
 }
 
 // Single-edit groups carry no group-wide card button, so the rail-wide action
@@ -320,7 +321,7 @@ describe('TrackedChangeGroups', () => {
     ).toBeInTheDocument();
   });
 
-  it('a card the engine owns resolves through the engine, never natively, and leaves the rail', () => {
+  it('a card the engine owns resolves through the engine, never natively, and leaves the rail', async () => {
     const engineTag = JSON.stringify({
       v: 1,
       source: 'robin',
@@ -344,6 +345,7 @@ describe('TrackedChangeGroups', () => {
     });
     const { container } = render(<TrackedChangeGroups editor={editor} />);
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
+    await flushDeferredResolve();
     expect(resolve).toHaveBeenCalledWith(['turn-5'], false, undefined);
     for (const r of [makeRevision()]) expect(r.reject).not.toHaveBeenCalled();
     expect(container).toBeEmptyDOMElement();
@@ -389,7 +391,7 @@ describe('TrackedChangeGroups', () => {
     off();
   });
 
-  it('a card the engine does not own resolves natively as before', () => {
+  it('a card the engine does not own resolves natively as before', async () => {
     const deletion = makeRevision({ revisionType: 'Deletion' });
     const revisions = [deletion];
     deletion.accept.mockImplementation(() => revisions.splice(0, 1));
@@ -398,6 +400,7 @@ describe('TrackedChangeGroups', () => {
     const off = registerCardResolver(editor, { owns: () => false, resolve });
     render(<TrackedChangeGroups editor={editor} />);
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    await flushDeferredResolve();
     expect(resolve).not.toHaveBeenCalled();
     expect(deletion.accept).toHaveBeenCalledTimes(1);
     off();
@@ -570,7 +573,7 @@ describe('TrackedChangeGroups', () => {
     expect(screen.getByText('$6,000')).toBeInTheDocument();
   });
 
-  it('focused-chip Accept resolves only that edit; the resolved chip disappears', () => {
+  it('focused-chip Accept resolves only that edit; the resolved chip disappears', async () => {
     const deletion = makeRevision({
       revisionType: 'Deletion',
       getRange: () => [{ text: '$5,500' }]
@@ -594,6 +597,7 @@ describe('TrackedChangeGroups', () => {
         screen.getByText('$5,500').closest('[role="button"]') as HTMLElement
       ).getByLabelText('Accept this edit')
     );
+    await flushDeferredResolve();
 
     expect(deletion.accept).toHaveBeenCalledTimes(1);
     expect(insertion.accept).not.toHaveBeenCalled();
@@ -632,6 +636,7 @@ describe('TrackedChangeGroups', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    await flushDeferredResolve();
 
     await waitFor(() => expect(revision.accept).toHaveBeenCalledTimes(1));
     expect(onAcceptTrackedChanges).toHaveBeenCalledWith(
@@ -640,7 +645,7 @@ describe('TrackedChangeGroups', () => {
     );
   });
 
-  it('group Accept resolves every pending member and removes the card', () => {
+  it('group Accept resolves every pending member and removes the card', async () => {
     const deletion = makeRevision({ revisionType: 'Deletion' });
     const insertion = makeRevision();
     const revisions = [deletion, insertion];
@@ -654,6 +659,7 @@ describe('TrackedChangeGroups', () => {
     const { container } = render(<TrackedChangeGroups editor={editor} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    await flushDeferredResolve();
 
     // Every member resolved exactly once — a native accept on one member
     // would instead resolve whatever is contiguous to it.
@@ -664,7 +670,7 @@ describe('TrackedChangeGroups', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('group Reject resolves every pending member and removes the card', () => {
+  it('group Reject resolves every pending member and removes the card', async () => {
     const deletion = makeRevision({ revisionType: 'Deletion' });
     const insertion = makeRevision();
     const revisions = [deletion, insertion];
@@ -678,6 +684,7 @@ describe('TrackedChangeGroups', () => {
     const { container } = render(<TrackedChangeGroups editor={editor} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
+    await flushDeferredResolve();
 
     expect(deletion.reject).toHaveBeenCalledTimes(1);
     expect(insertion.reject).toHaveBeenCalledTimes(1);
@@ -792,7 +799,7 @@ describe('TrackedChangeGroups', () => {
     expect(revision.reject).toHaveBeenCalledTimes(1);
   });
 
-  it('suppresses the selectionChange echo native accept fires during a group-wide resolve', () => {
+  it('suppresses the selectionChange echo native accept fires during a group-wide resolve', async () => {
     // Each native accept() moves the selection, firing a real
     // selectionChange — one unguarded rail rescan per resolve if unsuppressed.
     const first = makeRevision({ getRange: () => [{ text: 'first' }] });
@@ -816,6 +823,7 @@ describe('TrackedChangeGroups', () => {
 
     // Two groups each render an 'Accept' button; the first is 'Update premium'.
     fireEvent.click(screen.getAllByRole('button', { name: 'Accept' })[0]);
+    await flushDeferredResolve();
 
     // Without suppression, "untouched"'s group would now be force-expanded
     // with its chip marked current, even though the user never touched it.
@@ -851,6 +859,7 @@ describe('TrackedChangeGroups', () => {
       await Promise.resolve();
     });
     fireEvent.click(screen.getByLabelText('Accept this edit'));
+    await flushDeferredResolve();
 
     expect(
       screen.getByRole('button', { name: 'Expand Fix effective date' })
@@ -858,7 +867,7 @@ describe('TrackedChangeGroups', () => {
     expect(screen.queryByText('Untouched')).not.toBeInTheDocument();
   });
 
-  it('uses panel-scoped J/K and arrow keys to focus, then A/R to resolve', () => {
+  it('uses panel-scoped J/K and arrow keys to focus, then A/R to resolve', async () => {
     const deletion = makeRevision({
       revisionType: 'Deletion',
       getRange: () => [{ text: '$5,500' }]
@@ -890,6 +899,7 @@ describe('TrackedChangeGroups', () => {
 
     // A resolves only the focused chip.
     fireEvent.keyDown(panel, { key: 'a' });
+    await flushDeferredResolve();
     expect(deletion.accept).toHaveBeenCalledTimes(1);
     expect(insertion.accept).not.toHaveBeenCalled();
 
@@ -897,6 +907,7 @@ describe('TrackedChangeGroups', () => {
     fireEvent.keyDown(panel, { key: 'ArrowDown' });
     expect(insertion.select).toHaveBeenCalledTimes(2);
     fireEvent.keyDown(panel, { key: 'r' });
+    await flushDeferredResolve();
     expect(insertion.reject).toHaveBeenCalledTimes(1);
   });
 
@@ -952,7 +963,7 @@ describe('TrackedChangeGroups', () => {
     expect(panel).toHaveFocus();
   });
 
-  it('keeps keyboard focus on the panel after resolving from a chip button', () => {
+  it('keeps keyboard focus on the panel after resolving from a chip button', async () => {
     const insertion = makeRevision();
     const sibling = makeRevision({ getRange: () => [{ text: 'sibling' }] });
     const revisions = [insertion, sibling];
@@ -973,6 +984,7 @@ describe('TrackedChangeGroups', () => {
         screen.getByText('$6,000').closest('[role="button"]') as HTMLElement
       ).getByRole('button', { name: 'Accept this edit' })
     );
+    await flushDeferredResolve();
     expect(insertion.accept).toHaveBeenCalledTimes(1);
     expect(panel).toHaveFocus();
   });
@@ -999,7 +1011,7 @@ describe('TrackedChangeGroups', () => {
     expect(editor.editorHistory.undo).toHaveBeenCalledTimes(2);
   });
 
-  it('hands focus to the editor when the last pending edit resolves', () => {
+  it('hands focus to the editor when the last pending edit resolves', async () => {
     const insertion = makeRevision();
     const revisions = [insertion];
     insertion.accept.mockImplementation(() => {
@@ -1015,6 +1027,7 @@ describe('TrackedChangeGroups', () => {
     );
     fireEvent.click(screen.getByText('$6,000'));
     fireEvent.click(screen.getByLabelText('Accept this edit'));
+    await flushDeferredResolve();
 
     // The rail unmounted; focus on <body> would swallow the next ⌘Z, so it
     // goes back into the document instead.
@@ -1091,7 +1104,7 @@ describe('TrackedChangeGroups', () => {
     ).toEqual([one, two, three, four]);
   });
 
-  it('folds a replace pair into one Replaced chip; one approval settles both halves', () => {
+  it('folds a replace pair into one Replaced chip; one approval settles both halves', async () => {
     // A replace: the deletion's last range element links directly to the
     // insertion's first (nextNode), same as the live engine produces.
     const newRun = { text: '$6,000' };
@@ -1123,6 +1136,7 @@ describe('TrackedChangeGroups', () => {
     // its only edit resolved, the group — and the rail — disappear.
     fireEvent.click(screen.getByText('$6,000'));
     fireEvent.click(screen.getByLabelText('Accept this edit'));
+    await flushDeferredResolve();
     expect(deletion.accept).toHaveBeenCalledTimes(1);
     expect(insertion.accept).toHaveBeenCalledTimes(1);
     expect(container).toBeEmptyDOMElement();
@@ -1793,7 +1807,7 @@ describe('RailErrorBoundary', () => {
     expect(screen.getByTestId('rail-child')).toBeInTheDocument();
   });
 
-  it('real SDK: native grouped table can be accepted again after undo', () => {
+  it('real SDK: native grouped table can be accepted again after undo', async () => {
     const editor = makeRealEditor();
     let unmount = () => {};
     try {
@@ -1833,13 +1847,13 @@ describe('RailErrorBoundary', () => {
 
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
       expect(screen.getByText('Add premium table')).toBeInTheDocument();
-      acceptOnlyGroup();
+      await acceptOnlyGroup();
       expect(editor.revisions.length).toBe(0);
 
       act(() => editor.editorHistory.undo());
       expect(editor.revisions.length).toBeGreaterThan(0);
       expect(screen.getByRole('button', { name: 'Accept' })).toBeEnabled();
-      acceptOnlyGroup();
+      await acceptOnlyGroup();
       expect(editor.revisions.length).toBe(0);
     } finally {
       unmount();
@@ -1869,7 +1883,7 @@ describe('RailErrorBoundary', () => {
     }
   });
 
-  it('real SDK: an individual chip accepts again from its button after undo', () => {
+  it('real SDK: an individual chip accepts again from its button after undo', async () => {
     const editor = makeRealEditor('Premium: $5,200');
     let unmount = () => {};
     try {
@@ -1880,12 +1894,14 @@ describe('RailErrorBoundary', () => {
       );
       fireEvent.click(screen.getByText('$5,500'));
       fireEvent.click(screen.getByLabelText('Accept this edit'));
+      await flushDeferredResolve();
       expect(editor.revisions.length).toBe(0);
 
       act(() => editor.editorHistory.undo());
       expect(editor.revisions.length).toBe(2);
       fireEvent.click(screen.getByText('$5,500'));
       fireEvent.click(screen.getByLabelText('Accept this edit'));
+      await flushDeferredResolve();
       expect(editor.revisions.length).toBe(0);
     } finally {
       unmount();
@@ -1893,7 +1909,7 @@ describe('RailErrorBoundary', () => {
     }
   });
 
-  it('real SDK: an individual chip rejects again from the keyboard after undo', () => {
+  it('real SDK: an individual chip rejects again from the keyboard after undo', async () => {
     const editor = makeRealEditor('Premium: $5,200');
     let unmount = () => {};
     try {
@@ -1902,6 +1918,7 @@ describe('RailErrorBoundary', () => {
       let panel = screen.getByLabelText('Assistant tracked changes');
       fireEvent.keyDown(panel, { key: 'j' });
       fireEvent.keyDown(panel, { key: 'r' });
+      await flushDeferredResolve();
       expect(editor.revisions.length).toBe(0);
 
       act(() => editor.editorHistory.undo());
@@ -1909,6 +1926,7 @@ describe('RailErrorBoundary', () => {
       panel = screen.getByLabelText('Assistant tracked changes');
       fireEvent.keyDown(panel, { key: 'j' });
       fireEvent.keyDown(panel, { key: 'r' });
+      await flushDeferredResolve();
       expect(editor.revisions.length).toBe(0);
       expect(editor.serialize()).toContain('$5,200');
       expect(editor.serialize()).not.toContain('$5,500');
