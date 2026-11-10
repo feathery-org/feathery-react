@@ -52,6 +52,39 @@ const doc = (
       }
     ]
   });
+const cell = (text: string) => ({
+  blocks: [p([{ text }])],
+  cellFormat: { preferredWidth: 100, preferredWidthType: 'Point' }
+});
+const tableDoc = () =>
+  doc([
+    p([{ text: 'Before table' }]),
+    {
+      contentControlProperties: {
+        lockContentControl: true,
+        lockContents: false,
+        tag: '[[table=costs]]',
+        title: 'costs',
+        type: 'RichText',
+        hasPlaceHolderText: false,
+        multiline: false,
+        isTemporary: false,
+        color: '#00000000',
+        appearance: 'BoundingBox'
+      },
+      blocks: [
+        {
+          rows: [
+            { cells: [cell('Item'), cell('Cost')], rowFormat: {} },
+            { cells: [cell('Rent'), cell('$100')], rowFormat: {} }
+          ],
+          grid: [100, 100],
+          tableFormat: {}
+        }
+      ]
+    },
+    p([{ text: 'After table' }])
+  ]);
 const fieldDoc = (tag: string) =>
   doc([
     p([{ text: 'Before ' }, cc(tag, 'Alpha'), { text: ' after' }]),
@@ -123,5 +156,19 @@ describe('export content-control recovery', () => {
     expectWhole(await probe());
     await act('undo');
     expectWhole(await probe());
+  });
+
+  it('keeps a table wrapper off its first cell once the editor marks it inline', async () => {
+    await lane.call('open', tableDoc(), { recovery: true });
+    await lane.call('relabelInline', '[[table=costs]]');
+
+    const output = await probe();
+    expect(output.ccs).toBe(0);
+    expect(output.text).toContain('Item');
+    expect(output.text).toContain('$100');
+    const saved = JSON.parse(await lane.call<string>('serialize'));
+    expect(saved.sections[0].blocks[1].contentControlProperties?.tag).toBe(
+      '[[table=costs]]'
+    );
   });
 });

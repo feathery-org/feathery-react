@@ -28,6 +28,7 @@ import type {
   EditorHost,
   PlanContext
 } from '../../pack';
+import { PREDICTED_TURN } from '../../pack';
 import { NfNode, NormalForm, canonicalJson, clone } from '../../tree';
 import {
   FEATURE_KEYS,
@@ -38,6 +39,7 @@ import {
 } from './adapter/keys';
 import { revisionsIn } from './adapter/revisions';
 import { fromNormalForm } from './adapter/fromNormalForm';
+import { goneOnAccept } from './projections';
 import { ownText } from './outline';
 import { docxTree } from './tree';
 import type { DocxHost } from './host';
@@ -96,22 +98,42 @@ function tagMove(node: NfNode, turnId: string, move: string): void {
     for (const child of listOf(node, key) ?? []) tagMove(child, turnId, move);
 }
 
-/** Drop the insertions a node's subtree carries: a moved copy is the mover's alone */
-function dropInsertions(node: NfNode): void {
-  const kept = (pending: unknown): Obj | null => {
-    const rest = revisionsIn(pending).filter((r) => r.kind !== 'Insertion');
-    if (!rest.length) return null;
+const isRobins = (r: { group?: string; author?: string | null }): boolean =>
+  Boolean(r.group) || r.author === AUTHOR;
+
+/** A node's pending value without Robin's revisions, or undefined when no one else's remain */
+function othersPending(pending: unknown): Obj | undefined {
+  if (!isObject(pending)) return undefined;
+  const kept = (p: unknown): Obj | undefined => {
+    const rest = revisionsIn(p).filter((r) => !isRobins(r));
+    if (!rest.length) return undefined;
     return rest.length > 1 ? { ...rest[0], revisions: rest } : { ...rest[0] };
   };
-  if (isObject(node.pending)) {
-    const own = kept(node.pending);
-    const mark = kept(node.pending.mark);
-    if (own || mark)
-      node.pending = { ...(own ?? {}), ...(mark ? { mark } : {}) };
-    else delete node.pending;
+  const own = kept(pending);
+  const mark = kept(pending.mark);
+  return own || mark
+    ? { ...(own ?? {}), ...(mark ? { mark } : {}) }
+    : undefined;
+}
+
+const holdsOthersChange = (node: NfNode): boolean =>
+  Boolean(othersPending(node.pending)) ||
+  docxTree
+    .childLists(node)
+    .some((key) => (listOf(node, key) ?? []).some(holdsOthersChange));
+
+/** A moved copy takes Robin's other cards as accepted, a person's pending changes in it stay theirs */
+function acceptOthers(node: NfNode): void {
+  const others = othersPending(node.pending);
+  if (others) node.pending = others;
+  else delete node.pending;
+  for (const key of docxTree.childLists(node)) {
+    const kept = (listOf(node, key) ?? []).filter(
+      (c) => !goneOnAccept(c) || holdsOthersChange(c)
+    );
+    setList(node, key, kept);
+    for (const child of kept) acceptOthers(child);
   }
-  for (const key of docxTree.childLists(node))
-    for (const child of listOf(node, key) ?? []) dropInsertions(child);
 }
 
 /** Mark every revision anchor inside a node: runs and other text inlines, paragraph marks, rows. */
@@ -262,7 +284,7 @@ export function composeTracked(
         if (old && was[w]?.id === kid.id) w += 1;
         if (!old) {
           // new here, or moved here from elsewhere: an insertion in this list
-          if (before.get(kid.id)) dropInsertions(kid);
+          if (before.get(kid.id)) acceptOthers(kid);
           markSubtree(kid, ins);
           result.push(kid);
           if (before.get(kid.id)) {
@@ -794,6 +816,14 @@ export function tocStep(
 /** Several native steps as the editor's one undo group (the change and the contents it refreshes). */
 export function transaction(host: EditorHost, run: () => void): void {
   inUndoGroup((host as DocxHost).editor, run);
+}
+
+export function predict(
+  before: DocumentView,
+  intended: DocumentView
+): NormalForm | null {
+  if (nativePlan(before, intended)) return null;
+  return composeTracked(before, intended.nf, PREDICTED_TURN).tracked;
 }
 
 export function plan(ctx: PlanContext): CommitPlan {

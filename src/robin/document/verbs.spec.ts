@@ -184,6 +184,61 @@ describe('outline', () => {
   });
 });
 
+describe('write: whether the change would land (Hilb post-v9 B3)', () => {
+  const retitle = (s: ReturnType<typeof fresh>) =>
+    write({
+      intent: 'Retitle.',
+      scope: { ids: ['n1'] },
+      changes: [
+        {
+          kind: 'replace',
+          id: 'n1',
+          base: b(s, 'n1'),
+          node: { kind: 'para', text: 'New title' }
+        }
+      ]
+    } as WriteInput);
+  const predicting = (predict: (before: any, intended: any) => any) => {
+    const s = fresh();
+    return {
+      ...s,
+      pack: { ...s.pack, reconcile: { ...s.pack.reconcile, predict } }
+    };
+  };
+
+  it('refuses before anything is applied when the composed change would not land as intended', () => {
+    const s = predicting((before) => before.nf);
+    const r = prepareWrite(s, retitle(s));
+
+    expect(r.outcome === 'refused' && r.refusal.invariant).toBe('proof-failed');
+  });
+
+  it('verifies the change when it would land as intended', () => {
+    const s = predicting((_before, intended) => intended.nf);
+
+    expect(prepareWrite(s, retitle(s)).outcome).toBe('verified');
+  });
+
+  it("refuses before anything is applied when the composed change would take over a person's pending change", () => {
+    const s = predicting((_before, intended) => {
+      const nf = JSON.parse(JSON.stringify(intended.nf));
+      const find = (node: any): any =>
+        node?.id === 'n1'
+          ? node
+          : Object.values(node ?? {}).reduce(
+              (hit: any, v) =>
+                hit ?? (v && typeof v === 'object' ? find(v) : undefined),
+              undefined
+            );
+      find(nf.root).pending = { kind: 'insertion', by: 'Ann' };
+      return nf;
+    });
+    const r = prepareWrite(s, retitle(s));
+
+    expect(r.outcome === 'refused' && r.refusal.invariant).toBe('proof-failed');
+  });
+});
+
 describe('write: verified changes', () => {
   it('a stub written back stands for the node as read (matrix-2 T10: a section copied from a stubs read)', () => {
     const s = fresh();
@@ -623,6 +678,23 @@ describe('write: conflicts', () => {
       expect.objectContaining({ id: 'n3', text: 'one' })
     );
     expect(r.checks.slice(-1)).toEqual([{ name: 'base-hashes', pass: false }]);
+  });
+
+  it('returns the formats the changed node now uses, as a read does (Hilb post-v9 B4, cd0d2c33)', () => {
+    const s = fresh();
+    const style = String(s.view.get('n4')?.style);
+    const r = prepareWrite(
+      s,
+      write({
+        intent: 'x',
+        scope: { ids: ['n4'] },
+        changes: [{ kind: 'delete', id: 'n4', base: 'stale' }]
+      })
+    );
+
+    expect(r.outcome === 'conflict' && r.conflict.referencedFormats).toEqual({
+      [style]: { base: expect.any(String), ...s.view.nf.formats[style] }
+    });
   });
 
   // the captain's split: a section's conflict carried the whole section (60k tokens)

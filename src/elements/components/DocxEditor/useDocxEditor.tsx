@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { CardTableEntry } from '../../../robin/document/cardTable';
+import { cardTableIn, restoreCards, stampCardTable } from './robinCardTable';
 import { installHistoryRouting } from './historyRouting';
 import { featheryWindow } from '../../../utils/browser';
 import { dynamicImport } from '../../../integrations/utils';
@@ -35,6 +37,7 @@ const BUILT_IN_SYNCFUSION_LICENSE_KEY =
 /** Snapshot synchronously, with a separate archive for overlapping saves. */
 export function exportDocxSnapshot(editor: any): Promise<Blob> {
   if (!editor) return Promise.reject(new Error('Editor is not ready'));
+  stampCardTable(editor);
   const Writer = editor.wordExportModule?.constructor;
   if (!Writer || Writer === Object) return editor.saveAsBlob('Docx');
   const writer = new Writer();
@@ -1231,6 +1234,7 @@ export function useDocxEditor({
         // reading the document here sees the previous (often blank) one.
         // Registered before the open so a fast load cannot outrun the listener.
         const documentLoaded = waitForDocumentLoad(liveEditor);
+        let cardTable: CardTableEntry[] = [];
         try {
           if ('sfdt' in openSource) {
             // A restored version can carry this exact clean snapshot. Opening
@@ -1240,6 +1244,7 @@ export function useDocxEditor({
           } else {
             const buffer = await resolveBuffer(openSource);
             if (cancelled) return;
+            cardTable = cardTableIn(buffer);
             if (!serviceUrl) {
               throw new Error('serviceUrl is required to open a .docx');
             }
@@ -1277,6 +1282,7 @@ export function useDocxEditor({
         // for every document, not just bound ones: a template authored in Word
         // hits it too. See contentControlSafety.
         stampMissingContentControlColors(liveEditor);
+        restoreCards(liveEditor, cardTable);
         // Opening SFDT can copy trackChanges=true onto the editor (and the
         // container, via documentChange). Put the review host back in user
         // mode before keystrokes can land.

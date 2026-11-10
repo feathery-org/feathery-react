@@ -42,6 +42,7 @@ import type {
   LaidOutPage,
   Residue
 } from './pack';
+import { PREDICTED_TURN } from './pack';
 import {
   FormatEntry,
   NfNode,
@@ -56,6 +57,7 @@ import {
   Placement,
   walk
 } from './tree';
+import { authorshipKept, compareWithNormalizations } from './proof';
 import { CheckRecord, CheckRunner, problem, runInvariants } from './verifier';
 import {
   bulkQuery,
@@ -1063,6 +1065,37 @@ export function prepareWrite(
     removed: diff.removed,
     created: diff.created
   });
+  // a dry run answers whether the write lands, so a change the editor cannot hold is refused here
+  const predicted = runner.failed
+    ? null
+    : pack.reconcile.predict?.(view, after);
+  if (predicted)
+    runner.run('landing', () => {
+      const { accept } = pack.projections;
+      const landing = compareWithNormalizations(
+        pack,
+        accept(predicted),
+        accept(working)
+      );
+      const othersLost = authorshipKept(pack, {
+        before: view.nf,
+        live: predicted,
+        turnId: PREDICTED_TURN
+      });
+      return landing.equal && !othersLost.length
+        ? []
+        : [
+            problem(
+              'proof-failed',
+              'The change would not land in the editor exactly as composed, so nothing was applied.',
+              {
+                detail: { landed: landing.diff, authorship: othersLost },
+                read: [...(pack.methodCards ?? [])],
+                retry: 'modified_input'
+              }
+            )
+          ];
+    });
   if (runner.failed) return refused();
 
   const facts = [...factsFor.map((f) => f()), ...finalizerFacts];

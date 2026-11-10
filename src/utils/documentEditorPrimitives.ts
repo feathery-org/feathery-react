@@ -928,6 +928,15 @@ export function installExportContentControlRecovery(editor: LiveEditor): void {
       const optimized = module.keywordIndex === 1;
       const inlines = paragraph[optimized ? 'i' : 'inlines'];
       const open = module.inlineContentControls.pop();
+      // Keep a table's own wrapper off its cells
+      if (
+        open.props ===
+        widget?.containerWidget?.ownerTable?.contentControlProperties
+      ) {
+        for (const inline of open.inlines)
+          module.AddInlineToBlock(inlines, inline);
+        continue;
+      }
       module.AddInlineToBlock(inlines, {
         [optimized ? 'i' : 'inlines']: open.inlines,
         [optimized ? 'ccp' : 'contentControlProperties']:

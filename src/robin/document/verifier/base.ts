@@ -195,7 +195,26 @@ export function checkBases(
   };
   write.changes.forEach(check);
   if (!stale.size && !bulk.length && !formats.length) return null;
-  return { stale: [...stale.values()], bulk, formats, outlineHash };
+  // the formats the changed nodes now name, so a change made since the read shows without a re-read
+  const referenced: NonNullable<Conflict['referencedFormats']> = {};
+  for (const id of referencedFormats(
+    pack,
+    [...stale.values()].map((s) => s.live)
+  ))
+    if (view.nf.formats[id])
+      referenced[id] = {
+        base: baseOf(view.nf.formats[id]),
+        ...view.nf.formats[id]
+      };
+  return {
+    stale: [...stale.values()],
+    bulk,
+    formats,
+    ...(Object.keys(referenced).length
+      ? { referencedFormats: referenced }
+      : {}),
+    outlineHash
+  };
 }
 
 /** A one-line message for a conflict result. */

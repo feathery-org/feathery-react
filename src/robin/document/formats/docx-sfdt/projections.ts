@@ -751,6 +751,69 @@ export const N15: Normalization = {
     })
 };
 
+/** N16: line spacing with no type is `Multiple` whatever its style says, as the editor reopens it */
+export const N16: Normalization = {
+  name: 'N16',
+  apply: (nf) =>
+    eachNode(nf, (n, _s, out) => {
+      if (n.kind !== KIND.paragraph || typeof n.style !== 'string')
+        return false;
+      const entry = out.formats[n.style];
+      if (!entry || !('lineSpacing' in entry) || 'lineSpacingType' in entry)
+        return false;
+      return rewriteRef(out, n, 'style', (e) => ({
+        ...e,
+        lineSpacingType: 'Multiple'
+      }));
+    })
+};
+
+/** N17: a section that does not restart its page numbering has no starting number, as the editor exports it */
+export const N17: Normalization = {
+  name: 'N17',
+  apply: (nf) =>
+    eachNode(nf, (n, _s, out) => {
+      if (n.kind !== KIND.section || typeof n.style !== 'string') return false;
+      const entry = out.formats[n.style];
+      if (
+        !entry ||
+        entry.restartPageNumbering ||
+        !('restartPageNumbering' in entry || 'pageStartingNumber' in entry)
+      )
+        return false;
+      return rewriteRef(out, n, 'style', (e) => {
+        delete e.restartPageNumbering;
+        delete e.pageStartingNumber;
+        return e;
+      });
+    })
+};
+
+/** N18: a paragraph list copied from its style is no list of its own, as the editor copies it on typing */
+export const N18: Normalization = {
+  name: 'N18',
+  apply: (nf) =>
+    eachNode(nf, (n, _s, out) => {
+      if (n.kind !== KIND.paragraph || typeof n.style !== 'string')
+        return false;
+      const entry = out.formats[n.style];
+      const own = entry?.listFormat;
+      if (!isObject(own) || own.listId === undefined) return false;
+      const fromStyle = inheritedParagraphValue(
+        out,
+        entry.styleName,
+        'listFormat'
+      );
+      if (
+        !isObject(fromStyle) ||
+        fromStyle.listId !== own.listId ||
+        (fromStyle.listLevelNumber ?? 0) !== (own.listLevelNumber ?? 0)
+      )
+        return false;
+      return rewriteRef(out, n, 'style', (e) => ({ ...e, listFormat: {} }));
+    })
+};
+
 const ROW_UNDO_DEFAULTS = [
   'gridBefore',
   'gridAfter',
@@ -785,6 +848,26 @@ const entryOf = (nf: NormalForm, ref: unknown): Obj | null =>
     ? ref
     : null;
 
+/** The paragraph property a named style gives (through `basedOn`), else the document default */
+function inheritedParagraphValue(
+  nf: NormalForm,
+  styleName: unknown,
+  key: string
+): unknown {
+  const styles = new Map(
+    arr<Obj>(nf.root.styles).map((s) => [String(s.name), s] as const)
+  );
+  const seen = new Set<string>();
+  let style = styles.get(String(styleName ?? 'Normal'));
+  while (style && !seen.has(String(style.name))) {
+    seen.add(String(style.name));
+    const pf = entryOf(nf, style.paragraphFormat);
+    if (pf && key in pf) return pf[key];
+    style = styles.get(String(style.basedOn));
+  }
+  return (entryOf(nf, nf.root.paragraphFormat) ?? {})[key];
+}
+
 /**
  * N9 (undo only, measured in the headless lane): undoing a native paragraph property writes the
  * previous value back explicitly, where before it was inherited (an explicit `textAlignment: Left`
@@ -793,41 +876,26 @@ const entryOf = (nf: NormalForm, ref: unknown): Obj | null =>
  */
 export const N9: Normalization = {
   name: 'N9',
-  apply: (nf) => {
-    const styles = new Map(
-      arr<Obj>(nf.root.styles).map((s) => [String(s.name), s] as const)
-    );
-    const documentDefault = entryOf(nf, nf.root.paragraphFormat) ?? {};
-    const inherited = (styleName: unknown, key: string): unknown => {
-      const seen = new Set<string>();
-      let style = styles.get(String(styleName ?? 'Normal'));
-      while (style && !seen.has(String(style.name))) {
-        seen.add(String(style.name));
-        const pf = entryOf(nf, style.paragraphFormat);
-        if (pf && key in pf) return pf[key];
-        style = styles.get(String(style.basedOn));
-      }
-      return documentDefault[key];
-    };
-    return eachNode(nf, (n, _s, out) => {
+  apply: (nf) =>
+    eachNode(nf, (n, _s, out) => {
       if (n.kind !== KIND.paragraph || typeof n.style !== 'string')
         return false;
       const entry = out.formats[n.style];
       if (!entry) return false;
-      const drop = NATIVE_SETTERS.paragraph.filter(
-        (k) =>
+      const drop = NATIVE_SETTERS.paragraph.filter((k) => {
+        const inherited = inheritedParagraphValue(nf, entry.styleName, k);
+        return (
           k in entry &&
-          inherited(entry.styleName, k) !== undefined &&
-          JSON.stringify(entry[k]) ===
-            JSON.stringify(inherited(entry.styleName, k))
-      );
+          inherited !== undefined &&
+          JSON.stringify(entry[k]) === JSON.stringify(inherited)
+        );
+      });
       if (!drop.length) return false;
       return rewriteRef(out, n, 'style', (e) => {
         for (const k of drop) delete e[k];
         return e;
       });
-    });
-  }
+    })
 };
 
 /**
@@ -891,7 +959,10 @@ export const NORMALIZATIONS: readonly Normalization[] = [
   N12,
   N13,
   N14,
-  N15
+  N15,
+  N16,
+  N17,
+  N18
 ];
 export const UNDO_NORMALIZATIONS: readonly Normalization[] = [N7, N9];
 

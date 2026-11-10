@@ -52,6 +52,7 @@
  */
 import type {
   Fact,
+  PendingCard,
   PropertySource,
   RefusalProblem,
   Span,
@@ -432,8 +433,12 @@ export interface PlanContext {
   derived?: readonly string[];
 }
 
+/** The change set a predicted document's own revisions are composed under */
+export const PREDICTED_TURN = 'predicted';
+
 export interface Reconcile {
   plan(ctx: PlanContext): CommitPlan;
+  predict?(before: DocumentView, intended: DocumentView): NormalForm | null;
   /**
    * Run the steps of a `grouped` plan with `editor` history as the editor's one undo group (a
    * change and the derived content the editor refreshes after it), so one undo takes back both.
@@ -520,6 +525,7 @@ export interface Pack {
   } | null;
   /** Each page the editor lays out (`EditorHost.pages`), in layout order */
   pages?(view: DocumentView, native: unknown): LaidOutPage[] | null;
+  cards?(view: DocumentView, residue: Residue): PendingCard[];
 }
 
 const REQUIRED_FUNCTIONS: Array<[string, (p: Pack) => unknown]> = [

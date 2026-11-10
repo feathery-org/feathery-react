@@ -90,6 +90,15 @@ const api = {
       inlines: [],
       props: { type: 'Text', title: 'stale', tag: 'stale' }
     }),
+  /** Mark a block control inline, as the editor does once its end marker is deleted */
+  relabelInline(tag: string): void {
+    const control = (live() as any).documentHelper.contentControlCollection.find(
+      (candidate: any) => candidate.contentControlProperties?.tag === tag
+    );
+    control.contentControlWidgetType = 'Inline';
+    control.reference.contentControlWidgetType = 'Inline';
+    control.contentControlProperties.contentControlWidgetType = 'Inline';
+  },
   async docx(): Promise<number> {
     const blob: Blob = await (live() as any).saveAsBlob('Docx');
     return blob.size;

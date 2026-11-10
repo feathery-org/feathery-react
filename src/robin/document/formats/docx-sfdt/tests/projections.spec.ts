@@ -21,6 +21,9 @@ import {
   N13,
   N14,
   N15,
+  N16,
+  N17,
+  N18,
   NORMALIZATIONS,
   UNDO_NORMALIZATIONS,
   accept,
@@ -30,6 +33,7 @@ import {
   reject
 } from '../projections';
 import { markSubtree } from '../reconcile';
+import { pendingCards } from '../adapter/revisions';
 
 const native = fs.readFileSync(path.join(__dirname, 'corpus', 'flagship-v4b.sfdt.json'), 'utf8');
 const fresh = () => toNormalForm(native).nf;
@@ -431,6 +435,58 @@ describe('normalizations (each a true positive and a true negative)', () => {
     expect((out.find((n) => n.id === 'last') as NfNode).style).toBe('f1');
   });
 
+  describe('editor re-encodings (Hilb post-v9 B1)', () => {
+    const nodeFormat = (d: NormalForm, id: string) => d.formats[String((all(d).find((n) => n.id === id) as NfNode).style)];
+    const withFormat = (nf: NormalForm, id: string, format: Record<string, unknown>) => {
+      const d = JSON.parse(JSON.stringify(nf)) as NormalForm;
+      d.formats.explicit = format;
+      (all(d).find((n) => n.id === id) as NfNode).style = 'explicit';
+      return d;
+    };
+
+    it('N16 reads line spacing with no type as Multiple (95d7640e)', () => {
+      const nf = fresh();
+      const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string') as NfNode;
+      const base = nf.formats[String(para.style)];
+      const spacing = (format: Record<string, unknown>) => nodeFormat(N16.apply(withFormat(nf, para.id, { ...base, ...format })), para.id);
+
+      expect(spacing({ lineSpacing: 1.15 })).toEqual(spacing({ lineSpacing: 1.15, lineSpacingType: 'Multiple' }));
+      expect(spacing({ lineSpacing: 1.15 })).not.toEqual(spacing({ lineSpacing: 1.15, lineSpacingType: 'Exactly' }));
+    });
+
+    it('N16 reads it as Multiple even when the paragraph style sets a type', () => {
+      const nf = fresh();
+      (nf.root.styles as Array<Record<string, unknown>>).push({ name: 'Tight', type: 'Paragraph', basedOn: 'Normal', paragraphFormat: { lineSpacingType: 'AtLeast' } });
+      const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string') as NfNode;
+      const spacing = (format: Record<string, unknown>) => nodeFormat(N16.apply(withFormat(nf, para.id, { styleName: 'Tight', ...format })), para.id);
+
+      expect(spacing({ lineSpacing: 12 })).toEqual(spacing({ lineSpacing: 12, lineSpacingType: 'Multiple' }));
+      expect(spacing({ lineSpacing: 12 })).not.toEqual(spacing({ lineSpacing: 12, lineSpacingType: 'AtLeast' }));
+    });
+
+    it('N17 drops the starting number of a section that does not restart its numbering (14f494e8)', () => {
+      const nf = fresh();
+      const section = (nf.root.sections as NfNode[])[0];
+      const base = nf.formats[String(section.style)];
+      const numbering = (format: Record<string, unknown>) => nodeFormat(N17.apply(withFormat(nf, section.id, { ...base, ...format })), section.id);
+
+      expect(numbering({ restartPageNumbering: false, pageStartingNumber: 1 })).toEqual(numbering({}));
+      expect(numbering({ restartPageNumbering: true, pageStartingNumber: 1 })).not.toEqual(numbering({}));
+    });
+
+    it('N18 reads a paragraph list copied from its style as no list of its own (d0605291)', () => {
+      const nf = fresh();
+      (nf.root.styles as Array<Record<string, unknown>>).push({ name: 'List Paragraph', type: 'Paragraph', basedOn: 'Normal', paragraphFormat: { listFormat: { listId: 7, nsid: 223178203 } } });
+      const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string') as NfNode;
+      const list = (listFormat: Record<string, unknown>) =>
+        nodeFormat(N18.apply(withFormat(nf, para.id, { styleName: 'List Paragraph', listFormat })), para.id);
+
+      expect(list({ listId: 7, listLevelNumber: 0, nsid: 223178203 })).toEqual(list({}));
+      expect(list({ listId: 7, listLevelNumber: 1, nsid: 223178203 })).not.toEqual(list({}));
+      expect(list({ listId: 3, listLevelNumber: 0 })).not.toEqual(list({}));
+    });
+  });
+
   it('N14 keeps a shared run format apart when its runs sit in paragraphs of different styles', () => {
     const nf = fresh();
     const normals = all(nf).filter((n) => n.kind === 'paragraph' && typeof n.style === 'string' && nf.formats[String(n.style)]?.styleName === 'Normal');
@@ -459,9 +515,18 @@ describe('authorship, residue and the expected rejection', () => {
     const nf = fresh();
     const row = all(nf).find((n) => n.kind === 'row') as NfNode;
     row.pending = { ...ins('A'), revisions: [ins('A'), del('B')] };
-    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Insertion by Robin, then Deletion by Robin]');
+    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Insertion, card A, then Deletion, card B]');
     row.pending = ins('A');
-    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Insertion by Robin]');
+    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Insertion, card A]');
+  });
+
+  it('the outline names a card by its short id and a person by name (Hilb post-v9 G1)', () => {
+    const nf = fresh();
+    const row = all(nf).find((n) => n.kind === 'row') as NfNode;
+    row.pending = { kind: 'Deletion', author: 'Robin', group: '85caf0e2d4c1a9' };
+    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Deletion, card 85caf0e2]');
+    row.pending = { kind: 'Insertion', author: 'Ann' };
+    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Insertion by Ann]');
   });
 
   // Another card's inserted heading, then this turn's write over it, as the live document reads back
@@ -529,5 +594,34 @@ describe('authorship, residue and the expected rejection', () => {
     const restored = expectedRejection(before, intended);
     expect((all(restored).find((n) => n.id === run.id) as NfNode).style).toBe('boldNow');
     expect(restored.formats.boldNow).toEqual({ bold: true });
+  });
+});
+
+describe('pending cards (Hilb post-v9 G1)', () => {
+  const tagged = (changeSetId: string, intent?: string) =>
+    JSON.stringify({ v: 1, source: 'robin', changeSetId, group: 'robin', ...(intent ? { intent } : {}) });
+
+  it('lists each of Robin\'s cards once, in the order the revisions table first names it, with its intent', () => {
+    const cards = pendingCards([
+      { revisionId: '1', revisionType: 'Deletion', author: 'Robin', date: '2026-11-06T15:03:00Z', customData: tagged('card-one', 'Remove the premiums') },
+      { revisionId: '2', revisionType: 'Insertion', author: 'Ann', date: '2026-11-06T15:04:00Z' },
+      { revisionId: '3', revisionType: 'Insertion', author: 'Robin', customData: tagged('card-two') },
+      { revisionId: '4', revisionType: 'Insertion', author: 'Robin', customData: tagged('card-one', 'Remove the premiums') }
+    ]);
+
+    expect(cards).toEqual([
+      { id: 'card-one', short: 'card-one', intent: 'Remove the premiums', date: '2026-11-06T15:03:00Z' },
+      { id: 'card-two', short: 'card-two' }
+    ]);
+    expect(pendingCards(undefined)).toEqual([]);
+  });
+
+  it('lists the cards oldest first when the table names a newer one first, as a reopened file does', () => {
+    const cards = pendingCards([
+      { revisionId: '1', revisionType: 'Insertion', author: 'Robin', date: '2026-11-06T15:09:00Z', customData: tagged('card-new') },
+      { revisionId: '2', revisionType: 'Deletion', author: 'Robin', date: '2026-11-06T15:03:00Z', customData: tagged('card-old') }
+    ]);
+
+    expect(cards.map((card) => card.id)).toEqual(['card-old', 'card-new']);
   });
 });

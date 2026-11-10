@@ -41,9 +41,11 @@ import {
 } from '../DocxEditor/docxDirtyRegistry';
 import { mountRobinDocument } from '../DocxEditor/robinDocument';
 import {
+  EditorFacts,
   onRobinHostChange,
   robinHostMounted
 } from '../../../robin/document/mounts';
+import type { EditorToolbarOutcome } from '../../../robin/document/envelope';
 import { DocxHistoryHost, DocxSaveMeta } from '../DocxEditor/history/types';
 import { fetchDocumentBytes } from '../../../utils/documentPersistence';
 import { envelopeDownloadName } from './downloadFileName';
@@ -686,6 +688,23 @@ export default function DocumentEditorContainer({
       // A grouping failure must not break the opened document.
     }
   }, [reviewChanges]);
+  // What Robin can tell the person about saving and the toolbar's buttons
+  const robinEditorFacts = useMemo<EditorFacts>(() => {
+    const toolbar: EditorToolbarOutcome[] = [];
+    if (!readOnly) toolbar.push(savesToField ? 'save_to_field' : 'save');
+    if (offersDownload && !savesToField) toolbar.push('download');
+    if (terminalAction === 'sign') toolbar.push('sign');
+    if (terminalAction === 'draft' || offersDraft)
+      toolbar.push('docusign_draft');
+    return { autosaves: !!historyHost && !readOnly, toolbar };
+  }, [
+    readOnly,
+    savesToField,
+    offersDownload,
+    terminalAction,
+    offersDraft,
+    historyHost
+  ]);
   // Robin's document engine: where the form's Robin root is mounted, each opened document is
   // mounted under this form instance so the form context's `liveDocument` accessor reaches it, its
   // session created at open. A regenerate or a new envelope is a new mount (a new editor id), and
@@ -713,7 +732,8 @@ export default function DocumentEditorContainer({
       formKey: formId,
       slot: containerId,
       editor: liveEditor,
-      envelopeId
+      envelopeId,
+      facts: robinEditorFacts
     });
   }, [
     assistantEnabled,
@@ -722,7 +742,8 @@ export default function DocumentEditorContainer({
     openedDocuments,
     formId,
     containerId,
-    envelopeId
+    envelopeId,
+    robinEditorFacts
   ]);
   useEffect(
     () => () => {

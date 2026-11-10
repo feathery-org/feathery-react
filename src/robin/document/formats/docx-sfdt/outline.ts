@@ -7,9 +7,9 @@
  */
 import type { DocumentView, FeatureMark } from '../../pack';
 import type { NfNode } from '../../tree';
-import { hasPendingInside } from '../../tree';
+import { hasPendingInside, walk } from '../../tree';
 import { HEADER_FOOTER, INLINE_KINDS, KIND } from './adapter/keys';
-import { revisionsIn } from './adapter/revisions';
+import { revisionsIn, shortCardId } from './adapter/revisions';
 import { bindingMarks } from './features/formula';
 import { sectionMarkerMark } from './features/sectionMarker';
 import { SECTION_BREAKS } from './schema';
@@ -69,20 +69,46 @@ const preview = (text: string): string => {
 const frameText = (node: NfNode): string =>
   isObject(node.textFrame) ? blocksText(node.textFrame.blocks) : '';
 
+/** Whose change a revision is: Robin's by its card, anyone else's by name */
+const whose = (r: { group?: string; author?: string | null }): string =>
+  r.group ? `card ${shortCardId(r.group)}` : r.author ? `by ${r.author}` : '';
+
+// A later card's deletion stacked on an insertion shows as both
+const describe = (pending: unknown): string =>
+  revisionsIn(pending)
+    .map((r) => {
+      const who = whose(r);
+      return who.startsWith('card')
+        ? `${r.kind}, ${who}`
+        : `${r.kind} ${who}`.trim();
+    })
+    .join(', then ');
+
 const pendingTag = (n: NfNode): string => {
   if (!isObject(n.pending)) return '';
-  const p = n.pending;
-  // A later card's deletion stacked on an insertion shows as both
-  const parts = revisionsIn(p).map((r) =>
-    [r.kind, r.author && `by ${r.author}`].filter(Boolean).join(' ')
-  );
-  return ` [pending ${parts.join(', then ')}${
-    isObject(p.mark) ? `${parts.length ? ', ' : ''}mark ${p.mark.kind}` : ''
-  }]`;
+  const own = describe(n.pending);
+  const mark = isObject(n.pending.mark) ? describe(n.pending.mark) : '';
+  if (!own) return mark ? ` [mark pending ${mark}]` : '';
+  return ` [pending ${own}${mark ? `; mark pending ${mark}` : ''}]`;
 };
 
-const trackedTag = (n: NfNode): string =>
-  hasPendingInside(n, docxTree) ? ' (tracked changes inside)' : '';
+/** The cards and people whose changes are pending below a node, or empty when none are */
+function changesInside(node: NfNode): string {
+  if (!hasPendingInside(node, docxTree)) return '';
+  const who = new Set<string>();
+  walk(node, docxTree, ({ node: n }) => {
+    if (n === node || !isObject(n.pending)) return;
+    for (const r of [...revisionsIn(n.pending), ...revisionsIn(n.pending.mark)])
+      who.add(whose(r));
+  });
+  const named = [...who].filter(Boolean);
+  return `tracked changes inside${named.length ? `: ${named.join(', ')}` : ''}`;
+}
+
+const trackedTag = (n: NfNode): string => {
+  const inside = changesInside(n);
+  return inside ? ` (${inside})` : '';
+};
 
 function bindingsIn(node: NfNode, view: DocumentView): string[] {
   const out: string[] = [];
@@ -160,8 +186,8 @@ export function detail(node: NfNode, view: DocumentView): string {
       // title before the begin stays the document's: the refusal covers only the field)
       if (viewToc(view)?.paragraphs.includes(node))
         flags.push('toc (refreshed by the editor)');
-      if (hasPendingInside(node, docxTree))
-        flags.push('tracked changes inside');
+      const inside = changesInside(node);
+      if (inside) flags.push(inside);
       const marks = sectionMarkerMark(node, ownText(node)).map(
         (m) => `section-marker ${m.value}`
       );
@@ -200,8 +226,8 @@ export function detail(node: NfNode, view: DocumentView): string {
         formats[node.style]?.isHeader === true
       )
         rowFlags.push('header');
-      if (hasPendingInside(node, docxTree))
-        rowFlags.push('tracked changes inside');
+      const insideRow = changesInside(node);
+      if (insideRow) rowFlags.push(insideRow);
       return `"${cells}"${
         rowFlags.length ? ` (${rowFlags.join('; ')})` : ''
       }${pendingTag(node)}${
