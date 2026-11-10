@@ -1,6 +1,7 @@
 import { featheryDoc, featheryWindow } from '../../../../utils/browser';
 import { deepClone } from '../core/opc/deepClone';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import {
   reconcileSlideSvg,
   renderSlideSvg,
@@ -618,26 +619,35 @@ export function SvgSlide({
     const host = hostRef.current;
     if (!host) return;
     let frame = 0;
+    const refit = () => {
+      if (!fitToContainer || !deck || !onFitZoomChange) return;
+      const slide = deck.slides[activeSlide];
+      if (!slide) return;
+      const size = deck.size;
+      const fitted = fitSlideZoom(
+        host.clientWidth,
+        host.clientHeight,
+        size.cx,
+        size.cy
+      );
+      if (fitted !== null) onFitZoomChange(fitted);
+    };
     const update = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         setLayoutTick((t) => t + 1);
-        if (!fitToContainer || !deck || !onFitZoomChange) return;
-        const slide = deck.slides[activeSlide];
-        if (!slide) return;
-        const size = deck.size;
-        const fitted = fitSlideZoom(
-          host.clientWidth,
-          host.clientHeight,
-          size.cx,
-          size.cy
-        );
-        if (fitted !== null) onFitZoomChange(fitted);
+        refit();
       });
     };
     update();
     const observer =
-      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(() => {
+            // Refit before paint so a resize never shows a frame at the old zoom
+            flushSync(refit);
+            update();
+          });
     observer?.observe(host);
     return () => {
       cancelAnimationFrame(frame);

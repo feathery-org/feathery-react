@@ -220,7 +220,7 @@ describe('StyledContainer document editor', () => {
       );
 
       expect(container.querySelector('.styled-container')).toHaveStyle({
-        height: '100%',
+        height: 'auto',
         maxHeight: '100%',
         minHeight: '0',
         overflow: 'hidden',
@@ -233,6 +233,29 @@ describe('StyledContainer document editor', () => {
       });
     }
   );
+
+  it('caps a fill-height document editor step root at the screen height', () => {
+    const { container } = render(
+      <StyledContainer
+        node={{
+          ...baseNode,
+          height: 'fill',
+          parent: undefined,
+          children: [{}],
+          properties: { document_editor: true },
+          styles: { axis: 'column', width: 'fill', width_unit: 'fill' }
+        }}
+        editMode
+        breakpoint={480}
+      />
+    );
+
+    expect(container.querySelector('.styled-container')).toHaveStyle({
+      height: 'auto',
+      maxHeight: '100vh',
+      minHeight: '0'
+    });
+  });
 
   it('keeps a fit-height document editor content-sized', () => {
     const { container } = render(
@@ -341,7 +364,7 @@ describe('StyledContainer document editor', () => {
       />
     );
     expect(container.querySelector('.styled-container')).toHaveStyle({
-      height: '100%',
+      height: 'auto',
       maxHeight: '100%',
       minHeight: '0',
       overflow: 'hidden'

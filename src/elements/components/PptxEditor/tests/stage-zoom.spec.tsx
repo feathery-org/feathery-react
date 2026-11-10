@@ -151,11 +151,7 @@ it('refits the loaded slide when its host changes size', async () => {
     expect(zoomOf(mounted.host)).toBe(fitSlideZoom(800, 300, cx, cy));
 
     stageHeight = 700;
-    await act(async () => resize([], {} as ResizeObserver));
-    await act(
-      async () =>
-        new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-    );
+    act(() => resize([], {} as ResizeObserver));
     expect(zoomOf(mounted.host)).toBe(fitSlideZoom(800, 700, cx, cy));
   } finally {
     global.ResizeObserver = originalObserver;

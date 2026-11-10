@@ -357,7 +357,7 @@ export const getContainerStyles = (
           // The document editor owns scrolling inside its viewport. Its slide
           // stage must not give a fill-height container an intrinsic minimum
           // that stretches the form beyond the available parent height.
-          s.height = '100%';
+          if (!node.parent) s.maxHeight = '100vh';
           s.minHeight = 0;
           s.overflow = 'hidden';
           if (parentAxis === 'row') {
