@@ -577,6 +577,9 @@ function TrackedChangeGroups({
     isAccept: boolean,
     all = false
   ) => {
+    // The rail lingers after the last edit to show a stall notice, so Accept/
+    // Reject all can fire with nothing left; resolving none must not cut a version.
+    if (!groupViews.length) return Promise.resolve();
     const revisions = groupViews.flatMap((group) =>
       group.chips.flatMap(chipRevisions)
     );

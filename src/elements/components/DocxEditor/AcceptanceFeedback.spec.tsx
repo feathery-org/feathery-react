@@ -215,3 +215,40 @@ it('does not apply a deferred action to an editor that has been replaced', async
   await flushDeferredResolve();
   expect(revision.accept).not.toHaveBeenCalled();
 });
+
+it('does not cut an empty version when Accept all is pressed on the empty rail after a failed save', async () => {
+  const revision = makeRevision({ revisionID: 'r1' });
+  const revisions = [revision];
+  const editor = {
+    ...makeEditor(revisions),
+    serialize: () => '{"sections":[]}'
+  };
+  revision.accept.mockImplementation(() => revisions.splice(0, 1));
+  const fail = jest.spyOn(console, 'debug').mockImplementation(() => {});
+  // The edit applies natively, then persisting that acceptance fails.
+  const onAccept = jest
+    .fn()
+    .mockImplementationOnce(async (_acceptance: any, accept: () => void) => {
+      accept();
+      throw new Error('Save failed');
+    });
+  try {
+    render(
+      <TrackedChangeGroups editor={editor} onAcceptTrackedChanges={onAccept} />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Accept all' }));
+    await flushDeferredResolve();
+    expect(revision.accept).toHaveBeenCalledTimes(1);
+    // contentChange empties the rail; the stall notice keeps it mounted.
+    act(() => editor.emit('contentChange'));
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Could not finish accepting'
+    );
+    onAccept.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Accept all' }));
+    await flushDeferredResolve();
+    expect(onAccept).not.toHaveBeenCalled();
+  } finally {
+    fail.mockRestore();
+  }
+});
