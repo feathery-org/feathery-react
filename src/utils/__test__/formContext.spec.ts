@@ -199,14 +199,23 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       documentIds: ['tpl-1'],
       signMethod: 'docusign',
       envelopeAction: 'open_in_editor',
-      draft: false
+      draft: false,
+      // false is a real override (no SMS), so it must not be dropped as unset
+      smsAuthentication: false
     });
     expect(flow).toHaveBeenCalledWith(
       expect.objectContaining({
         envelope_action: 'open_in_editor',
-        draft: false
+        draft: false,
+        sms_authentication: false
       })
     );
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: ['tpl-1'],
+        smsAuthentication: true
+      })
+    ).rejects.toThrow('smsAuthentication requires');
   });
 
   it('routes the editor + signer options through the form flow with a built action', async () => {

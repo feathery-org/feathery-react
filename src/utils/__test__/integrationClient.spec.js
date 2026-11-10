@@ -1,5 +1,5 @@
 import IntegrationClient from '../featheryClient/integrationClient';
-import { fieldValues, initInfo, initState } from '../init';
+import { fieldValues, initInfo } from '../init';
 import {
   getApiUrl,
   getStaticUrl,
@@ -1014,9 +1014,13 @@ describe('IntegrationClient', () => {
         email_subject: 'Please sign this',
         email_blurb: 'Two signatures needed.',
         notification: { reminders: { enabled: true, delay: 2, frequency: 3 } },
+        sms_authentication: false,
+        source_element_id: 'button-1',
         custom_fields: { account_submission_id: 'account-123' }
       });
       let body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.sms_authentication).toBe(false);
+      expect(body.source_element_id).toBe('button-1');
       expect(body.email_subject).toBe('Please sign this');
       expect(body.email_blurb).toBe('Two signatures needed.');
       expect(body.notification).toEqual({
@@ -1037,6 +1041,8 @@ describe('IntegrationClient', () => {
       expect(body.email_subject).toBeUndefined();
       expect(body.email_blurb).toBeUndefined();
       expect(body.notification).toBeUndefined();
+      expect(body.sms_authentication).toBeUndefined();
+      expect(body.source_element_id).toBeUndefined();
       expect(body.custom_fields).toBeUndefined();
     });
 
@@ -1098,89 +1104,8 @@ describe('IntegrationClient', () => {
       delete fieldValues.buyer_field;
     });
 
-    it('challenges a docusign signer by SMS only when their mapped phone has a value', async () => {
+    it('surfaces a rejected SMS phone as the field message', async () => {
       const integrationClient = new IntegrationClient('test_form_key');
-      Object.assign(fieldValues, {
-        buyer_field: 'buyer@example.com',
-        buyer_phone: '15551234567',
-        sg_phone: '6591234567',
-        empty_repeat_phone: ['']
-      });
-      initState.formSchemas = {
-        test_form_key: {
-          steps: [
-            {
-              servar_fields: [
-                { servar: { key: 'sg_phone', type: 'phone_number' } }
-              ]
-            }
-          ]
-        }
-      };
-      const signer = {
-        document_id: 'doc1',
-        role_id: 'role-1',
-        field_key: 'buyer_field'
-      };
-      const cases = [
-        [
-          { sms_authentication: true, phone_field_key: 'buyer_phone' },
-          '15551234567'
-        ],
-        // A phone field stores the country code without '+'; 10 digits would
-        // otherwise read as a US number.
-        [
-          { sms_authentication: true, phone_field_key: 'sg_phone' },
-          '+6591234567'
-        ],
-        [
-          { sms_authentication: true, phone_field_key: 'empty_repeat_phone' },
-          undefined
-        ],
-        [
-          { sms_authentication: false, phone_field_key: 'buyer_phone' },
-          undefined
-        ],
-        // A logic-rule phone wins over the mapped field.
-        [
-          {
-            sms_authentication: true,
-            phone_field_key: 'buyer_phone',
-            phone: '+447911123456'
-          },
-          '+447911123456'
-        ],
-        // A stale mapping on an action that never reaches DocuSign signing.
-        [
-          { sms_authentication: true, phone_field_key: 'buyer_phone' },
-          undefined,
-          { envelope_action: 'open_in_editor', editor_toolbar_actions: [] }
-        ]
-      ];
-
-      for (const [sms, phone, actionOverrides] of cases) {
-        global.fetch.mockResolvedValue({
-          ok: true,
-          json: jest
-            .fn()
-            .mockResolvedValue({ docusign_envelope_id: 'ds-1', status: 'sent' })
-        });
-
-        await integrationClient.generateEnvelopes({
-          documents: ['doc1'],
-          run_async: false,
-          sign_method: 'docusign',
-          envelope_signers: [{ ...signer, ...sms }],
-          ...actionOverrides
-        });
-
-        const calls = global.fetch.mock.calls;
-        const body = JSON.parse(calls[calls.length - 1][1].body);
-        expect(body.signers[0].phone).toBe(phone);
-      }
-
-      // A rejected number comes back as the field's own message, not the
-      // nested error object.
       const message =
         "The mobile number for SMS verification isn't valid (123). Enter the full number with the country code, for example 15555550100 or +1 555 555 0100.";
       global.fetch.mockResolvedValue({
@@ -1188,21 +1113,20 @@ describe('IntegrationClient', () => {
         status: 400,
         json: jest.fn().mockResolvedValue({ signers: [{ phone: [message] }] })
       });
-      const result = await integrationClient
-        .generateEnvelopes({
-          documents: ['doc1'],
-          run_async: false,
-          sign_method: 'docusign',
-          envelope_signers: [
-            {
-              ...signer,
-              sms_authentication: true,
-              phone_field_key: 'buyer_phone'
-            }
-          ]
-        })
-        .catch((error) => error);
-      expect(result?.message ?? result).toBe(message);
+      const result = await integrationClient.generateEnvelopes({
+        documents: ['doc1'],
+        run_async: false,
+        sign_method: 'docusign',
+        envelope_signers: [
+          {
+            document_id: 'doc1',
+            role_id: 'role-1',
+            email: 'buyer@example.com',
+            phone: '123'
+          }
+        ]
+      });
+      expect(result.message).toBe(message);
 
       // Editor finalize returns the same error as a top-level list.
       global.fetch.mockResolvedValue({
@@ -1213,12 +1137,6 @@ describe('IntegrationClient', () => {
       await expect(integrationClient.finalizeEnvelope('env-1')).rejects.toThrow(
         message
       );
-
-      delete fieldValues.buyer_field;
-      delete fieldValues.buyer_phone;
-      delete fieldValues.sg_phone;
-      delete fieldValues.empty_repeat_phone;
-      delete initState.formSchemas;
     });
 
     it('sends sign_method alongside the editor action when both are present', async () => {
@@ -1545,12 +1463,16 @@ describe('IntegrationClient', () => {
           email_subject: 'Signed, sealed',
           email_blurb: 'Last step.',
           notification: { expirations: { enabled: true, after: 30, warn: 5 } },
+          sms_authentication: true,
+          source_element_id: 'button-1',
           custom_fields: { account_submission_id: 'account-123' }
         },
         { envelopes: [{ envelopeId: 'env-1' }], envelopeAction: 'sign' }
       );
 
       const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.sms_authentication).toBe(true);
+      expect(body.source_element_id).toBe('button-1');
       expect(body.email_subject).toBe('Signed, sealed');
       expect(body.email_blurb).toBe('Last step.');
       expect(body.notification).toEqual({

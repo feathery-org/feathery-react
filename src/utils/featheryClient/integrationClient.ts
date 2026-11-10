@@ -48,8 +48,7 @@ import {
 import {
   editorContainerId,
   isDocusignSignAction,
-  signsViaDocusign,
-  signerPhone
+  signsViaDocusign
 } from '../document';
 import { withLinkRequestHeaders } from '../accessLinkRequest';
 
@@ -811,7 +810,6 @@ export default class IntegrationClient {
         // both the email and the flag outright.
         const email =
           (entry.email ?? fieldValues[entry.field_key])?.toString() ?? '';
-        const phone = signerPhone(entry, action, fieldValues, this.formKey);
         return {
           document_id: entry.document_id,
           // Omitted rather than nulled: the backend's role_id rejects an
@@ -826,10 +824,9 @@ export default class IntegrationClient {
             ? { signer_id: entry.signer_id.trim() }
             : {}),
           ...(entry.name ? { name: entry.name.toString() } : {}),
-          // Omitted rather than blanked: a present phone is the request to
-          // challenge that recipient by SMS, so an empty one must not read as
-          // one.
-          ...(phone ? { phone } : {}),
+          // Omitted rather than blanked, so an empty phone never stands in for
+          // the signer's mapped one.
+          ...(entry.phone ? { phone: entry.phone.toString() } : {}),
           filler: entry.filler ?? isFiller(email)
         };
       })
@@ -910,6 +907,8 @@ export default class IntegrationClient {
         emailSubject: action.email_subject,
         emailBlurb: action.email_blurb,
         notification: action.notification,
+        smsAuthentication: action.sms_authentication,
+        sourceElementId: action.source_element_id,
         ccRecipients: action.cc_recipients,
         customFields: action.custom_fields
       });
@@ -1218,6 +1217,8 @@ export default class IntegrationClient {
     emailSubject,
     emailBlurb,
     notification,
+    smsAuthentication,
+    sourceElementId,
     ccRecipients,
     customFields
   }: {
@@ -1238,6 +1239,10 @@ export default class IntegrationClient {
     emailBlurb?: string;
     // DocuSign sign only: reminder and expiration schedule.
     notification?: DocusignNotification;
+    // DocuSign sign only: overrides the integration's SMS setting for this send.
+    smsAuthentication?: boolean;
+    // The button or container that ran, for its signer phone mapping.
+    sourceElementId?: string;
     ccRecipients?: (
       | string
       | { email: string; name?: string; excluded_documents?: number[] }
@@ -1282,6 +1287,9 @@ export default class IntegrationClient {
     if (emailSubject) payload.email_subject = emailSubject;
     if (emailBlurb) payload.email_blurb = emailBlurb;
     if (notification) payload.notification = notification;
+    if (smsAuthentication !== undefined)
+      payload.sms_authentication = smsAuthentication;
+    if (sourceElementId) payload.source_element_id = sourceElementId;
     if (ccRecipients !== undefined) payload.cc_recipients = ccRecipients;
     if (customFields !== undefined) payload.custom_fields = customFields;
     if (signers.length) payload.signers = signers;
@@ -1364,6 +1372,10 @@ export default class IntegrationClient {
     if (action.email_subject) payload.email_subject = action.email_subject;
     if (action.email_blurb) payload.email_blurb = action.email_blurb;
     if (action.notification) payload.notification = action.notification;
+    if (action.sms_authentication !== undefined)
+      payload.sms_authentication = action.sms_authentication;
+    if (action.source_element_id)
+      payload.source_element_id = action.source_element_id;
     if (action.cc_recipients !== undefined)
       payload.cc_recipients = action.cc_recipients;
     if (action.custom_fields !== undefined)

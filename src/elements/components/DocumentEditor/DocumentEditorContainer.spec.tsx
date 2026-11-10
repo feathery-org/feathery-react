@@ -660,9 +660,7 @@ describe('DocumentEditorContainer signing outcomes', () => {
   it('sends the reviewed docx to DocuSign instead of the Feathery sign page', async () => {
     Object.assign(fieldValues, {
       signer_field: 'filler@test.com',
-      buyer_field: 'buyer@test.com',
-      seller_field: 'seller@test.com',
-      seller_phone: '15557654321'
+      buyer_field: 'buyer@test.com'
     });
     seed({
       sign_method: 'docusign',
@@ -675,13 +673,6 @@ describe('DocumentEditorContainer signing outcomes', () => {
           signer_id: 'buyer',
           name: 'Buyer',
           phone: '+15551234567'
-        },
-        {
-          document_id: `document-${CONTAINER}`,
-          role_id: 'seller',
-          field_key: 'seller_field',
-          sms_authentication: true,
-          phone_field_key: 'seller_phone'
         }
       ]
     });
@@ -708,13 +699,6 @@ describe('DocumentEditorContainer signing outcomes', () => {
           phone: '+15551234567',
           email: 'buyer@test.com',
           filler: false
-        },
-        {
-          document_id: `document-${CONTAINER}`,
-          role_id: 'seller',
-          phone: '15557654321',
-          email: 'seller@test.com',
-          filler: false
         }
       ],
       'docusign'
@@ -734,8 +718,6 @@ describe('DocumentEditorContainer signing outcomes', () => {
 
     delete fieldValues.signer_field;
     delete fieldValues.buyer_field;
-    delete fieldValues.seller_field;
-    delete fieldValues.seller_phone;
   });
 
   it('sends draft=true from the Save as Draft menu entry', async () => {
