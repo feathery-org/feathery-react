@@ -79,6 +79,12 @@ jest.mock('../../utils/validation', () => {
       invalid: state.invalid,
       inlineErrors: {}
     })),
+    // Render visibility with sliders settled, which the mocks leave unchanged
+    getSettledVisiblePositions: jest.fn((step: any, internalId: string) =>
+      jest
+        .requireMock('../../utils/hideAndRepeats')
+        .getVisiblePositions(step, internalId)
+    ),
     storeAlignedSliderValues: jest.fn((_step: any, positions: any) => ({
       visiblePositions: positions,
       restore: state.restoreSliderValues

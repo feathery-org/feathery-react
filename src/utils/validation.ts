@@ -242,23 +242,47 @@ function writeSliderValues(sliderValues: SliderValue[]): SliderValue[] {
 }
 
 // Writes each visible slider's settled value. Returns the values it replaced
-// and the visibility once hide-if rules see the settled values
+// and the visibility once hide-if rules see the settled values. Settled values
+// can reveal more sliders, which settle in turn until no value changes
 function settleSliderValues(
   step: any,
   visiblePositions: any,
   internalId: string
 ) {
-  const replaced = writeSliderValues(
-    getAlignedSliderValues(
-      getVisibleElements(step, visiblePositions, ['servar_fields'], true)
-    )
+  const replaced: SliderValue[] = [];
+  let positions = visiblePositions;
+  for (let pass = 0; pass <= step.servar_fields.length; pass++) {
+    const written = writeSliderValues(
+      getAlignedSliderValues(
+        getVisibleElements(step, positions, ['servar_fields'], true)
+      )
+    );
+    if (!written.length) break;
+    // A slider settled again keeps the answer from before the first write
+    written.forEach((entry) => {
+      const seen = replaced.some(
+        ({ servar, repeat }) =>
+          servar === entry.servar && repeat === entry.repeat
+      );
+      if (!seen) replaced.push(entry);
+    });
+    positions = getVisiblePositions(step, internalId);
+  }
+  return { replaced, visiblePositions: positions };
+}
+
+// The step's visibility as hide-if rules see the values its sliders show,
+// leaving the answers as they are. A blocked submit puts back answers the
+// sliders can't show, and fields that the shown values reveal must stay
+// reachable
+function getSettledVisiblePositions(step: any, internalId: string) {
+  const settled = settleSliderValues(
+    step,
+    getVisiblePositions(step, internalId),
+    internalId
   );
-  return {
-    replaced,
-    visiblePositions: replaced.length
-      ? getVisiblePositions(step, internalId)
-      : visiblePositions
-  };
+  writeSliderValues(settled.replaced);
+  return settled.visiblePositions;
 }
 
 // Submit stores the settled values before validating and resolving navigation,
@@ -537,6 +561,7 @@ export {
   validateElement,
   validateElements,
   storeAlignedSliderValues,
+  getSettledVisiblePositions,
   getSliderSources,
   getStandardFieldError,
   isFieldValueEmpty,

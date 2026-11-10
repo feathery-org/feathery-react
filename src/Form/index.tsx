@@ -77,6 +77,7 @@ import { getValueBoundReferences } from '../utils/valueBounds';
 import {
   ensurePhoneValidator,
   isFieldValueEmpty,
+  getSettledVisiblePositions,
   storeAlignedSliderValues,
   validateElements,
   validators
@@ -1949,7 +1950,10 @@ function Form({
 
   const visiblePositions = useMemo(() => {
     if (!activeStep) return null;
-    const visiblePositions = getVisiblePositions(activeStep, _internalId);
+    const visiblePositions = getSettledVisiblePositions(
+      activeStep,
+      _internalId
+    );
 
     if (formSettings.clearHideIfFields) {
       // Auto-reset hidden fields to defaults when they become hidden via hideIf rules.

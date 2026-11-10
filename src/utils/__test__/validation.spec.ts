@@ -2,6 +2,7 @@ import {
   validateElement,
   validateElements,
   storeAlignedSliderValues,
+  getSettledVisiblePositions,
   getSliderSources,
   ResolvedCustomValidation,
   getStandardFieldError,
@@ -419,6 +420,108 @@ describe('validation', () => {
         '1': [true]
       });
       expect(fieldValues.amount).toEqual(50);
+    });
+
+    // Settling amount reveals details, another slider capped by cap, which
+    // must settle too before validation and the snapshot read it
+    it('settles sliders that settled values reveal', () => {
+      Object.assign(fieldValues, { cap: 50, amount: 100, details: 80 });
+      const fields = [
+        slider('amount', { max_value_field_key: 'cap' }),
+        {
+          ...slider('details', { max_value_field_key: 'cap' }),
+          hide_ifs: [
+            {
+              field_type: 'servar',
+              comparison: 'greater_than',
+              index: 0,
+              field_key: 'amount',
+              values: [50]
+            }
+          ],
+          validations: [
+            {
+              message: 'At most 50',
+              rules: [
+                {
+                  field_type: 'servar',
+                  comparison: 'greater_than',
+                  values: [50],
+                  field_id: null,
+                  field_key: 'details'
+                }
+              ]
+            }
+          ]
+        }
+      ];
+      const rendered = { '0': [true], '1': [false] };
+      const { visiblePositions, restore } = store(fields, rendered);
+      expect(visiblePositions).toEqual({ '0': [true], '1': [true] });
+      expect(fieldValues).toMatchObject({ amount: 50, details: 50 });
+      expect(run(fields, visiblePositions).invalid).toBe(false);
+      expect(fieldValues).toMatchObject({ amount: 50, details: 50 });
+      restore();
+      expect(fieldValues).toMatchObject({ amount: 100, details: 80 });
+    });
+
+    // amount settles to 80 against limit, revealing limit, which settles to 50
+    // and moves amount again. Restoring puts back the answers from before both
+    it('restores a slider that settles again to its original answer', () => {
+      Object.assign(fieldValues, { cap: 50, limit: 80, amount: 100 });
+      const fields = [
+        slider('amount', { max_value_field_key: 'limit' }),
+        {
+          ...slider('limit', { max_value_field_key: 'cap' }),
+          hide_ifs: [
+            {
+              field_type: 'servar',
+              comparison: 'greater_than',
+              index: 0,
+              field_key: 'amount',
+              values: [90]
+            }
+          ]
+        }
+      ];
+      const { restore } = store(fields, { '0': [true], '1': [false] });
+      expect(fieldValues).toMatchObject({ amount: 50, limit: 50 });
+      restore();
+      expect(fieldValues).toMatchObject({ amount: 100, limit: 80 });
+    });
+
+    // A blocked submit puts amount back to 100, which the slider can't show. The
+    // form still renders details, which the shown 50 reveals, so it can be filled
+    it('renders the fields settled slider values show, keeping the answers', () => {
+      Object.assign(fieldValues, { cap: 50, amount: 100, details: '' });
+      const fields = [
+        slider('amount', { min_value: 50, max_value_field_key: 'cap' }),
+        {
+          ...slider('details', {}, { type: 'text_field', required: true }),
+          hide_ifs: [
+            {
+              field_type: 'servar',
+              comparison: 'greater_than',
+              index: 0,
+              field_key: 'amount',
+              values: [50]
+            }
+          ]
+        }
+      ];
+      store(fields).restore();
+      expect(fieldValues.amount).toEqual(100);
+      expect(getSettledVisiblePositions(stepOf(fields), 'form')).toEqual({
+        '0': [true],
+        '1': [true]
+      });
+      expect(fieldValues.amount).toEqual(100);
+      // Once details is filled, the submit passes and stores the shown value
+      fieldValues.details = 'filled';
+      const visible = getSettledVisiblePositions(stepOf(fields), 'form');
+      expect(run(fields, visible).invalid).toBe(false);
+      store(fields, visible);
+      expect(fieldValues).toMatchObject({ amount: 50, details: 'filled' });
     });
 
     // lower's max is upper and upper's min is lower, so the passes alternate

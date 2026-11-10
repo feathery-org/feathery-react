@@ -396,6 +396,22 @@ describe('submit field snapshot', () => {
     expect(ValidationMod._spies.restoreSliderValues).not.toHaveBeenCalled();
   });
 
+  // A blocked submit puts back slider answers the sliders can't show, so the
+  // step renders the fields the shown values reveal
+  it('renders visibility with slider values settled', async () => {
+    const settle = ValidationMod.getSettledVisiblePositions;
+    const original = settle.getMockImplementation();
+    const settledVisibility = { settled: [true] };
+    settle.mockImplementation(() => settledVisibility);
+    try {
+      render(<JSForm formId='f1' _internalId='iid-render-settled' />);
+      await screen.findByTestId('btn');
+      expect(GridMod._spies.form.visiblePositions).toBe(settledVisibility);
+    } finally {
+      settle.mockImplementation(original);
+    }
+  });
+
   it('puts slider answers back when submit logic blocks the submit', async () => {
     setSubmitFields(['TextField']);
     GridMod._spies.submit = true;
