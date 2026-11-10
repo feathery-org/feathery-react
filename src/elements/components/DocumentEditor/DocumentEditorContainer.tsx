@@ -32,7 +32,6 @@ import {
   editorContainerId,
   getSignUrl,
   isDocusignSignAction,
-  signerPhone,
   signsViaDocusign
 } from '../../../utils/document';
 import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
@@ -453,12 +452,6 @@ export default function DocumentEditorContainer({
       .map((entry: any) => {
         const email =
           (entry.email ?? fieldValues[entry.field_key])?.toString() ?? '';
-        const phone = signerPhone(
-          entry,
-          targetAction ?? {},
-          fieldValues,
-          formKey
-        );
         return {
           document_id: entry.document_id,
           ...(entry.role_id ? { role_id: entry.role_id } : {}),
@@ -470,7 +463,7 @@ export default function DocumentEditorContainer({
             ? { signer_id: entry.signer_id.trim() }
             : {}),
           ...(entry.name ? { name: entry.name } : {}),
-          ...(phone ? { phone } : {}),
+          ...(entry.phone ? { phone: entry.phone.toString() } : {}),
           // Flagged entries are the ones this filler opens and signs
           // inline.
           filler:
@@ -491,7 +484,7 @@ export default function DocumentEditorContainer({
             }
           ]
     ).filter((entry: any) => entry.email);
-  }, [targetAction, activeDocumentId, formKey]);
+  }, [targetAction, activeDocumentId]);
 
   const runSigningAction = useCallback(
     async (draft: boolean) => {

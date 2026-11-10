@@ -401,6 +401,7 @@ export const getFormContext = (formUuid: string) => {
       emailSubject,
       emailBlurb,
       notification,
+      smsAuthentication,
       ccRecipients,
       customFields,
       repeatable,
@@ -422,9 +423,9 @@ export const getFormContext = (formUuid: string) => {
       // whoever signs inline in the form rather than being emailed a link —
       // only their signing token comes back.
       // `phone` challenges that recipient by SMS before the envelope opens
-      // (DocuSign only). Give it in E.164 form, e.g. '+15555555555'; a number
-      // with no country code is taken as +1. Omit it to send without a
-      // challenge.
+      // (DocuSign only), unless SMS authentication is off for the send. Give
+      // it in E.164 form, e.g. '+15555555555'; a number with no country code
+      // is taken as +1.
       // `repeatIndex` targets a zero-based PDF copy when repeatable=true.
       // It requires roleId. Omit it to apply that role to every copy; a
       // copy-specific entry overrides the default for the same role.
@@ -464,6 +465,10 @@ export const getFormContext = (formUuid: string) => {
       // Only for signMethod 'docusign': reminder and expiration schedule, as
       // sendDocusignEnvelope takes it.
       notification?: DocusignNotification;
+      // Only for signMethod 'docusign': overrides the DocuSign integration's
+      // Require SMS Authentication for this send. true requires a phone for
+      // every signer; false sends with no SMS, even for a signer's phone.
+      smsAuthentication?: boolean;
       // Completion copies added to the integration's configured recipients.
       // excludedDocuments uses 0-based positions in the generated packet.
       ccRecipients?: SendDocusignParams['ccRecipients'];
@@ -501,6 +506,13 @@ export const getFormContext = (formUuid: string) => {
                 : undefined
             }
       );
+      if (smsAuthentication !== undefined && signMethod !== 'docusign') {
+        return Promise.reject(
+          new Error(
+            "generateDocuments: smsAuthentication requires signMethod 'docusign'"
+          )
+        );
+      }
       if (customFields !== undefined && signMethod !== 'docusign') {
         return Promise.reject(
           new Error(
@@ -703,6 +715,9 @@ export const getFormContext = (formUuid: string) => {
             email_subject: emailSubject,
             email_blurb: emailBlurb,
             notification,
+            ...(smsAuthentication !== undefined
+              ? { sms_authentication: smsAuthentication }
+              : {}),
             cc_recipients: ccCopies,
             custom_fields: customFields,
             repeatable,
