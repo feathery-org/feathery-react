@@ -629,9 +629,9 @@ const emptyDeep = (v: unknown): boolean =>
   isObject(v) && Object.values(v).every(emptyDeep);
 
 /**
- * N11: a paragraph whose format is only the Normal style (or nothing), with empty borders and an
- * empty list format beside it, is the same as one with no format: the editor gives a paragraph written
- * without one exactly that (measured in the headless lane), and Normal is the default style.
+ * N11: what the editor fills into every paragraph format is the same as absent: the Normal style,
+ * empty borders and list format, and the nsid of the list the format names (measured live and in
+ * the headless lane, 34.1.31). A format left with nothing is no format.
  */
 export const N11: Normalization = {
   name: 'N11',
@@ -641,17 +641,30 @@ export const N11: Normalization = {
         return false;
       const entry = out.formats[n.style];
       if (!entry) return false;
-      // nothing but empty members, or only the Normal style beside them (an empty paragraph has
-      // already lost its Normal to N5)
-      const rest = Object.entries(entry).filter(([, v]) => !emptyDeep(v));
-      if (
-        rest.length > 1 ||
-        (rest.length === 1 &&
-          (rest[0][0] !== 'styleName' || rest[0][1] !== 'Normal'))
-      )
-        return false;
-      delete n.style;
-      return true;
+      const fill = Object.keys(entry).filter(
+        (k) =>
+          emptyDeep(entry[k]) || (k === 'styleName' && entry[k] === 'Normal')
+      );
+      const list = entry.listFormat;
+      const stamped =
+        isObject(list) &&
+        list.nsid !== undefined &&
+        arr<Obj>(out.root.lists).some(
+          (l) => l.listId === list.listId && l.nsid === list.nsid
+        );
+      if (!fill.length && !stamped) return false;
+      if (fill.length === Object.keys(entry).length) {
+        delete n.style;
+        return true;
+      }
+      return rewriteRef(out, n, 'style', (e) => {
+        for (const k of fill) delete e[k];
+        if (stamped) {
+          e.listFormat = { ...(e.listFormat as Obj) };
+          delete (e.listFormat as Obj).nsid;
+        }
+        return e;
+      });
     })
 };
 

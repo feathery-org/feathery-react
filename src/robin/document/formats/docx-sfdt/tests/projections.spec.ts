@@ -311,9 +311,28 @@ describe('normalizations (each a true positive and a true negative)', () => {
     // true positive: another style, or a real border, still counts
     // an empty paragraph, which N5 has left without its Normal
     expect(styleOf(withStyle({ borders: editorDefault.borders, listFormat: {} }))).toBe(styleOf(withStyle(undefined)));
-    expect(styleOf(withStyle({ ...editorDefault, styleName: 'Heading 1' }))).toBe('probe');
-    expect(styleOf(withStyle({ ...editorDefault, borders: { top: { lineStyle: 'Single' } } }))).toBe('probe');
+    expect(styleOf(withStyle({ ...editorDefault, styleName: 'Heading 1' }))).toBeDefined();
+    expect(styleOf(withStyle({ ...editorDefault, borders: { top: { lineStyle: 'Single' } } }))).toBeDefined();
     expect(NORMALIZATIONS.map((n) => n.name)).toContain('N11');
+  });
+
+  it('N11 the editor fill beside real paragraph properties is the same as none (Hilb 7c02c3c8)', () => {
+    const nf = fresh();
+    nf.root.lists = [{ listId: 7, nsid: 2092192590 }];
+    const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string' && ownText(n)) as NfNode;
+    const entryOf = (entry: Record<string, unknown>) => {
+      const d = JSON.parse(JSON.stringify(nf)) as NormalForm;
+      d.formats.probe = entry;
+      (all(d).find((n) => n.id === para.id) as NfNode).style = 'probe';
+      const out = N11.apply(d);
+      return out.formats[String((all(out).find((n) => n.id === para.id) as NfNode).style)];
+    };
+    const composed = { styleName: 'List Paragraph', listFormat: { listId: 7, listLevelNumber: 0 } };
+    const landed = { ...composed, borders: { top: {}, left: {}, right: {}, bottom: {}, horizontal: {}, vertical: {} }, listFormat: { ...composed.listFormat, nsid: 2092192590 } };
+    expect(entryOf(landed)).toEqual(entryOf(composed));
+    expect(entryOf({ afterSpacing: 12, styleName: 'Normal', listFormat: {} })).toEqual(entryOf({ afterSpacing: 12 }));
+    // true positive: another list's nsid is the format's own
+    expect(entryOf({ listFormat: { listId: 7, nsid: 1 } })).toEqual({ listFormat: { listId: 7, nsid: 1 } });
   });
 
   it('N12 the editor\'s fill of a new table, row or cell format is the same as none (matrix-2 T10)', () => {

@@ -94,6 +94,24 @@ describe('writes the editor re-encodes land', () => {
     expect(write).toMatchObject({ ok: true, committed: true });
   });
 
+  it('a new list paragraph format lands (Hilb 7c02c3c8)', async () => {
+    await lane.call('open', doc([{ sectionFormat: page(), blocks: [para('Items Needed to Bind'), para('Existing bullet', { styleName: 'List Paragraph', listFormat: { listId: 1, listLevelNumber: 0 } })], headersFooters: {} }], {
+      styles: [
+        { name: 'Normal', type: 'Paragraph', paragraphFormat: { borders: BORDERS, listFormat: {} }, characterFormat: {}, next: 'Normal' },
+        { name: 'List Paragraph', type: 'Paragraph', paragraphFormat: { borders: BORDERS, listFormat: {} }, characterFormat: {}, basedOn: 'Normal', next: 'List Paragraph' }
+      ],
+      lists: [{ abstractListId: 0, levelOverrides: [], listId: 1, nsid: -126 }],
+      abstractLists: [{ abstractListId: 0, levels: [{ characterFormat: { fontFamily: 'Symbol' }, followCharacter: 'Tab', listLevelPattern: 'Bullet', numberFormat: '', paragraphFormat: { leftIndent: 36, firstLineIndent: -18 }, restartLevel: 0, startAt: 0 }] }]
+    }));
+    const heading = await nodeAt(['sections', 0, 'blocks', 0]);
+    const { shape } = await nodeAt(['sections', 0]);
+    const bullet = (id: string, text: string) => ({ kind: 'insert_after', anchor: heading.id, container: shape, node: { id, kind: 'paragraph', style: 'tmp:bul', inlines: [{ kind: 'run', text }] } });
+
+    const write = await dispatch('write', { intent: 'bullets', scope: { ids: [heading.id] }, formats: { 'tmp:bul': { styleName: 'List Paragraph', listFormat: { listId: 1, listLevelNumber: 0 } } }, changes: [bullet('tmp:b1', 'Completed Acord application'), bullet('tmp:b2', 'Completed TRIA form')] });
+
+    expect(write).toMatchObject({ ok: true, committed: true });
+  });
+
   it('a font size set with its bidi size lands', async () => {
     await lane.call('open', doc([{ sectionFormat: page(), blocks: [para('Coverage'), para('Last')], headersFooters: {} }], { characterFormat: { fontSize: 11, fontSizeBidi: 11 } }));
     const run = (await nodeAt(['sections', 0, 'blocks', 0])).inlines[0];
