@@ -16,6 +16,7 @@ import {
   usePptxEditorStore
 } from '../state/PptxEditorContext';
 import type { PptxChangeRecord } from '../engine/changes';
+import type { DeckJSON } from '../core/model/json';
 
 // Tracked-edits panel: the engine's transaction log grouped by slide, newest
 // first. Clicking a record selects its shape; pending assistant suggestions
@@ -26,6 +27,29 @@ function timeLabel(iso: string): string {
   return Number.isNaN(date.getTime())
     ? ''
     : date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+/** The slide a record is about: a deck-wide change is placed on the slide it added, moved or removed */
+function slidePathOf(record: PptxChangeRecord): string | undefined {
+  const target = record.targets[0];
+  if (target?.slideId !== '*') return target?.slideId;
+  const before = (record.before as Record<string, DeckJSON>)['*'].slides.map(
+    (slide) => slide.path
+  );
+  const after = (record.after as Record<string, DeckJSON>)['*'].slides.map(
+    (slide) => slide.path
+  );
+  const added = after.find((path) => !before.includes(path));
+  if (added) return added;
+  const removedAt = before.findIndex((path) => !after.includes(path));
+  if (removedAt >= 0) return after[Math.min(removedAt, after.length - 1)];
+  const shift = (path: string) =>
+    Math.abs(after.indexOf(path) - before.indexOf(path));
+  return after.reduce<string | undefined>(
+    (moved, path) =>
+      moved === undefined || shift(path) > shift(moved) ? path : moved,
+    undefined
+  );
 }
 
 function RecordCard({
@@ -107,7 +131,7 @@ export default function PptxChangesPanel() {
     if (!deck) return [];
     const bySlide = new Map<number, PptxChangeRecord[]>();
     for (const record of records) {
-      const slidePath = record.targets[0]?.slideId;
+      const slidePath = slidePathOf(record);
       const index = Math.max(
         0,
         deck.slides.findIndex((slide) => slide.path === slidePath)
@@ -125,9 +149,8 @@ export default function PptxChangesPanel() {
     const deck = state.deck;
     const target = record.targets[0];
     if (!deck || !target) return;
-    const index = deck.slides.findIndex(
-      (slide) => slide.path === target.slideId
-    );
+    const slidePath = slidePathOf(record);
+    const index = deck.slides.findIndex((slide) => slide.path === slidePath);
     if (index >= 0 && index !== state.activeSlide) store.setActiveSlide(index);
     if (target.shapeId) store.select(target.shapeId);
   };
