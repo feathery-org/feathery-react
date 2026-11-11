@@ -21,7 +21,6 @@ import {
   Verb,
   VerbResult,
   WriteInput,
-  addressedIds,
   makeRefusal,
   dispatchFailure,
   parseBridgePayload,
@@ -46,7 +45,7 @@ import { logDebug, logError, logWarn, truncatedDetail } from './log';
 import { equivalentNative } from './proof';
 import { reconcile } from './reconciler';
 import { Clock, defaultClock, TraceBuilder } from './trace';
-import { baseOf, shapeOf } from './tree';
+import { baseOf, shapeOf, withoutLists } from './tree';
 import type { NormalForm } from './tree';
 import { problem } from './verifier';
 import { conflictMessage } from './verifier/base';
@@ -57,7 +56,7 @@ import {
   prepareWrite,
   readVerb
 } from './verbs';
-import { makeView } from './view';
+import { emitFormats, makeView, referencedFormats } from './view';
 
 export interface SessionOptions {
   pack: Pack;
@@ -372,6 +371,7 @@ export class DocumentSession {
       };
     }
 
+    const bases = new Map(before.view.nodes().map((n) => [n.id, baseOf(n)]));
     const restoreGuesses = this.ids.checkpointUncertain();
     const outcome = this.writing(() => {
       const out = reconcile({
@@ -523,11 +523,11 @@ export class DocumentSession {
       cardId: outcome.plan.landed === 'card' ? changeSetId : null,
       landed: outcome.plan.landed,
       outlineHash: (this.current as DocumentState).outlineHash,
-      fingerprints: this.fingerprints(
-        write,
-        prepared.mapping,
-        prepared.finalizerScope.flatMap((f) => f.ids)
-      ),
+      fingerprints: this.fingerprintsOf([
+        ...prepared.touched,
+        ...this.changedSince(bases)
+      ]),
+      referencedFormats: this.formatsAfter(write, prepared.touched),
       ...common,
       // with what the live editor reported of the commit (a contents table rebuilt, or not)
       facts: [...prepared.facts, ...outcome.facts],
@@ -702,10 +702,7 @@ export class DocumentSession {
       );
     const { view } = this.state;
     const removed = [...bases.keys()].filter((id) => !view.get(id));
-    const touched = view
-      .nodes()
-      .filter((n) => bases.get(n.id) !== baseOf(n))
-      .map((n) => n.id);
+    const touched = this.changedSince(bases);
     return {
       ok: true,
       cards: [...new Set(cards)],
@@ -715,6 +712,14 @@ export class DocumentSession {
       removed,
       fingerprints: this.fingerprintsOf(touched)
     };
+  }
+
+  /** Nodes that are new or whose base differs from the bases taken before an edit */
+  private changedSince(bases: Map<string, string>): string[] {
+    return this.state.view
+      .nodes()
+      .filter((n) => bases.get(n.id) !== baseOf(n))
+      .map((n) => n.id);
   }
 
   /** Fresh fingerprints of nodes and their ancestors */
@@ -735,20 +740,21 @@ export class DocumentSession {
     return out;
   }
 
-  /** Fresh fingerprints of what a committed write named or created, what finalizers changed, and their ancestors */
-  private fingerprints(
-    write: WriteInput,
-    mapping: Record<string, string>,
-    finalized: string[]
-  ): Record<string, { base: string; shape: string }> {
-    const named = [
-      ...write.changes.flatMap(addressedIds),
-      ...Object.keys(mapping)
-    ];
-    return this.fingerprintsOf([
-      ...named.map((n) => mapping[n] ?? n),
-      ...finalized
-    ]);
+  /** The formats a committed write targeted or left its changed nodes using, as they are now */
+  private formatsAfter(write: WriteInput, touched: string[]) {
+    const { view } = this.current as DocumentState;
+    const used = touched.flatMap((id) => {
+      const node = view.get(id);
+      return node
+        ? [...referencedFormats(this.pack, withoutLists(node, this.pack.tree))]
+        : [];
+    });
+    const targeted = write.changes.flatMap((change) =>
+      change.kind === 'set' && 'formatId' in change.target
+        ? [change.target.formatId]
+        : []
+    );
+    return emitFormats(view, new Set([...used, ...targeted]));
   }
 
   /** A refresh after a resolution that failed: reported, never fatal to the resolution. */

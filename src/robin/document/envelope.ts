@@ -943,6 +943,7 @@ export const writeSuccessResultSchema = z.looseObject({
       z.looseObject({ base: z.string().min(1), shape: z.string().min(1) })
     )
     .optional(),
+  referencedFormats: z.record(formatIdSchema, emittedFormatSchema).optional(),
   finalizerScope: z.array(finalizerScopeSchema),
   facts: z.array(factSchema),
   warnings: z.array(warningSchema),

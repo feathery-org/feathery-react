@@ -96,6 +96,19 @@ export function referencedFormats(pack: Pack, node: unknown): Set<string> {
   return formatRefsIn(node, pack.formatRefKeys);
 }
 
+/** The document's entries for these format ids, each with its fresh base */
+export function emitFormats(
+  view: DocumentView,
+  ids: Iterable<string>
+): Record<string, { base: string } & Record<string, unknown>> {
+  const out: Record<string, { base: string } & Record<string, unknown>> = {};
+  for (const id of ids) {
+    const entry = view.nf.formats[id];
+    if (entry) out[id] = { base: baseOf(entry), ...clone(entry) };
+  }
+  return out;
+}
+
 const clip = (text: string, start: number, end: number): string => {
   if (text.length <= FIND_SNIPPET_MAX) return text;
   const room = FIND_SNIPPET_MAX - (end - start);
