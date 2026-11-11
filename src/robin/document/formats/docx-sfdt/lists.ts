@@ -1,7 +1,6 @@
 import type { ListStyle } from '../../envelope';
 import type { DocumentView } from '../../pack';
-import { entryOf } from './projections';
-import { arr } from './util';
+import { arr, entryOf } from './util';
 
 type Obj = Record<string, unknown>;
 const isObject = (v: unknown): v is Obj =>

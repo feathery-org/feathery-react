@@ -21,8 +21,8 @@ import type {
 } from '../../pack';
 import type { FormatEntry, NfNode } from '../../tree';
 import { KIND } from './adapter/keys';
-import { entryOf } from './projections';
-import { arr } from './util';
+import { paragraphInheritance } from './inheritance';
+import { arr, entryOf } from './util';
 
 type Obj = Record<string, unknown>;
 const isObject = (v: unknown): v is Obj =>
@@ -593,7 +593,8 @@ function namedStyles(view: DocumentView, node: NfNode): Obj[] {
 /**
  * Effective values with their source, in resolution order: the node's own format (`override`
  * when no other node shares the entry, `format` when it is shared), the paragraph's named style
- * through `basedOn` (`container`), then `default`, the document's default or null when it has none.
+ * through `basedOn` (`container`), then `default`, the document's default, else for a paragraph
+ * property the editor's own, or null when there is none.
  */
 export function effective(
   node: NfNode,
@@ -611,6 +612,8 @@ export function effective(
     );
     const documentDefault: Obj =
       entryOf(view.nf, view.nf.root[placement.native]) ?? {};
+    const inheritParagraph =
+      group === PARAGRAPH ? paragraphInheritance(view.nf) : null;
     for (const spec of group) {
       if (spec.class !== 'property' || spec.name in out) continue;
       const fromStyle = styleFormats.find((f) => f[spec.name] !== undefined);
@@ -619,7 +622,13 @@ export function effective(
           value: entry[spec.name],
           source: shared ? 'format' : 'override'
         };
-      else if (fromStyle)
+      else if (inheritParagraph) {
+        const inherited = inheritParagraph(entry?.styleName, spec.name);
+        out[spec.name] = {
+          value: inherited?.value ?? null,
+          source: inherited?.from === 'style' ? 'container' : 'default'
+        };
+      } else if (fromStyle)
         out[spec.name] = { value: fromStyle[spec.name], source: 'container' };
       else
         out[spec.name] = {

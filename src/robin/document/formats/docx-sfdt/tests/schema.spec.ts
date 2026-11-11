@@ -136,7 +136,7 @@ describe('overrides and effective values', () => {
       paragraphFormat: {},
       styles: [
         { name: 'Normal', type: 'Paragraph', paragraphFormat: {}, characterFormat: {} },
-        { name: 'Body', type: 'Paragraph', paragraphFormat: {}, characterFormat: { fontFamily: 'Arial' }, basedOn: 'Normal' },
+        { name: 'Body', type: 'Paragraph', paragraphFormat: { afterSpacing: 6 }, characterFormat: { fontFamily: 'Arial' }, basedOn: 'Normal' },
         { name: 'Table Text', type: 'Paragraph', paragraphFormat: {}, characterFormat: {}, basedOn: 'Body' }
       ],
       sections: [
@@ -156,5 +156,9 @@ describe('overrides and effective values', () => {
     expect(values.fontFamily).toEqual({ value: 'Arial', source: 'container' });
     expect(values.fontSize).toEqual({ value: 11, source: 'default' });
     expect(values.italic).toEqual({ value: null, source: 'default' });
+    const paragraph = effective(view.placement((run as unknown as NfNode).id)?.parent as NfNode, view);
+    expect(paragraph.afterSpacing).toEqual({ value: 6, source: 'container' });
+    // The editor's own default where the document sets none, as the proof reads it
+    expect(paragraph.beforeSpacing).toEqual({ value: 0, source: 'default' });
   });
 });

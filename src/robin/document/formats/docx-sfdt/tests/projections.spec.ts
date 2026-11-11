@@ -394,7 +394,7 @@ describe('normalizations (each a true positive and a true negative)', () => {
     expect(NORMALIZATIONS.map((n) => n.name)).toContain('N13');
   });
 
-  it('N9 a paragraph property an undo writes back explicitly as the value it inherits, only in undo comparisons', () => {
+  it('N9 a paragraph property written explicitly as the value it inherits, in every comparison', () => {
     const nf = fresh();
     const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string' && nf.formats[String(n.style)]?.styleName === 'Normal') as NfNode;
     const fmt = (d: NormalForm) => d.formats[String((all(d).find((n) => n.id === para.id) as NfNode).style)];
@@ -410,7 +410,29 @@ describe('normalizations (each a true positive and a true negative)', () => {
     expect(fmt(N9.apply(withValue('Center')))).not.toEqual(fmt(N9.apply(nf)));
     const once = N9.apply(nf);
     expect(N9.apply(once)).toBe(once);
-    expect(UNDO_NORMALIZATIONS.map((n) => n.name)).toEqual(['N7', 'N9']);
+    expect(NORMALIZATIONS.map((n) => n.name)).toContain('N9');
+    expect(UNDO_NORMALIZATIONS.map((n) => n.name)).toEqual(['N7']);
+  });
+
+  it("N9 reads a value no style or document default sets as the editor's built-in default (Hilb named insured list)", () => {
+    const nf = fresh();
+    const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string' && nf.formats[String(n.style)]?.styleName === 'Normal') as NfNode;
+    const withSpacing = (value: number) => {
+      const d = JSON.parse(JSON.stringify(nf)) as NormalForm;
+      for (const holder of [d.root, ...((d.root.styles as Record<string, unknown>[]) ?? [])]) {
+        const ref = holder.paragraphFormat;
+        const entry = typeof ref === 'string' ? d.formats[ref] : (ref as Record<string, unknown> | undefined);
+        if (entry) delete entry.beforeSpacing;
+      }
+      d.formats.explicit = { ...d.formats[String(para.style)], beforeSpacing: value };
+      (all(d).find((n) => n.id === para.id) as NfNode).style = 'explicit';
+      return d;
+    };
+    const fmt = (d: NormalForm) => N9.apply(d).formats[String((all(N9.apply(d)).find((n) => n.id === para.id) as NfNode).style)];
+    // the editor stores nothing when told to set the spacing it already shows (true negative)
+    expect(fmt(withSpacing(0))).not.toHaveProperty('beforeSpacing');
+    // spacing the paragraph did not have is a real change (true positive)
+    expect(fmt(withSpacing(6))).toHaveProperty('beforeSpacing', 6);
   });
 
   it('N14 with N6 reads a control split into bare and explicitly inherited runs as one run (dts seq 4 fee cell)', () => {
