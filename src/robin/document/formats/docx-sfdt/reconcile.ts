@@ -28,7 +28,6 @@ import type {
   EditorHost,
   PlanContext
 } from '../../pack';
-import { PREDICTED_TURN } from '../../pack';
 import { NfNode, NormalForm, canonicalJson, clone } from '../../tree';
 import {
   FEATURE_KEYS,
@@ -816,14 +815,6 @@ export function tocStep(
 /** Several native steps as the editor's one undo group (the change and the contents it refreshes). */
 export function transaction(host: EditorHost, run: () => void): void {
   inUndoGroup((host as DocxHost).editor, run);
-}
-
-export function predict(
-  before: DocumentView,
-  intended: DocumentView
-): NormalForm | null {
-  if (nativePlan(before, intended)) return null;
-  return composeTracked(before, intended.nf, PREDICTED_TURN).tracked;
 }
 
 export function plan(ctx: PlanContext): CommitPlan {

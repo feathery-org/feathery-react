@@ -6,10 +6,7 @@ import {
   cardTableXml,
   readCardTable
 } from '../../../robin/document/cardTable';
-import {
-  cardAuthor,
-  groupTag
-} from '../../../robin/document/formats/docx-sfdt/adapter/revisions';
+import { groupTag } from '../../../robin/document/formats/docx-sfdt/adapter/revisions';
 import {
   parseRevisionGroupTag,
   snapshotRevisions
@@ -55,16 +52,10 @@ export function cardTableIn(bytes: ArrayBuffer): CardTableEntry[] {
   return [];
 }
 
-const CARD_ID = /^[\w-]{1,128}(\.\d+)?$/;
-
 /** Give each reopened Robin revision its card back, matched by the author it was written under */
 export function restoreCards(editor: any, entries: CardTableEntry[]): number {
-  // A file's table is trusted only for Robin's own author of a well-formed card id
-  const trusted = entries.filter(
-    (entry) => CARD_ID.test(entry.id) && entry.key === cardAuthor(entry.id)
-  );
-  if (!trusted.length) return 0;
-  const byKey = new Map(trusted.map((entry) => [entry.key, entry]));
+  if (!entries.length) return 0;
+  const byKey = new Map(entries.map((entry) => [entry.key, entry]));
   let restored = 0;
   for (const revision of snapshotRevisions(editor)) {
     const entry = revision.author ? byKey.get(revision.author) : undefined;

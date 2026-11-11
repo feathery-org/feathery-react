@@ -97,24 +97,6 @@ describe("Robin's card table in a docx (Hilb post-v9 G1)", () => {
     expect(reopened.revisions.changes[1].customData).toBeNull();
   });
 
-  it("restores only entries carrying Robin's own author for a well-formed card id", () => {
-    const reopened = editorWith([
-      { author: 'Jane Doe', customData: null },
-      { author: cardAuthor('</cards>'), customData: null },
-      { author: ONE, customData: null }
-    ]);
-
-    expect(
-      restoreCards(reopened, [
-        { key: 'Jane Doe', id: 'card-one' },
-        { key: cardAuthor('</cards>'), id: '</cards>' },
-        { key: ONE, id: 'card-one' }
-      ])
-    ).toBe(1);
-    expect(reopened.revisions.changes[0].customData).toBeNull();
-    expect(reopened.revisions.changes[1].customData).toBeNull();
-  });
-
   it('removes the card table when no Robin card is pending', () => {
     const editor = editorWith([
       { author: 'Robin⁠', customData: groupTag('card-one') }

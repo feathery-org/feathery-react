@@ -42,7 +42,7 @@ import {
   resolveGroup,
   withoutGroup
 } from './projections';
-import { plan, predict, tocStep, transaction } from './reconcile';
+import { plan, tocStep, transaction } from './reconcile';
 import {
   FORMAT_SCHEMA,
   effective,
@@ -121,7 +121,7 @@ export const docxPack: Pack = {
     othersOf: withoutGroup,
     derived: (nf) => tocField(nf)?.ids ?? new Set<string>()
   },
-  reconcile: { plan, predict, transaction, refresh: tocStep },
+  reconcile: { plan, transaction, refresh: tocStep },
   seams: {
     text: textSeam,
     format: formatSeam,

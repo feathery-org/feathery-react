@@ -151,7 +151,7 @@ export function toFixedPoint(
   return out;
 }
 
-export function compareWithNormalizations(
+function compareWithNormalizations(
   pack: Pack,
   live: NormalForm,
   intended: NormalForm
@@ -234,10 +234,7 @@ function pendingMultiset(pack: Pack, nf: NormalForm): string[] {
 }
 
 /** Pending changes not authored by this turn: exactly those the document had before. */
-export function authorshipKept(
-  pack: Pack,
-  input: Pick<ProofInput, 'before' | 'live' | 'turnId'>
-): string[] {
+function authorshipKept(pack: Pack, input: ProofInput): string[] {
   // Counted per node, so both sides first get the editor's own re-splitting and gluing
   const normalized = (nf: NormalForm) =>
     toFixedPoint(pack.projections.normalizations, nf);
