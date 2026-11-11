@@ -393,6 +393,31 @@ describe('write: verified changes', () => {
     ).toEqual(['n1', 'n3', 'n4']);
   });
 
+  it('takes a format entry written in place of its id as a new entry (Hilb 0257a0e1)', () => {
+    const s = fresh();
+    const r = prepareWrite(
+      s,
+      write({
+        intent: 'Add a bold item.',
+        scope: { ids: ['n4'] },
+        changes: [
+          {
+            kind: 'insert_after',
+            anchor: 'n4',
+            container: sh(s, 'n2'),
+            node: { text: 'three', style: { bold: true } }
+          }
+        ]
+      } as never)
+    );
+    expect(r.outcome).toBe('verified');
+    if (r.outcome !== 'verified') return;
+    const formatId = r.mapping['tmp:inline'];
+    const items = (r.intended.root.blocks as NfNode[])[1].items as NfNode[];
+    expect(items[2].style).toBe(formatId);
+    expect(r.intended.formats[formatId]).toEqual({ bold: true });
+  });
+
   it('inserts with temporary ids, sets on a temporary id, recomputes formulas, and reports facts', () => {
     const s = fresh();
     const r = prepareWrite(

@@ -33,7 +33,12 @@ import {
   refusedResult,
   stripReadOnlyKeys
 } from './envelope';
-import { IdTable, mintWritten, renameFormatRefs } from './ids';
+import {
+  IdTable,
+  liftInlineFormats,
+  mintWritten,
+  renameFormatRefs
+} from './ids';
 import { renderOutline } from './outline';
 import type {
   DocumentView,
@@ -586,7 +591,9 @@ export function prepareWrite(
   }
 
   // New format entries and the format references of written nodes.
-  const newFormats = write.formats ?? {};
+  const newFormats = { ...write.formats };
+  for (const c of changes)
+    if ('node' in c) liftInlineFormats(c.node, pack.formatRefKeys, newFormats);
   runner.run('format-entry-rejected', () =>
     newFormatProblems(pack, newFormats)
   );
