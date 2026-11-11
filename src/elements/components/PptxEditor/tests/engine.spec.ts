@@ -204,6 +204,35 @@ it('does not reuse the previous document snapshot when adopting another deck', (
   expect(engine.isDirty()).toBe(false);
 });
 
+it('reopens saved slide XML with a fresh history and no pending suggestions', () => {
+  const engine = new PptxEditorEngine();
+  engine.load(fixture);
+  const saved = engine.readDeck()!.slides.map((slide) => ({
+    path: slide.path,
+    raw: deepClone(slide.raw)
+  }));
+  const expected = JSON.parse(JSON.stringify(engine.snapshot().document));
+
+  engine.execute(
+    {
+      type: 'set-slide-background',
+      slideId: saved[0].path,
+      background: { type: 'solid', color: '112233' }
+    },
+    { origin: 'assistant' }
+  );
+  expect(engine.changes()).toHaveLength(1);
+
+  engine.reopenSlides(saved);
+  expect(engine.snapshot().document).toEqual(expected);
+  expect(engine.changes()).toEqual([]);
+  expect(engine.canUndo()).toBe(false);
+  expect(engine.isDirty()).toBe(false);
+  expect(() => engine.reopenSlides(saved.slice(1))).toThrow(
+    'Reopening a deck with a different set of slides'
+  );
+});
+
 it('marks only the exported save point clean, keeping later edits dirty', () => {
   const deck = importDeck(fixture);
   const engine = new PptxEditorEngine(deck);

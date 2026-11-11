@@ -18,7 +18,7 @@ import {
   type PptxHistoryEntry,
   type PptxHistorySnapshot
 } from '../core/model/history';
-import { importDeck } from '../core/model/import';
+import { importDeck, rebuildSlides } from '../core/model/import';
 import { deckToJSON, type DeckJSON } from '../core/model/json';
 import { setPresentationSize } from '../core/model/slideSize';
 import { addSlide, deleteSlide, moveSlide } from '../core/model/slides';
@@ -221,6 +221,20 @@ export class PptxEditorEngine {
   /** The loaded deck for reading, change it only through commands */
   readDeck(): Readonly<Deck> | null {
     return this.deck;
+  }
+
+  /** Put saved slide XML back into the open deck and start a fresh history, like reopening the file */
+  reopenSlides(slides: ReadonlyArray<{ path: string; raw: OTree }>): void {
+    const deck = this.requireDeck();
+    const samePaths =
+      slides.length === deck.slides.length &&
+      slides.every((slide, i) => slide.path === deck.slides[i].path);
+    if (!samePaths)
+      throw new Error('Reopening a deck with a different set of slides');
+
+    for (const slide of slides) deck.pkg.setXmlPart(slide.path, slide.raw);
+    rebuildSlides(deck);
+    this.adopt(deck);
   }
 
   /**
