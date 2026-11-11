@@ -238,6 +238,23 @@ export function installRevisionHighlightRendering(
 
   renderer.checkRevisionType = () => [];
 
+  // Vendored override, 34.1.31: renderListTextElementBox has no colour for a blank revision, so tracked list markers keep their own
+  const originalRenderListText =
+    renderer.renderListTextElementBox.bind(renderer);
+  renderer.renderListTextElementBox = (elementBox: any, ...rest: any[]) => {
+    const format = elementBox.listLevel.characterFormat;
+    const markerColor = format.hasValue('fontColor')
+      ? format.fontColor
+      : elementBox.line.paragraph.characterFormat.fontColor;
+    const prevColor = renderer.getRevisionColor;
+    renderer.getRevisionColor = () => markerColor;
+    try {
+      return originalRenderListText(elementBox, ...rest);
+    } finally {
+      renderer.getRevisionColor = prevColor;
+    }
+  };
+
   const originalRenderText = renderer.renderTextElementBox.bind(renderer);
   renderer.renderTextElementBox = (
     elementBox: any,
