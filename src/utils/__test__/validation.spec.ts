@@ -490,6 +490,62 @@ describe('validation', () => {
       expect(fieldValues).toMatchObject({ amount: 100, limit: 80 });
     });
 
+    // Without floor, amount's min is floor's stored 100. Once gate settles to 50
+    // and reveals floor, floor settles to 50 and amount keeps the user's 80,
+    // which reveals details. Render, validation and submit must all agree
+    it('settles a chain revealed by settling from the original answers', () => {
+      Object.assign(fieldValues, {
+        cap: 50,
+        gate: 100,
+        floor: 100,
+        amount: 80,
+        details: ''
+      });
+      const hideIf = (fieldKey: string, value: number) => [
+        {
+          field_type: 'servar',
+          comparison: 'greater_than',
+          index: 0,
+          field_key: fieldKey,
+          values: [value]
+        }
+      ];
+      const fields = [
+        slider('gate', { max_value_field_key: 'cap' }, { min_length: 50 }),
+        {
+          ...slider(
+            'floor',
+            { max_value_field_key: 'cap' },
+            { min_length: 50 }
+          ),
+          hide_ifs: hideIf('gate', 50)
+        },
+        slider('amount', { min_value_field_key: 'floor' }, { max_length: 200 }),
+        {
+          ...slider('details', {}, { type: 'text_field', required: true }),
+          hide_ifs: hideIf('amount', 90)
+        }
+      ];
+      const step = stepOf(fields);
+      const allShown = { '0': [true], '1': [true], '2': [true], '3': [true] };
+      // Render shows details, and amount's handle at 80
+      const rendered = getSettledVisiblePositions(step, 'form');
+      expect(rendered).toEqual(allShown);
+      expect(
+        alignToSlider(80, fields[2].servar, getSliderSources(step, rendered))
+      ).toEqual(80);
+      expect(fieldValues).toMatchObject({ gate: 100, floor: 100, amount: 80 });
+      // Submit, starting from the visibility before gate settled
+      const before = { '0': [true], '1': [false], '2': [true], '3': [false] };
+      const { visiblePositions, restore } = store(fields, before);
+      expect(visiblePositions).toEqual(allShown);
+      expect(fieldValues).toMatchObject({ gate: 50, floor: 50, amount: 80 });
+      expect(run(fields, visiblePositions).errors.details).toBeTruthy();
+      restore();
+      expect(fieldValues).toMatchObject({ gate: 100, floor: 100, amount: 80 });
+      expect(getSettledVisiblePositions(step, 'form')).toEqual(allShown);
+    });
+
     // A blocked submit puts amount back to 100, which the slider can't show. The
     // form still renders details, which the shown 50 reveals, so it can be filled
     it('renders the fields settled slider values show, keeping the answers', () => {

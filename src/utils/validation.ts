@@ -243,30 +243,29 @@ function writeSliderValues(sliderValues: SliderValue[]): SliderValue[] {
 
 // Writes each visible slider's settled value. Returns the values it replaced
 // and the visibility once hide-if rules see the settled values. Settled values
-// can reveal more sliders, which settle in turn until no value changes
+// can reveal or hide sliders, so each round puts the answers back and settles
+// them again against the visibility the last round produced, until it stops
+// changing. Starting from the answers each time keeps the result the same as
+// the handles, which settle the answers against the rendered visibility
 function settleSliderValues(
   step: any,
   visiblePositions: any,
   internalId: string
 ) {
-  const replaced: SliderValue[] = [];
+  let replaced: SliderValue[] = [];
   let positions = visiblePositions;
   for (let pass = 0; pass <= step.servar_fields.length; pass++) {
-    const written = writeSliderValues(
+    if (pass) writeSliderValues(replaced);
+    replaced = writeSliderValues(
       getAlignedSliderValues(
         getVisibleElements(step, positions, ['servar_fields'], true)
       )
     );
-    if (!written.length) break;
-    // A slider settled again keeps the answer from before the first write
-    written.forEach((entry) => {
-      const seen = replaced.some(
-        ({ servar, repeat }) =>
-          servar === entry.servar && repeat === entry.repeat
-      );
-      if (!seen) replaced.push(entry);
-    });
-    positions = getVisiblePositions(step, internalId);
+    if (!pass && !replaced.length) break;
+    const next = getVisiblePositions(step, internalId);
+    const same = JSON.stringify(next) === JSON.stringify(positions);
+    positions = next;
+    if (same) break;
   }
   return { replaced, visiblePositions: positions };
 }
