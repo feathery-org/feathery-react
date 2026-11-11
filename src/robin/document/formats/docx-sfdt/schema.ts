@@ -21,6 +21,7 @@ import type {
 } from '../../pack';
 import type { FormatEntry, NfNode } from '../../tree';
 import { KIND } from './adapter/keys';
+import { entryOf } from './projections';
 import { arr } from './util';
 
 type Obj = Record<string, unknown>;
@@ -553,21 +554,29 @@ function referrers(view: DocumentView, formatId: string): number {
   return counts.get(formatId) ?? 0;
 }
 
-/** The named style a node's paragraph uses, from the document's `styles`. */
-function namedStyle(view: DocumentView, node: NfNode): Obj | null {
+/** The named style a node's paragraph uses, then the styles it is based on */
+function namedStyles(view: DocumentView, node: NfNode): Obj[] {
   let p: NfNode | null | undefined = node;
   while (p && p.kind !== KIND.paragraph) p = view.placement(p.id)?.parent;
-  if (!p || typeof p.style !== 'string') return null;
-  const name = view.nf.formats[p.style]?.styleName;
-  const styles = view.nf.root.styles;
-  if (typeof name !== 'string' || !Array.isArray(styles)) return null;
-  return (styles as Obj[]).find((s) => s.name === name) ?? null;
+  if (!p) return [];
+  const styles = new Map(
+    arr<Obj>(view.nf.root.styles).map((s) => [String(s.name), s] as const)
+  );
+  const name =
+    typeof p.style === 'string' ? view.nf.formats[p.style]?.styleName : null;
+  const chain: Obj[] = [];
+  let style = styles.get(String(name ?? 'Normal'));
+  while (style && !chain.includes(style)) {
+    chain.push(style);
+    style = styles.get(String(style.basedOn));
+  }
+  return chain;
 }
 
 /**
  * Effective values with their source, in resolution order: the node's own format (`override`
  * when no other node shares the entry, `format` when it is shared), the paragraph's named style
- * (`container`), then `default` (the value is null: the editor's own default applies).
+ * through `basedOn` (`container`), then `default`, the document's default or null when it has none.
  */
 export function effective(
   node: NfNode,
@@ -580,24 +589,26 @@ export function effective(
     const ref = node[placement.nfKey(node.kind)];
     const entry = typeof ref === 'string' ? view.nf.formats[ref] : undefined;
     const shared = typeof ref === 'string' && referrers(view, ref) > 1;
-    const style = namedStyle(view, node);
-    const styleFormat = style?.[placement.native];
+    const styleFormats = namedStyles(view, node).flatMap<Obj>(
+      (style) => entryOf(view.nf, style[placement.native]) ?? []
+    );
+    const documentDefault: Obj =
+      entryOf(view.nf, view.nf.root[placement.native]) ?? {};
     for (const spec of group) {
       if (spec.class !== 'property' || spec.name in out) continue;
+      const fromStyle = styleFormats.find((f) => f[spec.name] !== undefined);
       if (entry && spec.name in entry)
         out[spec.name] = {
           value: entry[spec.name],
           source: shared ? 'format' : 'override'
         };
-      else if (
-        typeof styleFormat === 'string' &&
-        view.nf.formats[styleFormat]?.[spec.name] !== undefined
-      )
+      else if (fromStyle)
+        out[spec.name] = { value: fromStyle[spec.name], source: 'container' };
+      else
         out[spec.name] = {
-          value: view.nf.formats[styleFormat][spec.name],
-          source: 'container'
+          value: documentDefault[spec.name] ?? null,
+          source: 'default'
         };
-      else out[spec.name] = { value: null, source: 'default' };
     }
   }
   return out;

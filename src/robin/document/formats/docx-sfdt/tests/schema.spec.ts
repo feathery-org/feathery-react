@@ -121,4 +121,32 @@ describe('overrides and effective values', () => {
     expect(Object.keys(values)).toEqual(expect.arrayContaining(['textAlignment', 'bold']));
     for (const v of Object.values(values)) expect(['override', 'container', 'format', 'default']).toContain(v.source);
   });
+
+  it('reads an inherited value through the style it is based on, then the document default (Hilb 804aaba4)', () => {
+    const sfdt = JSON.stringify({
+      characterFormat: { fontSize: 11, fontFamily: 'Calibri' },
+      paragraphFormat: {},
+      styles: [
+        { name: 'Normal', type: 'Paragraph', paragraphFormat: {}, characterFormat: {} },
+        { name: 'Body', type: 'Paragraph', paragraphFormat: {}, characterFormat: { fontFamily: 'Arial' }, basedOn: 'Normal' },
+        { name: 'Table Text', type: 'Paragraph', paragraphFormat: {}, characterFormat: {}, basedOn: 'Body' }
+      ],
+      sections: [
+        {
+          sectionFormat: {},
+          blocks: [{ paragraphFormat: { styleName: 'Table Text' }, characterFormat: {}, inlines: [{ characterFormat: { bold: true }, text: 'Coverage' }] }]
+        }
+      ]
+    });
+    const nf = new IdTable().adopt(toNormalForm(sfdt), docxTree, FORMAT_REF_KEYS).nf;
+    const view = makeView(nf, { annotate: () => new Map(), tree: docxTree } as never);
+    let run: NfNode | null = null;
+    walk(nf.root, docxTree, ({ node }) => {
+      if (node.kind === KIND.run) run = node;
+    });
+    const values = effective(run as unknown as NfNode, view);
+    expect(values.fontFamily).toEqual({ value: 'Arial', source: 'container' });
+    expect(values.fontSize).toEqual({ value: 11, source: 'default' });
+    expect(values.italic).toEqual({ value: null, source: 'default' });
+  });
 });

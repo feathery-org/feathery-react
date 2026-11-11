@@ -841,7 +841,7 @@ export const N7: Normalization = {
 };
 
 /** A format entry read whole: a hoisted reference resolved, an inline object as it is. */
-const entryOf = (nf: NormalForm, ref: unknown): Obj | null =>
+export const entryOf = (nf: NormalForm, ref: unknown): Obj | null =>
   typeof ref === 'string'
     ? (nf.formats[ref] as Obj | undefined) ?? null
     : isObject(ref)
