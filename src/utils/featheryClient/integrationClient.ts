@@ -102,7 +102,7 @@ export const documentRefTemplateId = (
 // Must match the backend's document_cache_keys, which key the generate poll.
 const documentRefCacheKey = (doc: GenerateDocumentRef) => {
   if (typeof doc === 'string') return doc;
-  if (doc.kind === 'quik') return 'quik';
+  if (doc.kind === 'quik') return doc.attach_documents ? 'quik:bundle' : 'quik';
   if (doc.kind === 'file_upload') return `file_upload:${doc.field_id}`;
   return String(doc.document_id);
 };

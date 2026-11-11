@@ -804,45 +804,51 @@ describe('IntegrationClient', () => {
       }
     );
 
-    it('polls with canonical cache keys for a mixed template/quik/upload array', async () => {
-      const formKey = 'test_form_key';
-      const integrationClient = new IntegrationClient(formKey);
-      integrationClient.ENVELOPE_CHECK_INTERVAL = 1;
-      integrationClient.ENVELOPE_MAX_TIME = 20;
-      const action = {
-        documents: [
-          'doc1',
-          { kind: 'quik' },
-          { kind: 'file_upload', field_id: 'f1' },
-          'doc2'
-        ],
-        run_async: true,
-        envelope_action: 'open_in_editor'
-      };
+    it.each([
+      [{ kind: 'quik' }, 'quik'],
+      [{ kind: 'quik', attach_documents: true }, 'quik:bundle']
+    ])(
+      'polls with canonical cache keys for a mixed template/%j/upload array',
+      async (quik, quikKey) => {
+        const formKey = 'test_form_key';
+        const integrationClient = new IntegrationClient(formKey);
+        integrationClient.ENVELOPE_CHECK_INTERVAL = 1;
+        integrationClient.ENVELOPE_MAX_TIME = 20;
+        const action = {
+          documents: [
+            'doc1',
+            quik,
+            { kind: 'file_upload', field_id: 'f1' },
+            'doc2'
+          ],
+          run_async: true,
+          envelope_action: 'open_in_editor'
+        };
 
-      const completePayload = {
-        documents: [{ envelope_id: 'env-1', pdf_url: 'https://x/1.pdf' }],
-        status: 'complete'
-      };
+        const completePayload = {
+          documents: [{ envelope_id: 'env-1', pdf_url: 'https://x/1.pdf' }],
+          status: 'complete'
+        };
 
-      global.fetch
-        .mockResolvedValueOnce({
-          ok: true,
-          json: jest.fn().mockResolvedValue({ status: 'running' })
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          json: jest.fn().mockResolvedValue(completePayload)
-        });
+        global.fetch
+          .mockResolvedValueOnce({
+            ok: true,
+            json: jest.fn().mockResolvedValue({ status: 'running' })
+          })
+          .mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: jest.fn().mockResolvedValue(completePayload)
+          });
 
-      await integrationClient.generateEnvelopes(action);
+        await integrationClient.generateEnvelopes(action);
 
-      // Must mirror the backend document_cache_keys, not "[object Object]".
-      expect(global.fetch.mock.calls[1][0]).toBe(
-        `${API_URL}document/form/generate/poll/?fid=test_user_id&dids=doc1,quik,file_upload:f1,doc2`
-      );
-    });
+        // Must mirror the backend document_cache_keys, not "[object Object]".
+        expect(global.fetch.mock.calls[1][0]).toBe(
+          `${API_URL}document/form/generate/poll/?fid=test_user_id&dids=doc1,${quikKey},file_upload:f1,doc2`
+        );
+      }
+    );
 
     it('rejects source objects on a document editor container', async () => {
       const integrationClient = new IntegrationClient('test_form_key');
