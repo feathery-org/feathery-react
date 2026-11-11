@@ -29,6 +29,7 @@ import HistoryGroup from '../../../../../../elements/components/DocxEditor/DocxT
 import { installHistoryRouting } from '../../../../../../elements/components/DocxEditor/historyRouting';
 import { registerCardResolver, registerHistoryRoute } from '../../../../mounts';
 import { installDocumentTailInvariant } from '../../../../../../elements/components/DocxEditor/documentTailInvariant';
+import { installPasteIconReset } from '../../../../../../utils/documentEditorPrimitives';
 import { robinMarks } from '../../../../../../elements/components/DocxEditor/robinDocument';
 import { isRobinWriting, onDocumentReplaced } from '../../../../../../elements/components/DocxEditor/robinActivity';
 
@@ -121,6 +122,7 @@ function makeEditor(id: string): DocumentEditor {
   });
   instance.appendTo(host);
   installDocumentTailInvariant(instance as any);
+  installPasteIconReset(instance as any);
   return instance;
 }
 
@@ -407,6 +409,39 @@ const api = {
 
   /** How many pages the editor lays the document out on */
   pageCount: (): number => (live() as any).documentHelper.pages.length,
+
+  /** Test support: the person pastes lines at one place until the document runs onto one more page, true when the editor kept a footer's page number as its last pasted element */
+  pasteOntoNewPage(): boolean {
+    const editor = live() as any;
+    const { editorModule, selection, documentHelper } = editor;
+    const line = JSON.stringify({
+      sections: [{ sectionFormat: {}, blocks: [{ paragraphFormat: { styleName: 'Normal' }, characterFormat: {}, inlines: [{ characterFormat: {}, text: 'Pasted line' }] }] }],
+      characterFormat: {},
+      paragraphFormat: {},
+      styles: []
+    });
+    let block = documentHelper.pages[0].bodyWidgets[0].childWidgets[0];
+    while (block) {
+      const splits = block.getSplitWidgets ? block.getSplitWidgets() : [block];
+      const style = String(block.paragraphFormat?.baseStyle?.name ?? '');
+      if (!block.isInsideTable && block.isEmpty && !block.isEmpty() && !/^TOC/.test(style)) {
+        const pages = documentHelper.pages.length;
+        let pasted = 0;
+        while (documentHelper.pages.length === pages && pasted < 60) {
+          const at = selection.getHierarchicalIndex(block, '0');
+          selection.select(at, at);
+          editorModule.paste(line);
+          pasted += 1;
+        }
+        const container = editorModule.lastElementForPasteIcon?.line?.paragraph?.containerWidget;
+        if (container?.parentHeaderFooter) return true;
+        for (let i = 0; i < pasted; i += 1) editor.editorHistory.undo();
+        editorModule.lastElementForPasteIcon = undefined;
+      }
+      block = selection.getNextParagraphBlock(splits[splits.length - 1]);
+    }
+    return false;
+  },
 
   /** Test support: the person bolds what is selected, as the toolbar's Bold does. */
   boldSelection(): void {

@@ -8,6 +8,7 @@ import {
   disableUserTrackChanges,
   findReplaceCounterpart,
   installExportContentControlRecovery,
+  installPasteIconReset,
   installRevisionGroupIsolation,
   installTrackedContentControlDeletion,
   preserveDocumentViewDuring
@@ -1103,6 +1104,7 @@ export function useDocxEditor({
           installHistoryRouting(ed);
           installTrackedContentControlDeletion(ed);
           installExportContentControlRecovery(ed);
+          installPasteIconReset(ed);
           // Status bar (bottom right): hide the Web-layout toggle — it flips
           // the document into continuous view, which breaks the paginated
           // editing/print flows this editor is built around.

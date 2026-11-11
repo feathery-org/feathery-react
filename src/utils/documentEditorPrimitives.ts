@@ -947,6 +947,26 @@ export function installExportContentControlRecovery(editor: LiveEditor): void {
   };
 }
 
+const PASTE_ICON_RESET_INSTALLED = '__robinPasteIconReset';
+
+// Vendored override, 34.1.31: open keeps lastElementForPasteIcon, and the next contents rebuild reads its destroyed line
+export function installPasteIconReset(editor: LiveEditor): void {
+  const ed: any = editor;
+  if (ed[PASTE_ICON_RESET_INSTALLED]) return;
+  ed[PASTE_ICON_RESET_INSTALLED] = true;
+  const forget = () => {
+    if (ed.editorModule) ed.editorModule.lastElementForPasteIcon = undefined;
+  };
+  for (const method of ['open', 'openAsync'])
+    if (typeof ed[method] === 'function') {
+      const original = ed[method].bind(ed);
+      ed[method] = (...args: any[]): any => {
+        forget();
+        return original(...args);
+      };
+    }
+}
+
 const CONTENT_CONTROL_DELETION_INSTALLED =
   '__robinTrackedContentControlDeletion';
 

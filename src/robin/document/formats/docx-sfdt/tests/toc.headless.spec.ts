@@ -407,6 +407,18 @@ describe('the contents rebuild never rebuilds the wrong field, never fails the c
     expect(await lane.call<boolean>('equivalent', await lane.call<string>('settled'), edited)).toBe(false);
   }, 120000);
 
+  it("a write after the person's paste pushed a page refreshes the contents (Hilb TOC getOffset)", async () => {
+    const { headings } = await open({});
+    expect(await lane.call<boolean>('pasteOntoNewPage')).toBe(true);
+    const pid = await at(['sections', headings[1].si, 'blocks', headings[1].bi]);
+    const heading = (await read([pid]))[pid];
+    const r = await dispatch('write', { intent: 'Remove it.', scope: { ids: [pid] }, changes: [{ kind: 'delete', id: pid, base: heading.base }] });
+    if (!r.ok) throw new Error(JSON.stringify(r).slice(0, 1200));
+
+    expect(factsOf(r)).toContain('table of contents refreshed');
+    expect(factsOf(r)).not.toContain('not refreshed');
+  }, 120000);
+
   it('M1: a rebuild that throws halfway during a write lands the write without it: its card, the contents as before, the fact says why', async () => {
     const { native, headings } = await open({});
     await lane.call('injectTocFailure');
