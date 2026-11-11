@@ -507,6 +507,12 @@ function nativePlan(
       if (styleChanged) {
         const hi = hierOf(before, para.id);
         if (!hi) return null;
+        const props = nativeProps(
+          'character',
+          charFormat(before, old.style),
+          charFormat(intended, now.style)
+        );
+        if (!props) return null;
         const { start, text: runText } = runOffset(before, para.id, old.id);
         format.push({
           target: 'character',
@@ -516,10 +522,7 @@ function nativePlan(
           a: start,
           b: start + runText.length,
           expect: runText,
-          props: cfDelta(
-            charFormat(before, old.style),
-            charFormat(intended, now.style)
-          )
+          props
         });
       }
       if (ownContent(was, old, ['style']) !== ownContent(is, now, ['style']))
@@ -540,7 +543,13 @@ function nativePlan(
         canonicalJson(charFormat(before, old.style)) !==
         canonicalJson(charFormat(intended, now.style));
       if ((markChanged || paraChanged) && !hi) return null;
-      if (markChanged)
+      if (markChanged) {
+        const props = nativeProps(
+          'character',
+          charFormat(before, old.markStyle),
+          charFormat(intended, now.markStyle)
+        );
+        if (!props) return null;
         format.push({
           target: 'character',
           hi: hi as string,
@@ -549,11 +558,9 @@ function nativePlan(
           a: 0,
           b: 0,
           expect: ownText(before.get(old.id) as NfNode) ?? '',
-          props: cfDelta(
-            charFormat(before, old.markStyle),
-            charFormat(intended, now.markStyle)
-          )
+          props
         });
+      }
       if (paraChanged) {
         const props = nativeProps(
           'paragraph',

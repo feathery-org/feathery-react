@@ -93,4 +93,14 @@ describe('writes the editor re-encodes land', () => {
 
     expect(write).toMatchObject({ ok: true, committed: true });
   });
+
+  it('a font size set with its bidi size lands', async () => {
+    await lane.call('open', doc([{ sectionFormat: page(), blocks: [para('Coverage'), para('Last')], headersFooters: {} }], { characterFormat: { fontSize: 11, fontSizeBidi: 11 } }));
+    const run = (await nodeAt(['sections', 0, 'blocks', 0])).inlines[0];
+
+    const write = await dispatch('write', { intent: 'smaller', scope: { ids: [run.id] }, changes: [{ kind: 'set', target: { ids: [run.id], shape: { [run.id]: run.shape } }, props: { fontSize: 9, fontSizeBidi: 9 } }] });
+
+    expect(write).toMatchObject({ ok: true, committed: true });
+    expect((await native()).sections[0].blocks[0].inlines[0].characterFormat).toMatchObject({ fontSize: 9, fontSizeBidi: 9 });
+  });
 });
