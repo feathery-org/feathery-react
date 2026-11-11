@@ -7,7 +7,7 @@ import { fromNormalForm } from './adapter/fromNormalForm';
 import { FEATURE_KEYS, FORMAT_REF_KEYS } from './adapter/keys';
 import { toNormalForm } from './adapter/toNormalForm';
 import { pendingCards } from './adapter/revisions';
-import { bindingAnnotations } from './features/binding';
+import { bindingAnnotations, bindingErrors } from './features/binding';
 import { layoutOnly } from './host';
 import { formulasFinalizer } from './finalizers/formulas';
 import { restripeFinalizer } from './finalizers/appearance';
@@ -136,6 +136,7 @@ export const docxPack: Pack = {
       (residue[view.nf.root.id] as { hidden?: { revisions?: unknown } })?.hidden
         ?.revisions
     ),
+  bindingErrors: (view) => bindingErrors(view.nf),
   // the server's card for how to edit a document (what it attached to these refusals on the rig)
   methodCards: ['edit-document'],
   residueKeys: {

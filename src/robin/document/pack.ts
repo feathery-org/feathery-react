@@ -51,6 +51,7 @@
  * descriptor and form accessor (`mounts.ts`) without the pack naming any of them.
  */
 import type {
+  BindingError,
   Fact,
   PendingCard,
   PropertySource,
@@ -523,6 +524,7 @@ export interface Pack {
   /** Each page the editor lays out (`EditorHost.pages`), in layout order */
   pages?(view: DocumentView, native: unknown): LaidOutPage[] | null;
   cards?(view: DocumentView, residue: Residue): PendingCard[];
+  bindingErrors?(view: DocumentView): BindingError[];
 }
 
 const REQUIRED_FUNCTIONS: Array<[string, (p: Pack) => unknown]> = [

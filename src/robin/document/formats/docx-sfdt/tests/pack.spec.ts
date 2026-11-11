@@ -150,6 +150,25 @@ describe('the format pack', () => {
     expect((call('find', { feature: { name: 'binding' } }) as { total: number }).total).toBe(3);
   });
 
+  it('describes the binding errors that hold saving at the node they name (Hilb 54cbff54)', () => {
+    const control = (tag: string, title: string, text: string) => ({ inlines: [{ text }], contentControlProperties: { lockContents: true, tag, color: '#00000000', title, type: 'Text' } });
+    const doc = (expr: string) =>
+      JSON.stringify({
+        sections: [
+          {
+            blocks: [
+              { inlines: [{ text: 'Umbrella ' }, control('[[name=Row4Fees|type=currency]]', 'Row4Fees', '$149.95')] },
+              { inlines: [{ text: 'Total ' }, control(`[[name=Row4Total|expr=${expr}]]`, 'Row4Total', '…')] }
+            ]
+          }
+        ]
+      });
+    const broken = mount(doc('sum(Row4Premium,Row4Fees)')).session;
+    const total = broken.state.view.nodes().find((n) => n.kind === 'control' && JSON.stringify(n.binding).includes('Row4Total')) as NfNode;
+    expect(broken.descriptor().bindingErrors).toEqual([expect.objectContaining({ id: total.id, message: expect.stringContaining('Row4Premium') })]);
+    expect(mount(doc('sum(Row4Fees)')).session.descriptor()).not.toHaveProperty('bindingErrors');
+  });
+
   it('flags a paragraph or row holding tracked changes in the outline and on find hits, since its text joins both sides', () => {
     const doc = JSON.stringify({
       sections: [

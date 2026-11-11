@@ -1209,6 +1209,14 @@ export const pendingCardSchema = z.looseObject({
 });
 export type PendingCard = z.output<typeof pendingCardSchema>;
 
+/** A binding error the document reports, which holds saving until it is fixed */
+export const bindingErrorSchema = z.looseObject({
+  code: z.string().min(1),
+  id: z.string().min(1).optional(),
+  message: z.string()
+});
+export type BindingError = z.output<typeof bindingErrorSchema>;
+
 /** What the buttons in the editor's own toolbar do with the document */
 export const EDITOR_TOOLBAR_OUTCOMES = [
   'save',
@@ -1231,7 +1239,8 @@ export const descriptorSchema = z.looseObject({
   pageCount: z.int().min(1).optional(),
   autosaves: z.boolean().optional(),
   toolbar: z.array(z.enum(EDITOR_TOOLBAR_OUTCOMES)).optional(),
-  cards: z.array(pendingCardSchema).optional()
+  cards: z.array(pendingCardSchema).optional(),
+  bindingErrors: z.array(bindingErrorSchema).optional()
 });
 export type Descriptor = {
   protocolVersion: number;
@@ -1247,6 +1256,7 @@ export type Descriptor = {
   autosaves?: boolean;
   toolbar?: EditorToolbarOutcome[];
   cards?: PendingCard[];
+  bindingErrors?: BindingError[];
 };
 
 // ---------------------------------------------------------------------------------------------
