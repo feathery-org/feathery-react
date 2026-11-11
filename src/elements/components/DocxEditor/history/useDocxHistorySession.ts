@@ -249,6 +249,11 @@ export function useDocxHistorySession(
       );
       setStatus('error');
     };
+    // An export that throws is an editor bug, so it reaches the host page's Sentry
+    const reportExportFailure = (error: unknown) =>
+      setTimeout(() => {
+        throw error;
+      });
     // Each Robin write runs synchronously and leaves the document committed or
     // rolled back, so autosave may run between writes: a frozen or reloaded tab
     // keeps the turn's work. Only closing a version waits for the turn to end.
@@ -608,7 +613,7 @@ export function useDocxHistorySession(
         // Capture the destination too: a document switch may replace the refs.
         const saveSnapshot = saveRef.current;
         const exported = exportRef.current();
-        exported.catch(() => undefined);
+        exported.catch(reportExportFailure);
         let artifacts = Promise.resolve();
         const sent = {
           current: {
@@ -691,7 +696,7 @@ export function useDocxHistorySession(
           current
         );
         const exported = exportRef.current();
-        exported.catch(() => undefined);
+        exported.catch(reportExportFailure);
         const sent = { current: meta as DocxSaveMeta };
         await documentWrites.submit(async () => {
           const blob = await exported;

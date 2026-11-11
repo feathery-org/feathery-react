@@ -851,42 +851,25 @@ export function installRevisionGroupIsolation(editor: LiveEditor): void {
     module.compareTwoRevisions = (left: any, right: any): boolean =>
       originalCompare(left, right) &&
       revisionTagKey(left?.customData) === revisionTagKey(right?.customData);
-  }
-  // The complementary invariant: a split must not fall OUT of its group. When
-  // untracked user typing lands inside a pending revision, SyncFusion splits
-  // it — but stock insertRevision stamps the new (split-off) revision with the
-  // CURRENT global revisionSettings.customData, which outside an assistant
-  // batch is the host's (usually none). The split half then surfaced in the
-  // rail as a brand-new untagged author card, reading as "the user's edit
-  // became a tracked change". Copy the source revision's tag onto any split
-  // product that lacks one; revisions that were never tagged stay untouched.
-  if (typeof module.updateRevisionForSpittedTextElement === 'function') {
-    const originalSplit =
-      module.updateRevisionForSpittedTextElement.bind(module);
-    module.updateRevisionForSpittedTextElement = (
-      inline: any,
-      splittedSpan: any,
-      currentItem: any
-    ): any => {
-      let sourceTag: unknown;
-      for (let index = 0; index < (inline?.revisionLength ?? 0); index++) {
-        const revision = inline.getRevision?.(index);
-        if (revision?.customData != null) {
-          sourceTag = revision.customData;
-          break;
-        }
-      }
-      const result = originalSplit(inline, splittedSpan, currentItem);
-      if (sourceTag != null) {
-        for (const half of [inline, splittedSpan]) {
-          const revisions: any[] = half?.getAllRevision?.() ?? [];
-          for (const revision of revisions)
-            if (revision && revision.customData == null)
-              revision.customData = sourceTag;
-        }
-      }
-      return result;
-    };
+
+    // Vendored override, 34.1.31: clearAndUpdateRevisions gives a split-off revision its source's tag, or the moved runs keep a revision that later disappears
+    if (typeof module.clearAndUpdateRevisions === 'function') {
+      const originalClear = module.clearAndUpdateRevisions.bind(module);
+      module.clearAndUpdateRevisions = (
+        range: any[],
+        revision: any,
+        index: number
+      ): any => {
+        const source = range
+          .flatMap((element) => element?.getAllRevision?.() ?? [])
+          .find(
+            (candidate: any) =>
+              candidate !== revision && originalCompare(candidate, revision)
+          );
+        if (source) revision.customData = source.customData;
+        return originalClear(range, revision, index);
+      };
+    }
   }
 }
 

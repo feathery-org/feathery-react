@@ -480,6 +480,22 @@ describe('useDocxHistorySession', () => {
     expect(host.closeVersion).toHaveBeenCalledTimes(1);
   });
 
+  it('reports an export that throws to the host page, not only the save banner', async () => {
+    jest.useFakeTimers();
+    const broken = new Error(
+      "Cannot read properties of undefined (reading 'revisionType')"
+    );
+    const { view, exportDoc, save } = setup();
+    exportDoc.mockRejectedValue(broken);
+    act(() => view.result.current.onEdit({ assistant: false }));
+    await act(async () => {
+      await expect(view.result.current.save()).rejects.toThrow(broken);
+    });
+    expect(save).not.toHaveBeenCalled();
+    expect(() => jest.runOnlyPendingTimers()).toThrow(broken);
+    jest.useRealTimers();
+  });
+
   it('surfaces an auth failure without auto-retrying, and lets Save try again', async () => {
     jest.useFakeTimers();
     const save = jest
