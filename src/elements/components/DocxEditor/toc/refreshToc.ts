@@ -39,6 +39,7 @@ import {
   inUndoGroup,
   openUndoGroups
 } from '../undoGroups';
+import { printedPageNumber } from '../printedPageNumber';
 
 type Obj = Record<string, any>;
 type Editor = Obj;
@@ -460,6 +461,14 @@ export function refreshTableOfContents(
   const pageNumber = module.insertTocPageNumber;
   const headingStyle = module.isHeadingStyle;
   const outlineLevelStyle = module.isOutlineLevelStyle;
+  const pageNumberOf = module.getPageNumber;
+  // Vendored override, 34.1.31: getPageNumber gives an entry the number its page prints, as Word numbers it, not the page's position
+  module.getPageNumber = function printed(widget: Obj) {
+    return (
+      printedPageNumber(widget.bodyWidget.page, selection) ??
+      pageNumberOf.call(module, widget)
+    );
+  };
   // a heading whose text is all pending deletion is gone once the change is accepted: no entry
   module.isHeadingStyle = function listed(paragraph: Obj) {
     return (
@@ -535,6 +544,7 @@ export function refreshTableOfContents(
     module.insertTocPageNumber = pageNumber;
     module.isHeadingStyle = headingStyle;
     module.isOutlineLevelStyle = outlineLevelStyle;
+    module.getPageNumber = pageNumberOf;
     // a rebuild that threw leaves its undo group open and the editor thinking it is still
     // rebuilding: close it into the change's group and let the editor go on
     closeUndoGroups(editor, depth);

@@ -419,6 +419,17 @@ describe('the contents rebuild never rebuilds the wrong field, never fails the c
     expect(factsOf(r)).not.toContain('not refreshed');
   }, 120000);
 
+  it('lists each heading at the number its page prints when numbering restarts before the headings (Hilb TOC 2 -> 3)', async () => {
+    await open({ restartAt: 1 });
+    const r = await write({ intent: 'Update the contents.', scope: { ids: [] }, changes: [] });
+    const toc = tocOf(await lane.call<string>('settled'));
+    const headings = await lane.call<Array<{ text: string; page: number; printed: number | null }>>('headingPages', ['Heading 1']);
+
+    expect(factsOf(r)).toContain('table of contents refreshed');
+    expect(headings.some((h) => h.printed !== h.page)).toBe(true);
+    expect(toc.entries.map((e) => `${clean(e.text)} | ${e.page}`)).toEqual(headings.map((h) => `${clean(h.text)} | ${h.printed}`));
+  }, 120000);
+
   it('M1: a rebuild that throws halfway during a write lands the write without it: its card, the contents as before, the fact says why', async () => {
     const { native, headings } = await open({});
     await lane.call('injectTocFailure');

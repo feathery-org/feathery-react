@@ -17,6 +17,7 @@ import {
   AttachedBindings
 } from '../../../../../../elements/components/DocxEditor/bindings/attachBindings';
 import { SyncfusionEditorLike } from '../../../../../../elements/components/DocxEditor/bindings/editorAdapter';
+import { printedPageNumber } from '../../../../../../elements/components/DocxEditor/printedPageNumber';
 import { comparable, differences, equivalentNative } from '../../../../proof';
 import { DocumentSession } from '../../../../session';
 import type { Verb } from '../../../../envelope';
@@ -328,9 +329,9 @@ const api = {
    * deletion) and the page the editor's layout puts them on (its own page number, as a contents
    * table shows it).
    */
-  headingPages(styles: string[]): Array<{ text: string; page: number }> {
+  headingPages(styles: string[]): Array<{ text: string; page: number; printed: number | null }> {
     const e = live() as any;
-    const out: Array<{ text: string; page: number }> = [];
+    const out: Array<{ text: string; page: number; printed: number | null }> = [];
     let w = e.documentHelper.pages[0].bodyWidgets[0].childWidgets[0];
     while (w) {
       const style = w.paragraphFormat?.baseStyle?.name;
@@ -338,7 +339,7 @@ const api = {
         let text = '';
         for (const split of w.getSplitWidgets())
           for (const line of split.childWidgets) for (const el of line.children) if (el instanceof TextElementBox && !(el as any).revisions?.some((r: any) => r.revisionType === 'Deletion')) text += el.text;
-        if (text.trim()) out.push({ text: text.trim(), page: e.editorModule.getPageNumber(w) });
+        if (text.trim()) out.push({ text: text.trim(), page: e.editorModule.getPageNumber(w), printed: printedPageNumber(w.bodyWidget.page, e.selection) });
       }
       w = e.selection.getNextParagraphBlock(w.getSplitWidgets().pop());
     }
