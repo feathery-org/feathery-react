@@ -108,6 +108,28 @@ describe('the format pack', () => {
     expect((call('outline', { depth: 6 }) as { lines: string }).lines).toMatch(/ run "/);
   });
 
+  it('describes the paragraph styles that make a list item, so a new list can use one (Hilb 08d37625)', () => {
+    const doc = JSON.parse(flagship);
+    doc.styles = [
+      ...doc.styles,
+      { name: 'List Bullet', type: 'Paragraph', basedOn: 'Normal', paragraphFormat: { listFormat: { listId: 3 } } },
+      { name: 'List Number', type: 'Paragraph', basedOn: 'Normal', paragraphFormat: { listFormat: { listId: 4, listLevelNumber: 1 } } }
+    ];
+    doc.lists = [
+      { listId: 3, abstractListId: 30 },
+      { listId: 4, abstractListId: 40 }
+    ];
+    doc.abstractLists = [
+      { abstractListId: 30, levels: [{ listLevelPattern: 'Bullet' }] },
+      { abstractListId: 40, levels: [{ listLevelPattern: 'Bullet' }, { listLevelPattern: 'Arabic' }] }
+    ];
+    expect(mount(JSON.stringify(doc)).session.descriptor().listStyles).toEqual([
+      { name: 'List Bullet', listId: 3, look: 'bullet' },
+      { name: 'List Number', listId: 4, look: 'numbered' }
+    ]);
+    expect(mount().session.descriptor()).not.toHaveProperty('listStyles');
+  });
+
   it('accepts the outline\'s shape prefix as a container in a write', () => {
     const { call, next } = mount();
     const lines = (call('outline', {}) as { lines: string }).lines.split('\n');

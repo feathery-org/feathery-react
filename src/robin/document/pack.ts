@@ -52,6 +52,7 @@
  */
 import type {
   BindingError,
+  ListStyle,
   Fact,
   PendingCard,
   PropertySource,
@@ -525,6 +526,7 @@ export interface Pack {
   pages?(view: DocumentView, native: unknown): LaidOutPage[] | null;
   cards?(view: DocumentView, residue: Residue): PendingCard[];
   bindingErrors?(view: DocumentView): BindingError[];
+  listStyles?(view: DocumentView): ListStyle[];
 }
 
 const REQUIRED_FUNCTIONS: Array<[string, (p: Pack) => unknown]> = [

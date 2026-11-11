@@ -1217,6 +1217,14 @@ export const bindingErrorSchema = z.looseObject({
 });
 export type BindingError = z.output<typeof bindingErrorSchema>;
 
+/** A paragraph style that makes a paragraph an item of one of the document's lists */
+export const listStyleSchema = z.looseObject({
+  name: z.string().min(1),
+  listId: z.int(),
+  look: z.enum(['bullet', 'numbered'])
+});
+export type ListStyle = z.output<typeof listStyleSchema>;
+
 /** What the buttons in the editor's own toolbar do with the document */
 export const EDITOR_TOOLBAR_OUTCOMES = [
   'save',
@@ -1240,7 +1248,8 @@ export const descriptorSchema = z.looseObject({
   autosaves: z.boolean().optional(),
   toolbar: z.array(z.enum(EDITOR_TOOLBAR_OUTCOMES)).optional(),
   cards: z.array(pendingCardSchema).optional(),
-  bindingErrors: z.array(bindingErrorSchema).optional()
+  bindingErrors: z.array(bindingErrorSchema).optional(),
+  listStyles: z.array(listStyleSchema).optional()
 });
 export type Descriptor = {
   protocolVersion: number;
@@ -1257,6 +1266,7 @@ export type Descriptor = {
   toolbar?: EditorToolbarOutcome[];
   cards?: PendingCard[];
   bindingErrors?: BindingError[];
+  listStyles?: ListStyle[];
 };
 
 // ---------------------------------------------------------------------------------------------

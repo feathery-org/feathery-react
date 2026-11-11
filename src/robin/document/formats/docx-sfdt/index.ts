@@ -29,6 +29,7 @@ import { fieldTriplets } from './invariants/fields';
 import { orphanedDependents } from './invariants/formulas';
 import { controlShape } from './invariants/identity';
 import { styleReferences } from './invariants/references';
+import { listStyles } from './lists';
 import { belowBlocks, detail, features, listLabel, ownText } from './outline';
 import {
   NORMALIZATIONS,
@@ -137,6 +138,7 @@ export const docxPack: Pack = {
         ?.revisions
     ),
   bindingErrors: (view) => bindingErrors(view.nf),
+  listStyles,
   // the server's card for how to edit a document (what it attached to these refusals on the rig)
   methodCards: ['edit-document'],
   residueKeys: {

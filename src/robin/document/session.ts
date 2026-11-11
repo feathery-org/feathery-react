@@ -207,6 +207,7 @@ export class DocumentSession {
     const pages = this.pages(state);
     const cards = this.pack.cards?.(state.view, state.residue) ?? [];
     const bindingErrors = this.pack.bindingErrors?.(state.view) ?? [];
+    const listStyles = this.pack.listStyles?.(state.view) ?? [];
     return {
       protocolVersion: PROTOCOL_VERSION,
       editorId: this.editorId,
@@ -218,7 +219,8 @@ export class DocumentSession {
       ...(selection ? { selection } : {}),
       ...(pages ? { pageCount: pages.length } : {}),
       ...(cards.length ? { cards } : {}),
-      ...(bindingErrors.length ? { bindingErrors } : {})
+      ...(bindingErrors.length ? { bindingErrors } : {}),
+      ...(listStyles.length ? { listStyles } : {})
     };
   }
 

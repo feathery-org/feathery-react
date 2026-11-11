@@ -56,6 +56,14 @@ describe('property schema', () => {
     expect(spec(KIND.section, 'breakCode')?.validate('NoBreak')).toBeNull();
     expect(spec(KIND.section, 'breakCode')?.validate('Continuous')).toMatch(/NoBreak/);
   });
+
+  it('refuses a list format key other than the list and its level, since the list sets the bullets (Hilb 3aaa560e)', () => {
+    const listFormat = schemaFor(KIND.paragraph)?.find((s) => s.name === 'listFormat');
+    expect(listFormat?.validate({})).toBeNull();
+    expect(listFormat?.validate({ listId: 3, listLevelNumber: 0, nsid: 13194224 })).toBeNull();
+    expect(listFormat?.validate({ listType: 'Bullet' })).toMatch(/listType is not a list format key/);
+    expect(listFormat?.validate({ listId: 3, listLevelNumber: 9 })).toMatch(/listLevelNumber must be a whole number from 0 to 8/);
+  });
 });
 
 describe('overrides and effective values', () => {

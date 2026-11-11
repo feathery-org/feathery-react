@@ -228,6 +228,23 @@ const shading: Check = (v) => {
   return null;
 };
 
+const listFormat: Check = (v) => {
+  if (!isObject(v)) return 'must be an object';
+  for (const [k, x] of Object.entries(v)) {
+    if (x === null) continue;
+    const why =
+      k === 'listId' || k === 'nsid'
+        ? Number.isInteger(x)
+          ? null
+          : 'must be a whole number'
+        : k === 'listLevelNumber'
+        ? int(0, 8)(x)
+        : 'is not a list format key: a paragraph joins a list by listId and listLevelNumber, and that list sets its bullets or numbers';
+    if (why) return `${k} ${why}`;
+  }
+  return null;
+};
+
 const prop = (name: string, type: string, validate: Check): PropertySpec => ({
   name,
   type,
@@ -304,7 +321,7 @@ export const PARAGRAPH: readonly PropertySpec[] = [
     text(120)
   ),
   prop('borders', 'paragraph borders by side', borders),
-  prop('listFormat', 'list format {listId, listLevelNumber}', anyOf('object')),
+  prop('listFormat', 'list format {listId, listLevelNumber}', listFormat),
   prop('tabs', 'tab stops', anyOf('array'))
 ];
 
