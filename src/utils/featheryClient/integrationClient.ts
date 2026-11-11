@@ -68,6 +68,8 @@ export type QuikDocumentSource = {
     // DocuSign-only: Quik role prefix -> stable person ID, e.g. { '1own': 'client-123' }.
     signerIds?: Record<string, string>;
   }[];
+  // Attach the packet's other templates and file uploads to the Quik bundle.
+  attach_documents?: boolean;
 };
 // Every file uploaded to the field becomes a document, converted to PDF.
 // Logic rules name the field by `field_key`, resolved to `field_id` before sending.
