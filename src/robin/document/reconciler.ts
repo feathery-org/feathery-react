@@ -63,6 +63,7 @@ export type ReconcileOutcome =
       warnings: Warning[];
       /** What the steps reported of the live document (derived content refreshed, or not). */
       facts: Fact[];
+      diagnostics: Record<string, unknown>;
     }
   | {
       outcome: 'apply-failed';
@@ -128,6 +129,7 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
   const seams: string[] = [];
   const reported: Fact[] = [];
   const reportedWarnings: Warning[] = [];
+  const diagnostics: Record<string, unknown> = {};
   try {
     plan = pack.reconcile.plan({
       turnId: input.turnId,
@@ -161,6 +163,7 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
         if (report) {
           reported.push(...(report.facts ?? []));
           reportedWarnings.push(...(report.warnings ?? []));
+          Object.assign(diagnostics, report.diagnostics);
           if (report.failed && refreshFailed < 0) refreshFailed = k;
         }
       }
@@ -267,6 +270,7 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
     proof,
     live: { native, nf: live.nf, residue: live.residue },
     warnings,
-    facts: reported
+    facts: reported,
+    diagnostics
   };
 }

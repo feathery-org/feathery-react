@@ -382,6 +382,7 @@ export interface SeamReport {
    * undo group undone, or the document replaced again) and the change lands without it.
    */
   failed?: boolean;
+  diagnostics?: Record<string, unknown>;
 }
 
 export interface Seam {

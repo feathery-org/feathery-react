@@ -91,13 +91,15 @@ export class TraceBuilder {
   committed(
     outcome: Trace['committed']['outcome'],
     seams: string[],
-    touched: number
+    touched: number,
+    diagnostics: Record<string, unknown> = {}
   ): this {
     this.trace.committed = {
       outcome,
       seams: [...seams],
       touched,
-      ms: this.lap()
+      ms: this.lap(),
+      ...(Object.keys(diagnostics).length ? { diagnostics } : {})
     };
     return this;
   }

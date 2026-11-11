@@ -503,7 +503,12 @@ export class DocumentSession {
       this.structural.add(changeSetId);
       this.beforeCards.set(changeSetId, { nf: before.view.nf, restoreGuesses });
     }
-    trace.committed('committed', outcome.seams, prepared.touched.length);
+    trace.committed(
+      'committed',
+      outcome.seams,
+      prepared.touched.length,
+      outcome.diagnostics
+    );
     trace.proof({
       outcome: 'passed',
       landed: true,

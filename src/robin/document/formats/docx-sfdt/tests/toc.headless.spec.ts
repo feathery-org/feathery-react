@@ -437,6 +437,7 @@ describe('the contents rebuild never rebuilds the wrong field, never fails the c
     if (!r.ok) throw new Error(JSON.stringify(r).slice(0, 1200));
     expect(r.landed).toBe('card');
     expect(factsOf(r)).toContain("table of contents not refreshed: the editor's rebuild failed (injected: the contents rebuild failed)");
+    expect(r.trace.committed.diagnostics.tocStack).toContain('Error: injected: the contents rebuild failed');
     const now = await lane.call<string>('settled');
     expect(now).toContain('Renamed Heading');
     expect(tocOf(now)).toEqual(tocOf(native));
