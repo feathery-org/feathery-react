@@ -3,9 +3,8 @@
 import { parseTag } from './core/tagDsl';
 import { SyncfusionEditorLike } from './editorAdapter';
 
-// Optimized SFDT shortens keys, so each property is read under both names
-const TEXT_KEYS = ['text', 'tlp'];
-const CONTROL_KEYS = ['contentControlProperties', 'ccp'];
+// Optimized SFDT shortens keys, so the document is recognised under both names
+const SECTION_KEYS = ['sections', 'sec'];
 
 function isInBoundControl(editor: SyncfusionEditorLike): boolean {
   const properties =
@@ -15,36 +14,42 @@ function isInBoundControl(editor: SyncfusionEditorLike): boolean {
   return !!def && (def.kind === 'field' || def.kind === 'formula');
 }
 
-/** The text a pasted SFDT document carries, in document order */
-export function pastedText(content: unknown): string {
-  if (Array.isArray(content)) return content.map(pastedText).join('');
-  if (!content || typeof content !== 'object') return '';
-  let out = '';
-  for (const [key, value] of Object.entries(content)) {
-    if (TEXT_KEYS.includes(key) && typeof value === 'string') out += value;
-    else if (value && typeof value === 'object') out += pastedText(value);
-  }
-  return out;
-}
+const isDocument = (content: unknown): boolean =>
+  !!content &&
+  typeof content === 'object' &&
+  SECTION_KEYS.some((key) => key in content);
 
-function holdsControl(content: unknown): boolean {
-  if (!content || typeof content !== 'object') return false;
-  return Object.entries(content).some(
-    ([key, value]) => CONTROL_KEYS.includes(key) || holdsControl(value)
-  );
-}
-
-/** Wrap pasteContents, where every paste and drop ends, failing open; returns the undo */
+// Vendored override, 34.1.31: pasteContents, where every paste ends, keeps rich
+// content inside a plain-text content control, so paste the clipboard's plain text
 export function installPasteGuard(editor: SyncfusionEditorLike): () => void {
   const editorModule = editor.editorModule;
   const original = editorModule?.pasteContents;
-  if (!editorModule || typeof original !== 'function') return () => {};
+  const paste = editorModule?.paste;
+  if (
+    !editorModule ||
+    typeof original !== 'function' ||
+    typeof paste !== 'function'
+  )
+    return () => {};
 
+  // A document handed to paste directly carries none of the clipboard's text
+  let isHandedDocument = false;
+  editorModule.paste = (sfdt: unknown, ...rest: unknown[]) => {
+    isHandedDocument = sfdt != null;
+    try {
+      return paste.call(editorModule, sfdt, ...rest);
+    } finally {
+      isHandedDocument = false;
+    }
+  };
   editorModule.pasteContents = (content: unknown, ...rest: unknown[]) => {
     let pasted = content;
     try {
-      if (holdsControl(content) && isInBoundControl(editor))
-        pasted = pastedText(content);
+      if (!isHandedDocument && isDocument(content) && isInBoundControl(editor))
+        pasted = String(editorModule.copiedTextContent ?? '').replace(
+          /[\r\n]+/g,
+          ''
+        );
     } catch {
       pasted = content;
     }
@@ -52,6 +57,6 @@ export function installPasteGuard(editor: SyncfusionEditorLike): () => void {
   };
 
   return () => {
-    editorModule.pasteContents = original;
+    Object.assign(editorModule, { pasteContents: original, paste });
   };
 }
