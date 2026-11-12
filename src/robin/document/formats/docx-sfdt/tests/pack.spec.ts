@@ -78,6 +78,14 @@ describe('the format pack', () => {
     expect(formulas.total).toBeGreaterThan(10);
   });
 
+  it("reads each node's own format before its children, so a cell's format is not read as its row's (Hilb ffb38cdf)", () => {
+    const { call } = mount();
+    const row = nodeOf(call('read', { ids: ['n133'] }), 'n133') as unknown as Record<string, unknown>;
+    const cell = (row.cells as Array<Record<string, unknown>>)[0];
+    expect(Object.keys(row).indexOf('style')).toBeLessThan(Object.keys(row).indexOf('cells'));
+    expect(Object.keys(cell).indexOf('style')).toBeLessThan(Object.keys(cell).indexOf('blocks'));
+  });
+
   it('outlines at block level: every container with its shape prefix, rows and text boxes with a preview, no runs or cells', () => {
     const { session, call } = mount();
     const outline = call('outline', {}) as { lines: string; depth: number };
@@ -408,5 +416,29 @@ describe('verifying a write the model got wrong', () => {
       changes: [{ kind: 'insert_after', anchor: 'n119', container: 'x', node: { kind: 'table', rows: (table.rows as NfNode[]).slice(0, 1).map((x) => JSON.parse(JSON.stringify(x))) } }]
     } as never);
     expect(r.outcome).not.toBe('verified');
+  });
+
+  it('refuses a row pointed at a cell format, naming the cell format, and takes a copied row format with its grid widths (Hilb ffb38cdf)', () => {
+    const session = new DocumentSession({ pack: docxPack, host: new ByteHost(flagship), target: { type: 'envelope', id: 'env' } });
+    const state = session.state;
+    const row = [...state.view.nodes()].find((n) => n.kind === 'row' && typeof n.style === 'string') as NfNode;
+    const cells = row.cells as NfNode[];
+    const restyled = (style: string, formats?: Record<string, unknown>) =>
+      prepareWrite(state, {
+        intent: 'Give the row a new look.',
+        scope: { ids: [row.id] },
+        ...(formats ? { formats } : {}),
+        dryRun: true,
+        changes: [{ kind: 'replace', id: row.id, base: baseOf(row), node: { id: row.id, kind: 'row', style, cells: cells.map((c) => ({ id: c.id, kind: c.kind })) } }]
+      } as never);
+
+    const mismatch = restyled(String(cells[0].style));
+    expect(mismatch.outcome).toBe('refused');
+    const problem = (mismatch as { refusal: { invariant: string; destroyed: string } }).refusal;
+    expect(problem.invariant).toBe('format-kind-mismatch');
+    expect(problem.destroyed).toContain(`${cells[0].style} is a cell format`);
+
+    const copied = { ...state.view.nf.formats[String(row.style)], gridBeforeWidth: 0, gridBeforeWidthType: 'Point' };
+    expect(restyled('tmp:row', { 'tmp:row': copied }).outcome).toBe('verified');
   });
 });

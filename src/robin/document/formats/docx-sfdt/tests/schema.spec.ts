@@ -7,7 +7,9 @@ import { NfNode, walk } from '../../../tree';
 import { FORMAT_REF_KEYS, KIND } from '../adapter/keys';
 import { toNormalForm } from '../adapter/toNormalForm';
 import { docxTree } from '../tree';
-import { ENUMS, FORMAT_SCHEMA, effective, schemaFor, setOverride } from '../schema';
+import { ENUMS, FORMAT_SCHEMA, effective, foreignFormats, schemaFor, setOverride } from '../schema';
+import { propertyProblems } from '../../../verifier/schema';
+import { docxPack } from '../index';
 
 const corpus = path.join(__dirname, 'corpus');
 const flagship = fs.readFileSync(path.join(corpus, 'flagship-v4b.sfdt.json'), 'utf8');
@@ -38,6 +40,22 @@ describe('property schema', () => {
     expect(schemaFor(KIND.cell)?.find((s) => s.name === 'cellWidth')?.class).toBe('derived');
     expect(schemaFor(KIND.table)?.find((s) => s.name === 'grid')?.class).toBe('derived');
     expect(schemaFor(KIND.bookmark)).toBeNull();
+  });
+
+  it('keeps a row grid width the document carries in a copied format entry, never as a set (Hilb ffb38cdf)', () => {
+    expect(FORMAT_SCHEMA.map((s) => s.name)).toContain('gridBeforeWidth');
+    expect(propertyProblems(docxPack, KIND.row, { gridBeforeWidth: 12 }, 'n1')[0]?.destroyed).toMatch(/gridBeforeWidth on row n1: carried by the document/);
+    expect(propertyProblems(docxPack, KIND.row, { height: 12 }, 'n1')).toEqual([]);
+  });
+
+  it('names a format a node points at that holds what its kind cannot, and the kind that holds it (Hilb ffb38cdf)', () => {
+    const formats = {
+      fCell: { shading: { backgroundColor: '#F2F2F2FF' }, columnSpan: 3, verticalAlignment: 'Top' },
+      fRow: { height: 20, gridBeforeWidth: 0, gridBeforeWidthType: 'Point' }
+    };
+    const row = (style: string) => ({ id: 'n1', kind: KIND.row, style, cells: [] }) as unknown as NfNode;
+    expect(foreignFormats(row('fCell'), formats)).toEqual([{ formatId: 'fCell', keys: ['shading', 'columnSpan', 'verticalAlignment'], heldBy: [KIND.cell] }]);
+    expect(foreignFormats(row('fRow'), formats)).toEqual([]);
   });
 
   it('accepts valid values and refuses invented ones (true positive and negative per type)', () => {

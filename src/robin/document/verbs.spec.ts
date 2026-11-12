@@ -466,6 +466,7 @@ describe('write: verified changes', () => {
       'base-hashes',
       'format-entry-rejected',
       'unknown-format',
+      'format-kind-mismatch',
       'apply-failed',
       'id-shape-mismatch',
       'property-invalid',

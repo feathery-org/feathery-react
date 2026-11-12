@@ -376,6 +376,22 @@ describe('normalizations (each a true positive and a true negative)', () => {
     expect(apply({ top, bottom: { lineStyle: 'Single' } })).not.toEqual(apply({ top }));
   });
 
+  it('N12 a cell property named by a row format still counts, so the proof refuses what the editor drops (ffb38cdf)', () => {
+    const nf = fresh();
+    const row = all(nf).find((n) => n.kind === 'row' && typeof n.style === 'string') as NfNode;
+    const apply = (entry: Record<string, unknown>) => {
+      const d = JSON.parse(JSON.stringify(nf)) as NormalForm;
+      d.formats.probe = entry;
+      (all(d).find((n) => n.id === row.id) as NfNode).style = 'probe';
+      const out = N12.apply(d);
+      return out.formats[String((all(out).find((n) => n.id === row.id) as NfNode).style)];
+    };
+    const top = { top: { lineStyle: 'Single', lineWidth: 1, color: '#001B49FF' } };
+    const grid = { gridBeforeWidth: 12, gridBeforeWidthType: 'Point', gridAfterWidth: 0, gridAfterWidthType: 'Auto' };
+    expect(apply({ borders: top, shading: { backgroundColor: '#F2F2F2FF' }, verticalAlignment: 'Top' })).not.toEqual(apply({ borders: top }));
+    expect(apply({ borders: top, ...grid })).toEqual({ borders: top, ...grid });
+  });
+
   it('N13 an empty text run is the same as none (troy-1: a moved cell came back without it)', () => {
     const nf = fresh();
     const para = all(nf).find((n) => n.kind === 'paragraph' && Array.isArray(n.inlines) && (n.inlines as NfNode[]).some((i) => i.kind === 'run')) as NfNode;

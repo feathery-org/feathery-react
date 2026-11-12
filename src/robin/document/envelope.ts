@@ -48,6 +48,7 @@ export const CORE_INVARIANTS = [
   'scope',
   'property-invalid',
   'unknown-format',
+  'format-kind-mismatch',
   'format-entry-rejected',
   'proof-failed',
   'card-not-pending',

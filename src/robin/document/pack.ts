@@ -170,12 +170,18 @@ export interface FeatureMark {
 
 export interface PropertySpec {
   name: string;
-  /** `derived` properties are reported and never writable. */
-  class: 'property' | 'derived';
+  /** `derived` properties are reported and never writable, `carried` ones travel with a copied format entry and are never set */
+  class: 'property' | 'derived' | 'carried';
   /** A short type description for refusals, such as `boolean` or `colour #RRGGBB`. */
   type: string;
   /** Null when `value` is valid; otherwise why not. `null` (clear) is checked by the core. */
   validate(value: unknown): string | null;
+}
+
+export interface ForeignFormat {
+  formatId: string;
+  keys: string[];
+  heldBy: string[];
 }
 
 export interface EffectiveProperty {
@@ -195,6 +201,10 @@ export interface Properties {
   schema(kind: string): readonly PropertySpec[] | null;
   /** Every property a format entry may hold. */
   formatSchema: readonly PropertySpec[];
+  foreignFormats?(
+    node: NfNode,
+    formats: Readonly<Record<string, FormatEntry>>
+  ): ForeignFormat[];
   /** Effective values with their source, in resolution order override, container, format, default. */
   effective(
     node: NfNode,

@@ -69,8 +69,10 @@ export function emitNode(
     const own = clone(
       withoutLists(n, pack.tree, (list) => list.map(() => null))
     ) as Record<string, unknown>;
+    // A node's own formats come before its children so they read as the node's
+    for (const key of pack.formatRefKeys) if (key in own) out[key] = own[key];
     for (const [key, value] of Object.entries(own))
-      if (key !== 'id' && key !== 'kind') out[key] = value;
+      if (key !== 'id' && key !== 'kind' && !(key in out)) out[key] = value;
     for (const key of pack.tree.childLists(n)) {
       const list = listAt(n, key);
       const target = listAt(out, key);

@@ -70,6 +70,7 @@ import {
   referrersOf
 } from './verifier/base';
 import {
+  formatKindProblems,
   formatPropertyProblems,
   newFormatProblems,
   propertyProblems,
@@ -601,12 +602,16 @@ export function prepareWrite(
     ...Object.keys(view.nf.formats),
     ...Object.keys(newFormats)
   ]);
+  const writtenNodes = changes.flatMap((c) => ('node' in c ? [c.node] : []));
   runner.run('unknown-format', () =>
-    unknownFormatProblems(
-      pack,
-      changes.flatMap((c) => ('node' in c ? [c.node] : [])),
-      knownFormats
-    )
+    unknownFormatProblems(pack, writtenNodes, knownFormats)
+  );
+  if (runner.failed) return refused();
+  runner.run('format-kind-mismatch', () =>
+    formatKindProblems(pack, writtenNodes, {
+      ...view.nf.formats,
+      ...newFormats
+    })
   );
   if (runner.failed) return refused();
 

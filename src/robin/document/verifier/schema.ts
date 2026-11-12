@@ -7,11 +7,13 @@
  * `format-entry-rejected`: a new format entry with a property the format schema does not define.
  * `unknown-format`: a written node referencing a format id that is neither in the document nor
  * introduced by the write.
+ * `format-kind-mismatch`: a written node pointing at a format entry with properties its kind cannot hold.
  */
 import type { RefusalProblem } from '../envelope';
 import type { Pack, PropertySpec } from '../pack';
-import type { NfNode } from '../tree';
+import type { FormatEntry, NfNode } from '../tree';
 import { formatRefsIn } from '../ids';
+import { isPlainObject, walk } from '../tree';
 
 import { problem } from './index';
 
@@ -25,7 +27,8 @@ function checkProps(
   card: string,
   invariant: string,
   /** Names that are the node's content (its text, its children, a binding), not properties. */
-  content: ReadonlySet<string> = new Set()
+  content: ReadonlySet<string> = new Set(),
+  carried: 'kept' | 'refused' = 'refused'
 ): RefusalProblem[] {
   if (!specs)
     return [
@@ -50,7 +53,14 @@ function checkProps(
         name,
         reason: 'derived: the engine computes it and never accepts it'
       });
-    else if (value !== null) {
+    else if (spec.class === 'carried') {
+      if (carried === 'refused')
+        issues.push({
+          name,
+          reason:
+            'carried by the document: it comes with a format entry read from the document and is never set directly'
+        });
+    } else if (value !== null) {
       const why = spec.validate(value);
       if (why)
         issues.push({
@@ -139,9 +149,48 @@ export function newFormatProblems(
       entry,
       `new format ${key}`,
       FORMAT_CARD,
-      'format-entry-rejected'
+      'format-entry-rejected',
+      new Set(),
+      'kept'
     )
   );
+}
+
+/** Written nodes pointing at a format entry with properties their kind cannot hold */
+export function formatKindProblems(
+  pack: Pack,
+  written: unknown[],
+  formats: Readonly<Record<string, FormatEntry>>
+): RefusalProblem[] {
+  const { foreignFormats } = pack.properties;
+  if (!foreignFormats) return [];
+  const mismatches: string[] = [];
+  for (const root of written.filter(isPlainObject))
+    walk(root as NfNode, pack.tree, ({ node }) => {
+      for (const { formatId, keys, heldBy } of foreignFormats(node, formats)) {
+        const part = `${node.kind} ${node.id ?? '(new)'}`;
+        const kindOf = heldBy.length
+          ? ` (${formatId} is a ${heldBy.join(' or ')} format)`
+          : '';
+        mismatches.push(
+          `${part} points at ${formatId}, whose ${keys.join(', ')} a ${
+            node.kind
+          } cannot hold${kindOf}`
+        );
+      }
+    });
+  if (!mismatches.length) return [];
+  return [
+    problem(
+      'format-kind-mismatch',
+      `Nothing was applied: ${mismatches.join('; ')}.`,
+      {
+        detail: mismatches,
+        read: [FORMAT_CARD],
+        hint: 'Point each node at a format entry of its own kind, such as a sibling in the same role uses, and put the other properties on the parts whose kind holds them.'
+      }
+    )
+  ];
 }
 
 /** References in written nodes to formats the document and the write do not have. */

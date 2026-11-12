@@ -47,6 +47,7 @@ import { plan, tocStep, transaction } from './reconcile';
 import {
   FORMAT_SCHEMA,
   effective,
+  foreignFormats,
   schemaFor,
   setOnFormat,
   setOnSpan,
@@ -81,6 +82,7 @@ export const docxPack: Pack = {
   properties: {
     schema: schemaFor,
     formatSchema: FORMAT_SCHEMA,
+    foreignFormats,
     effective,
     setOverride,
     setOnSpan,

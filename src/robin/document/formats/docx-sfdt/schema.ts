@@ -2,8 +2,9 @@
  * The property schema (architecture 5.1a): every property a node kind has, typed from the SDK's
  * own definitions (`@syncfusion/ej2-documenteditor` 34.1.31, `CharacterFormatProperties`,
  * `ParagraphFormatProperties`, `SectionFormatProperties` and the enums in `base/types.d.ts`), plus
- * the keys the format objects carry in the corpus. Three classes: content (written by replace and
- * insert, not here), properties (written by `set`), derived (reported, never written).
+ * the keys the format objects carry in the corpus. Four classes: content (written by replace and
+ * insert, not here), properties (written by `set`), derived (reported, never written), carried
+ * (kept by a copied format entry, never set).
  *
  * A property's name is the native format key it lives in, so a format entry read from the
  * document and a `set` speak the same names. Where it lives on a node:
@@ -16,6 +17,7 @@
 import type {
   DocumentView,
   EffectiveProperty,
+  ForeignFormat,
   FormatTable,
   PropertySpec
 } from '../../pack';
@@ -257,6 +259,12 @@ const derived = (name: string, type: string): PropertySpec => ({
   class: 'derived',
   validate: () => 'derived: computed by the engine'
 });
+const carried = (name: string, type: string): PropertySpec => ({
+  name,
+  type,
+  class: 'carried',
+  validate: () => 'carried by the document, not set directly'
+});
 
 // ------------------------------------------------------------------ the property groups
 
@@ -291,7 +299,10 @@ export const CHARACTER: readonly PropertySpec[] = [
   prop('localeIdFarEast', 'locale id', int(0, 65535)),
   prop('ligature', 'ligature mode', text(32)),
   prop('scaling', 'percent', num(1, 600)),
-  prop('styleName', 'character style name', text(120))
+  prop('styleName', 'character style name', text(120)),
+  carried('characterSpacing', 'points'),
+  carried('complexScript', 'boolean'),
+  carried('bdo', 'text direction override')
 ];
 
 export const PARAGRAPH: readonly PropertySpec[] = [
@@ -361,7 +372,11 @@ export const ROW: readonly PropertySpec[] = [
   prop('leftMargin', 'points', num(0, 1584)),
   prop('rightMargin', 'points', num(0, 1584)),
   prop('topMargin', 'points', num(0, 1584)),
-  prop('bottomMargin', 'points', num(0, 1584))
+  prop('bottomMargin', 'points', num(0, 1584)),
+  carried('gridBeforeWidth', 'points'),
+  carried('gridBeforeWidthType', 'width type'),
+  carried('gridAfterWidth', 'points'),
+  carried('gridAfterWidthType', 'width type')
 ];
 
 export const TABLE: readonly PropertySpec[] = [
@@ -462,15 +477,36 @@ export function schemaFor(kind: string): readonly PropertySpec[] | null {
   return out;
 }
 
-/** Every key a format entry may hold: the union of the groups, writable properties only. */
+/** Every key a format entry may hold: the union of the groups, writable and carried properties. */
 export const FORMAT_SCHEMA: readonly PropertySpec[] = (() => {
   const byName = new Map<string, PropertySpec>();
   for (const group of [CHARACTER, PARAGRAPH, CELL, ROW, TABLE, SECTION])
     for (const spec of group)
-      if (spec.class === 'property' && !byName.has(spec.name))
+      if (spec.class !== 'derived' && !byName.has(spec.name))
         byName.set(spec.name, spec);
   return [...byName.values()];
 })();
+
+/** Format entries the node points at that hold properties its kind cannot, with the kinds that hold all of them */
+export function foreignFormats(
+  node: NfNode,
+  formats: Readonly<Record<string, FormatEntry>>
+): ForeignFormat[] {
+  const held = new Set(schemaFor(node.kind)?.map((spec) => spec.name));
+  const out: ForeignFormat[] = [];
+  for (const group of arr<readonly PropertySpec[]>(GROUPS_BY_KIND[node.kind])) {
+    const ref = node[GROUP_FORMAT.get(group)?.nfKey(node.kind) ?? ''];
+    const entry = typeof ref === 'string' ? formats[ref] : undefined;
+    const keys = Object.keys(entry ?? {}).filter((key) => !held.has(key));
+    if (!entry || !keys.length || out.some((f) => f.formatId === ref)) continue;
+    const heldBy = Object.keys(GROUPS_BY_KIND).filter((kind) => {
+      const names = new Set(schemaFor(kind)?.map((spec) => spec.name));
+      return Object.keys(entry).every((key) => names.has(key));
+    });
+    out.push({ formatId: ref as string, keys, heldBy });
+  }
+  return out;
+}
 
 /** The group (and so the native format) a property of `kind` belongs to; the first match wins. */
 function groupOf(
