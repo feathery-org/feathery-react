@@ -174,6 +174,11 @@ export default class FeatheryClient extends IntegrationClient {
    */
   debouncedSubmitCustom: DebouncedFunc<(override: boolean) => Promise<void>>;
   customSubmitInFlight: Record<string, any>;
+  // Set by the form when its autosave setting is on
+  autosaveEnabled = false;
+  // The latest autosave upload of each file field, so uploads of one field
+  // land in order and the step submit waits for them
+  private fileAutosaves: Record<string, Promise<unknown>> = {};
   // A Robin form-fill driver's session, whose saves and events never complete
   // the form
   formFill: boolean;
@@ -195,10 +200,13 @@ export default class FeatheryClient extends IntegrationClient {
     this.pendingCustomFieldUpdates = {};
     this.pendingRepeatedFileKeys = new Set();
     this.customSubmitInFlight = {};
-    this.debouncedSubmitCustom = debounce(
-      this._debouncedSubmitCustom.bind(this),
-      SUBMIT_CUSTOM_DEBOUNCE_WINDOW
-    );
+    this.debouncedSubmitCustom = debounce((override: boolean) => {
+      const save = this._debouncedSubmitCustom(override);
+      // A timer-fired save has no caller awaiting it. flush() callers still
+      // get the rejection from the returned promise
+      save.catch((error) => console.warn('Error saving field values', error));
+      return save;
+    }, SUBMIT_CUSTOM_DEBOUNCE_WINDOW);
 
     this.handleInteraction = this.handleInteraction.bind(this);
     if (typeof CustomEvent !== 'undefined') {
@@ -1191,12 +1199,26 @@ export default class FeatheryClient extends IntegrationClient {
         .catch((error) =>
           console.warn('Error resetting saved answer retries', error)
         );
+      const customFlush = this.submitCustom(hiddenFields, {
+        shouldFlush: true
+      });
+      // With autosave, field saves still in flight land before the step's
+      // values replace them. A failed one never withholds the step's answers
+      const jsonSubmit = this.autosaveEnabled
+        ? customFlush
+            .catch(() => undefined)
+            .then(() => this._submitJSONData(jsonServars, step.key, hasNext))
+        : this._submitJSONData(jsonServars, step.key, hasNext);
       return Promise.all([
         earlierSubmissions.catch(() => undefined),
-        this.submitCustom(hiddenFields, { shouldFlush: true }),
-        this._submitJSONData(jsonServars, step.key, hasNext),
+        customFlush,
+        jsonSubmit,
+        // An autosave upload of the same field finishes first, so the step's
+        // upload is deduped against it rather than racing it
         ...fileServars.map((servar: any) =>
-          this._submitFileData(servar, step.key)
+          this._afterFileAutosave(servar.key).then(() =>
+            this._submitFileData(servar, step.key)
+          )
         )
       ]);
     })();
@@ -1229,6 +1251,43 @@ export default class FeatheryClient extends IntegrationClient {
     ]);
     this.submitQueue = submission;
     return submission;
+  }
+
+  // Uploads autosaved files one at a time per field. Kept out of submitQueue,
+  // so a failed background upload doesn't fail the step's events
+  autosaveFiles(fileEntries: { servar: any; stepKey: string }[]) {
+    if (this.draft || this.getNoSave()) return Promise.resolve();
+    return Promise.all(
+      fileEntries.map(({ servar, stepKey }) => {
+        const upload = this._afterFileAutosave(servar.key).then(() =>
+          this._submitFileData(servar, stepKey)
+        );
+        this.fileAutosaves[servar.key] = upload;
+        return upload;
+      })
+    );
+  }
+
+  _afterFileAutosave(fieldKey: string) {
+    return (this.fileAutosaves[fieldKey] ?? Promise.resolve()).catch(
+      () => undefined
+    );
+  }
+
+  // After the server's copy of a field's files is cleared, so the next submit
+  // uploads them again rather than deduping against the old upload
+  forgetUploadedFile(fieldKey: string) {
+    fileRetryStatus[fieldKey] = false;
+    delete fileDeduplicationCount[fieldKey];
+  }
+
+  // Withdraws an autosaved value not sent yet, unless something newer replaced it
+  discardPendingCustomField(fieldKey: string, value: unknown) {
+    if (
+      fieldKey in this.pendingCustomFieldUpdates &&
+      this.pendingCustomFieldUpdates[fieldKey] === value
+    )
+      delete this.pendingCustomFieldUpdates[fieldKey];
   }
 
   async registerEvent(eventData: any) {

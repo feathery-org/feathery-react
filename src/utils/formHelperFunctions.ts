@@ -480,6 +480,8 @@ export function mapFormSettingsResponse(res: any) {
     globalStyles: res.global_styles,
     saveHideIfFields: res.save_hide_if_fields,
     clearHideIfFields: res.clear_hide_if_fields,
+    // Off for cached payloads from before the setting existed
+    autosave: res.autosave ?? false,
     // Both default on, so a cached payload from before the settings existed
     // keeps reporting progress
     showFileUploadProgress: res.show_file_upload_progress ?? true,

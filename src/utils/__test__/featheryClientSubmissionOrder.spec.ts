@@ -182,6 +182,119 @@ describe('step save and completion ordering', () => {
     }
   });
 
+  it('sends the step answers only after an in-flight field save lands', async () => {
+    const { client } = createClientWithStorage();
+    client.autosaveEnabled = true;
+    let finishFieldSave: () => void = () => {};
+    const order: string[] = [];
+    jest.spyOn(client, '_fetch').mockImplementation(async (url: any) => {
+      const path = String(url);
+      order.push(`start ${path.includes('custom') ? 'field' : 'step'}`);
+      if (path.includes('custom'))
+        await new Promise<void>((resolve) => (finishFieldSave = resolve));
+      order.push(`end ${path.includes('custom') ? 'field' : 'step'}`);
+      return { ok: true };
+    });
+
+    const fieldSave = client.submitCustom(
+      { profile: 'older answer' },
+      { shouldFlush: true }
+    );
+    await waitUntil(() => order.length === 1);
+    const step = client.submitStep(
+      [{ key: 'profile', text_field: 'newer answer' }],
+      { key: 'Insurance', buttons: [], subgrids: [] },
+      true
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    finishFieldSave();
+    await Promise.all([fieldSave, step]);
+
+    expect(order).toEqual([
+      'start field',
+      'end field',
+      'start step',
+      'end step'
+    ]);
+  });
+
+  it('sends the step answers when the field save flush is rejected', async () => {
+    const { client } = createClientWithStorage();
+    client.autosaveEnabled = true;
+    jest
+      .spyOn(client, 'submitCustom')
+      .mockRejectedValue(new FetchError('"Invalid value"'));
+    const send = jest.spyOn(client, '_fetch').mockResolvedValue({ ok: true });
+
+    await expect(
+      client.submitStep(
+        [{ key: 'profile', text_field: 'synthetic answer' }],
+        { key: 'Insurance', buttons: [], subgrids: [] },
+        true
+      )
+    ).rejects.toThrow('Invalid value');
+
+    // The submission reports the failure at once; the answers go out behind it
+    await waitUntil(() => send.mock.calls.length === 1);
+    expect(JSON.parse(send.mock.calls[0][1].body)).toMatchObject({
+      step_key: 'Insurance',
+      servars: [{ key: 'profile', text_field: 'synthetic answer' }]
+    });
+  });
+
+  it('sends the step answers alongside the field save flush without autosave', async () => {
+    const { client } = createClientWithStorage();
+    const order: string[] = [];
+    let finishFlush!: () => void;
+    jest
+      .spyOn(client, 'submitCustom')
+      .mockReturnValue(new Promise<void>((resolve) => (finishFlush = resolve)));
+    jest.spyOn(client, '_fetch').mockImplementation(async () => {
+      order.push('step');
+      return { ok: true };
+    });
+
+    const step = client.submitStep(
+      [{ key: 'profile', text_field: 'synthetic answer' }],
+      { key: 'Insurance', buttons: [], subgrids: [] },
+      true
+    );
+
+    // The step's answers go out while the flush is still in flight
+    await waitUntil(() => order.length === 1);
+    finishFlush();
+    await step;
+    expect(order).toEqual(['step']);
+  });
+
+  it('uploads autosaved files of one field in order, outside the step queue', async () => {
+    const { client } = createClientWithStorage();
+    const queueBefore = client.submitQueue;
+    const landed: string[] = [];
+    let finishFirst!: () => void;
+    jest
+      .spyOn(client, '_submitFileData')
+      .mockImplementation(async (servar: any) => {
+        if (servar.name === 'first')
+          await new Promise<void>((resolve) => (finishFirst = resolve));
+        landed.push(servar.name);
+      });
+    const save = (name: string) =>
+      client.autosaveFiles([
+        { servar: { key: 'card', name }, stepKey: 'Insurance' }
+      ]);
+
+    const first = save('first');
+    const second = save('second');
+    await waitUntil(() => !!finishFirst);
+    expect(landed).toEqual([]);
+    finishFirst();
+    await Promise.all([first, second]);
+
+    expect(landed).toEqual(['first', 'second']);
+    expect(client.submitQueue).toBe(queueBefore);
+  });
+
   it('sends the step answers when resetting stored retry budgets fails', async () => {
     const { client } = createClientWithStorage();
     jest
@@ -667,5 +780,39 @@ describe('step save and completion ordering', () => {
 
     expect(uploads).toEqual(['older.png', 'newer.png']);
     expect(fileRetryStatus.card).toBe(true);
+  });
+
+  it('withdraws a pending field save only while it is unchanged', () => {
+    const { client } = createClientWithStorage();
+    client.pendingCustomFieldUpdates = { name: 'Ada', city: 'Paris' };
+
+    client.discardPendingCustomField('name', 'Ada');
+    client.discardPendingCustomField('city', 'Rome');
+
+    expect(client.pendingCustomFieldUpdates).toEqual({ city: 'Paris' });
+  });
+
+  it('logs a timer-fired field save that fails instead of leaving it unhandled', async () => {
+    const unhandled = jest.fn();
+    process.on('unhandledRejection', unhandled);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { client } = createClientWithStorage();
+      jest
+        .spyOn(client, '_debouncedSubmitCustom')
+        .mockRejectedValue(new FetchError('Internal server error'));
+
+      // Nothing awaits a save the debounce timer fires
+      client.debouncedSubmitCustom(true);
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+
+      expect(warn).toHaveBeenCalledWith(
+        'Error saving field values',
+        expect.any(FetchError)
+      );
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
   });
 });
