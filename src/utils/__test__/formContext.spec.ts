@@ -590,7 +590,7 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     await expect(
       getFormContext(uuid).generateDocuments({
         documentIds: [
-          { kind: 'template', document_id: 'tpl-1', references: ['r1'] },
+          { document_id: 'tpl-1', references: ['r1'] },
           { kind: 'quik' }
         ],
         includeInQuikBundle: true,
@@ -609,6 +609,14 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     ).rejects.toThrow('generateDocuments: a Quik bundle cannot be merged');
     expect(flow).not.toHaveBeenCalled();
 
+    // An explicit false wins over a flag set on the source object.
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1', { kind: 'quik', attach_documents: true }],
+      includeInQuikBundle: false
+    });
+    expect(flow.mock.calls[0][0].documents[1].attach_documents).toBe(false);
+    flow.mockClear();
+
     await getFormContext(uuid).generateDocuments({
       documentIds: [new Field('FileUpload1', uuid)]
     });
@@ -616,7 +624,7 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       { kind: 'file_upload', field_id: 'id-up' }
     ]);
     expect(client.generateDocuments).not.toHaveBeenCalled();
-    expect(client.flushCustomFields).toHaveBeenCalledTimes(3);
+    expect(client.flushCustomFields).toHaveBeenCalledTimes(4);
   });
 
   it('keeps the simple client path for plain template fill/merge (no rich options)', async () => {

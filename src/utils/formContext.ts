@@ -572,7 +572,7 @@ export const getFormContext = (formUuid: string) => {
                     }))
                   }
                 : {}),
-              ...(includeInQuikBundle ? { attach_documents: true } : {})
+              attach_documents: includeInQuikBundle ?? doc.attach_documents
             }
           : typeof doc !== 'string' && doc.kind === 'template'
           ? {
@@ -611,8 +611,9 @@ export const getFormContext = (formUuid: string) => {
         documentIds.some(
           (doc) =>
             typeof doc !== 'string' &&
-            doc.kind === 'template' &&
-            doc.references !== undefined
+            // A kind-less object is a template, as on the backend.
+            ((doc as { kind?: string }).kind ?? 'template') === 'template' &&
+            (doc as { references?: string[] }).references !== undefined
         )
       ) {
         return Promise.reject(
