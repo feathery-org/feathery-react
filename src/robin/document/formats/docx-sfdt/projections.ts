@@ -865,7 +865,7 @@ export const N9: Normalization = {
     const dropsByFormat = new Map<string, string[]>();
     const dropsOf = (entry: FormatEntry): string[] => {
       const drop = NATIVE_SETTERS.paragraph.filter((k) => {
-        const value = inherited(entry.styleName, k)?.value;
+        const value = inherited(entry.styleName, k, entry.listFormat)?.value;
         return (
           k in entry &&
           value !== undefined &&

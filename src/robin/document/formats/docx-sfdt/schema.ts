@@ -659,10 +659,14 @@ export function effective(
           source: shared ? 'format' : 'override'
         };
       else if (inheritParagraph) {
-        const inherited = inheritParagraph(entry?.styleName, spec.name);
+        const inherited = inheritParagraph(
+          entry?.styleName,
+          spec.name,
+          entry?.listFormat
+        );
         out[spec.name] = {
           value: inherited?.value ?? null,
-          source: inherited?.from === 'style' ? 'container' : 'default'
+          source: inherited?.from === 'default' ? 'default' : 'container'
         };
       } else if (fromStyle)
         out[spec.name] = { value: fromStyle[spec.name], source: 'container' };

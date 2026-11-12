@@ -451,6 +451,27 @@ describe('normalizations (each a true positive and a true negative)', () => {
     expect(fmt(withSpacing(6))).toHaveProperty('beforeSpacing', 6);
   });
 
+  it("N9 keeps a bullet's explicit indent that differs from its list level's", () => {
+    const bullet = (leftIndent?: number) =>
+      toNormalForm(
+        JSON.stringify({
+          styles: [{ name: 'Normal', type: 'Paragraph', paragraphFormat: {}, characterFormat: {} }],
+          lists: [{ abstractListId: 0, levelOverrides: [], listId: 1 }],
+          abstractLists: [{ abstractListId: 0, levels: [{ listLevelPattern: 'Bullet', paragraphFormat: { leftIndent: 36, firstLineIndent: -18 } }] }],
+          sections: [{ sectionFormat: {}, blocks: [{ paragraphFormat: { leftIndent, listFormat: { listId: 1, listLevelNumber: 0 } }, characterFormat: {}, inlines: [{ characterFormat: {}, text: 'Item' }] }] }]
+        })
+      ).nf;
+    const leftIndent = (nf: NormalForm) => {
+      const after = N9.apply(nf);
+      const para = all(after).find((n) => n.kind === 'paragraph') as NfNode;
+      return after.formats[String(para.style)].leftIndent;
+    };
+
+    // 0 moves the bullet off the list's 36 (true positive), 36 is what it already shows (true negative)
+    expect(leftIndent(bullet(0))).toBe(0);
+    expect(leftIndent(bullet(36))).toBeUndefined();
+  });
+
   it('N14 with N6 reads a control split into bare and explicitly inherited runs as one run (dts seq 4 fee cell)', () => {
     const nf = fresh();
     const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string' && nf.formats[String(n.style)]?.styleName === 'Normal') as NfNode;

@@ -179,4 +179,44 @@ describe('overrides and effective values', () => {
     // The editor's own default where the document sets none, as the proof reads it
     expect(paragraph.beforeSpacing).toEqual({ value: 0, source: 'default' });
   });
+  it("reads a bullet's indents from its list level, as the editor lays it out", () => {
+    const item = (paragraphFormat: object) => ({ paragraphFormat, characterFormat: {}, inlines: [{ characterFormat: {}, text: 'Item' }] });
+    const sfdt = JSON.stringify({
+      paragraphFormat: {},
+      styles: [
+        { name: 'Normal', type: 'Paragraph', paragraphFormat: {}, characterFormat: {} },
+        { name: 'Indented', type: 'Paragraph', paragraphFormat: { leftIndent: 72 }, characterFormat: {}, basedOn: 'Normal' },
+        { name: 'Bulleted', type: 'Paragraph', paragraphFormat: { listFormat: { listId: 1, listLevelNumber: 0 } }, characterFormat: {}, basedOn: 'Normal' }
+      ],
+      lists: [{ abstractListId: 0, levelOverrides: [], listId: 1 }],
+      abstractLists: [{ abstractListId: 0, levels: [{ listLevelPattern: 'Bullet', paragraphFormat: { leftIndent: 36, firstLineIndent: -18 } }] }],
+      sections: [
+        {
+          sectionFormat: {},
+          blocks: [
+            item({ listFormat: { listId: 1, listLevelNumber: 0 } }),
+            item({ styleName: 'Indented', listFormat: { listId: 1, listLevelNumber: 0 } }),
+            item({ styleName: 'Bulleted' }),
+            item({ leftIndent: 0, listFormat: { listId: 1, listLevelNumber: 0 } })
+          ]
+        }
+      ]
+    });
+    const nf = new IdTable().adopt(toNormalForm(sfdt), docxTree, FORMAT_REF_KEYS).nf;
+    const view = makeView(nf, { annotate: () => new Map(), tree: docxTree } as never);
+    const indents: Array<[unknown, unknown]> = [];
+    walk(nf.root, docxTree, ({ node }) => {
+      if (node.kind !== KIND.paragraph) return;
+      const values = effective(node, view);
+      indents.push([values.leftIndent.value, values.firstLineIndent.value]);
+    });
+
+    // Measured on the editor (34.1.31): the list level wins over a style on no list, an explicit value over both
+    expect(indents).toEqual([
+      [36, -18],
+      [36, -18],
+      [36, -18],
+      [0, -18]
+    ]);
+  });
 });

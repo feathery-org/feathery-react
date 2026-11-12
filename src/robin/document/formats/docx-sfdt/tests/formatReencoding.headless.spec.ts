@@ -112,6 +112,24 @@ describe('writes the editor re-encodes land', () => {
     expect(write).toMatchObject({ ok: true, committed: true });
   });
 
+  it('a write result names the format ids the editor kept, so the next write can use them', async () => {
+    await lane.call('open', doc([{ sectionFormat: page(), blocks: [para('Items Needed to Bind'), para('Existing bullet', { styleName: 'List Paragraph', listFormat: { listId: 1, listLevelNumber: 0 } })], headersFooters: {} }], {
+      styles: [
+        { name: 'Normal', type: 'Paragraph', paragraphFormat: { borders: BORDERS, listFormat: {} }, characterFormat: {}, next: 'Normal' },
+        { name: 'List Paragraph', type: 'Paragraph', paragraphFormat: { borders: BORDERS, listFormat: {} }, characterFormat: {}, basedOn: 'Normal', next: 'List Paragraph' }
+      ],
+      lists: [{ abstractListId: 0, levelOverrides: [], listId: 1, nsid: -126 }],
+      abstractLists: [{ abstractListId: 0, levels: [{ characterFormat: { fontFamily: 'Symbol' }, followCharacter: 'Tab', listLevelPattern: 'Bullet', numberFormat: '', paragraphFormat: { leftIndent: 36, firstLineIndent: -18 }, restartLevel: 0, startAt: 0 }] }]
+    }));
+    const heading = await nodeAt(['sections', 0, 'blocks', 0]);
+    const { shape } = await nodeAt(['sections', 0]);
+    const first = await dispatch('write', { intent: 'bullet', scope: { ids: [heading.id] }, formats: { 'tmp:bul': { styleName: 'List Paragraph', listFormat: { listId: 1, listLevelNumber: 0 } } }, changes: [{ kind: 'insert_after', anchor: heading.id, container: shape, node: { id: 'tmp:b1', kind: 'paragraph', style: 'tmp:bul', inlines: [{ kind: 'run', text: 'Completed Acord application' }] } }] });
+    const { shape: sectionShape } = await nodeAt(['sections', 0]);
+    const second = await dispatch('write', { intent: 'another', scope: { ids: [heading.id] }, changes: [{ kind: 'insert_after', anchor: heading.id, container: sectionShape, node: { id: 'tmp:b2', kind: 'paragraph', style: first.mapping['tmp:bul'], inlines: [{ kind: 'run', text: 'Completed TRIA form' }] } }] });
+
+    expect(second).toMatchObject({ ok: true, committed: true });
+  });
+
   it('a font size set with its bidi size lands', async () => {
     await lane.call('open', doc([{ sectionFormat: page(), blocks: [para('Coverage'), para('Last')], headersFooters: {} }], { characterFormat: { fontSize: 11, fontSizeBidi: 11 } }));
     const run = (await nodeAt(['sections', 0, 'blocks', 0])).inlines[0];

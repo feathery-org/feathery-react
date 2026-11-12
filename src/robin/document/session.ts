@@ -520,6 +520,7 @@ export class DocumentSession {
       normalizations: outcome.proof.normalizations,
       rollback: null
     });
+    const changed = this.changedSince(bases);
     const result: VerbResult = {
       ok: true,
       committed: true,
@@ -527,12 +528,14 @@ export class DocumentSession {
       cardId: outcome.plan.landed === 'card' ? changeSetId : null,
       landed: outcome.plan.landed,
       outlineHash: (this.current as DocumentState).outlineHash,
-      fingerprints: this.fingerprintsOf([
-        ...prepared.touched,
-        ...this.changedSince(bases)
-      ]),
-      referencedFormats: this.formatsAfter(write, prepared.touched),
+      fingerprints: this.fingerprintsOf([...prepared.touched, ...changed]),
+      referencedFormats: this.formatsAfter(write, prepared.touched, changed),
       ...common,
+      mapping: this.keptMapping(
+        prepared.mapping,
+        prepared.intended,
+        prepared.touched
+      ),
       // with what the live editor reported of the commit (a contents table rebuilt, or not)
       facts: [...prepared.facts, ...outcome.facts],
       warnings: [...prepared.warnings, ...outcome.warnings],
@@ -745,7 +748,35 @@ export class DocumentSession {
   }
 
   /** The formats a committed write targeted or left its changed nodes using, as they are now */
-  private formatsAfter(write: WriteInput, touched: string[]) {
+  /** A write's mapping with each format it named by the id the editor kept for it */
+  private keptMapping(
+    mapping: Record<string, string>,
+    intended: NormalForm,
+    touched: string[]
+  ): Record<string, string> {
+    const planned = makeView(intended, this.pack);
+    const { view } = this.current as DocumentState;
+    const kept = new Map<string, string>();
+    for (const id of touched) {
+      const was = planned.get(id);
+      const now = view.get(id);
+      for (const key of this.pack.formatRefKeys) {
+        const from = was?.[key];
+        const to = now?.[key];
+        if (typeof from === 'string' && typeof to === 'string' && from !== to)
+          kept.set(from, to);
+      }
+    }
+    return Object.fromEntries(
+      Object.entries(mapping).map(([tmp, id]) => [tmp, kept.get(id) ?? id])
+    );
+  }
+
+  private formatsAfter(
+    write: WriteInput,
+    touched: string[],
+    changed: string[]
+  ) {
     const { view } = this.current as DocumentState;
     const used = touched.flatMap((id) => {
       const node = view.get(id);
@@ -753,12 +784,19 @@ export class DocumentSession {
         ? [...referencedFormats(this.pack, withoutLists(node, this.pack.tree))]
         : [];
     });
+    // A node the editor changed beside the write names its own formats, not its contents'
+    const rekeyed = changed.flatMap((id) =>
+      this.pack.formatRefKeys.flatMap((key) => {
+        const ref = view.get(id)?.[key];
+        return typeof ref === 'string' && ref in view.nf.formats ? [ref] : [];
+      })
+    );
     const targeted = write.changes.flatMap((change) =>
       change.kind === 'set' && 'formatId' in change.target
         ? [change.target.formatId]
         : []
     );
-    return emitFormats(view, new Set([...used, ...targeted]));
+    return emitFormats(view, new Set([...used, ...rekeyed, ...targeted]));
   }
 
   /** A refresh after a resolution that failed: reported, never fatal to the resolution. */
