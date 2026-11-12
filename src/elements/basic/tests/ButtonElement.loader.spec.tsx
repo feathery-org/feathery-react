@@ -1,8 +1,12 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import ButtonElement from '../ButtonElement';
 import ResponsiveStyles from '../../styles';
 import { initState } from '../../../utils/init';
+import {
+  LOADER_MIN_VISIBLE_MS,
+  LOADER_SHOW_DELAY_MS
+} from '../../../hooks/useDelayedLoader';
 
 const BASE_STYLES = {
   flex_direction: 'row',
@@ -28,8 +32,11 @@ const makeElement = (properties: any = {}) => ({
   repeat: null
 });
 
-const renderButton = (element: any, loader: any, featheryContext?: any) =>
-  render(
+const advance = (ms: number) => act(() => jest.advanceTimersByTime(ms));
+
+// Renders past the show delay, so a requested loader is already drawn
+const renderButton = (element: any, loader: any, featheryContext?: any) => {
+  const result = render(
     <ButtonElement
       element={element}
       responsiveStyles={new ResponsiveStyles(element, ['button'], true, 478)}
@@ -38,6 +45,9 @@ const renderButton = (element: any, loader: any, featheryContext?: any) =>
       featheryContext={featheryContext}
     />
   );
+  advance(LOADER_SHOW_DELAY_MS);
+  return result;
+};
 
 // Rules emotion emitted, since jsdom's cssstyle drops calc() and aspect-ratio
 // from getComputedStyle and emotion inserts through insertRule
@@ -76,8 +86,14 @@ beforeAll(() => {
 
 // A known field the respondent hasn't filled renders empty, which one of the
 // cases below relies on. It lives on a module singleton, so put it back after.
-beforeEach(() => initState.knownFieldKeys.add('unfilled'));
-afterEach(() => initState.knownFieldKeys.delete('unfilled'));
+beforeEach(() => {
+  jest.useFakeTimers();
+  initState.knownFieldKeys.add('unfilled');
+});
+afterEach(() => {
+  jest.useRealTimers();
+  initState.knownFieldKeys.delete('unfilled');
+});
 
 describe('ButtonElement loader', () => {
   const labelled = () =>
@@ -99,6 +115,7 @@ describe('ButtonElement loader', () => {
     rerender(
       <ButtonElement {...props} loader={<span data-testid='loader' />} />
     );
+    advance(LOADER_SHOW_DELAY_MS);
 
     // Same node, so the image is never torn down and reloaded mid-click - a
     // fresh img has no intrinsic size until it decodes, which would collapse
@@ -215,5 +232,66 @@ describe('ButtonElement loader', () => {
     expect(getComputedStyle(box).height).toBe('50%');
     expect(getComputedStyle(box).width).not.toBe('50%');
     expect(emittedCss()).toMatch(/aspect-ratio:\s*1/);
+  });
+
+  describe('timing', () => {
+    const loader = <span data-testid='loader' />;
+    const setup = () => {
+      const element = labelled();
+      const props: any = {
+        element,
+        responsiveStyles: new ResponsiveStyles(element, ['button'], true, 478),
+        editMode: false
+      };
+      const onClick = jest.fn();
+      const view = render(
+        <ButtonElement {...props} onClick={onClick} loader={null} />
+      );
+      const setLoader = (l: any) =>
+        view.rerender(
+          <ButtonElement {...props} onClick={onClick} loader={l} />
+        );
+      return { onClick, setLoader };
+    };
+
+    it('never draws a loader for an action that settles within the delay', () => {
+      const { setLoader } = setup();
+      setLoader(loader);
+      advance(LOADER_SHOW_DELAY_MS - 1);
+      setLoader(null);
+      advance(LOADER_MIN_VISIBLE_MS);
+
+      expect(screen.queryByTestId('loader')).toBeNull();
+      expect(screen.getByRole('button').getAttribute('aria-disabled')).toBe(
+        'false'
+      );
+    });
+
+    it('blocks clicks while a loader is pending but not yet drawn', () => {
+      const { onClick, setLoader } = setup();
+      setLoader(loader);
+
+      expect(screen.queryByTestId('loader')).toBeNull();
+      expect(screen.getByRole('button').getAttribute('aria-busy')).toBe('true');
+      screen.getByRole('button').click();
+      expect(onClick).not.toHaveBeenCalled();
+    });
+
+    it('keeps a drawn loader up for the minimum visible time', () => {
+      const { onClick, setLoader } = setup();
+      setLoader(loader);
+      advance(LOADER_SHOW_DELAY_MS);
+      setLoader(null);
+
+      // The tail is measured with Date.now, which these fake timers don't
+      // freeze, so leave slack for the real time the test itself takes
+      advance(LOADER_MIN_VISIBLE_MS - 100);
+      expect(screen.getByTestId('loader')).toBeTruthy();
+      advance(100);
+      expect(screen.queryByTestId('loader')).toBeNull();
+
+      screen.getByRole('button').click();
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
   });
 });
