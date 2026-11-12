@@ -118,7 +118,9 @@ export function getNextEditableCell(
   rowIndices: number[],
   columnCount: number,
   current: CellCoord,
-  backward: boolean
+  backward: boolean,
+  /** Whether a column can be edited at all; a column that cannot is skipped. */
+  isEditable: (colIndex: number) => boolean = () => true
 ): CellCoord | null {
   if (columnCount <= 0) return null;
 
@@ -129,21 +131,24 @@ export function getNextEditableCell(
   let { colIndex } = current;
   let pos = rowPos;
 
-  if (backward) {
-    colIndex -= 1;
-    if (colIndex < 0) {
-      colIndex = lastCol;
-      pos -= 1;
+  // At most every cell once: a table of only read-only columns ends the walk.
+  for (let steps = rowIndices.length * columnCount; steps > 0; steps -= 1) {
+    if (backward) {
+      colIndex -= 1;
+      if (colIndex < 0) {
+        colIndex = lastCol;
+        pos -= 1;
+      }
+      if (pos < 0) return null;
+    } else {
+      colIndex += 1;
+      if (colIndex > lastCol) {
+        colIndex = 0;
+        pos += 1;
+      }
+      if (pos > rowIndices.length - 1) return null;
     }
-    if (pos < 0) return null;
-  } else {
-    colIndex += 1;
-    if (colIndex > lastCol) {
-      colIndex = 0;
-      pos += 1;
-    }
-    if (pos > rowIndices.length - 1) return null;
+    if (isEditable(colIndex)) return { rowIndex: rowIndices[pos], colIndex };
   }
-
-  return { rowIndex: rowIndices[pos], colIndex };
+  return null;
 }

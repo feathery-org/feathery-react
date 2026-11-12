@@ -18,10 +18,29 @@ import {
   _clearUnsavedWorkRegistry
 } from '../../../../utils/unsavedWork';
 
+// A column records only which form field it shows; the field's type comes
+// from the form itself (see FORM_STATE), which is what types the Email column.
 const COLUMNS = [
-  { name: 'Name', field_id: 'f1', field_type: 'text', field_key: 'name_key' },
-  { name: 'Email', field_id: 'f2', field_type: 'email', field_key: 'email_key' }
+  { name: 'Name', field_id: 'f1', field_type: 'servar', field_key: 'name_key' },
+  {
+    name: 'Email',
+    field_id: 'f2',
+    field_type: 'servar',
+    field_key: 'email_key'
+  }
 ];
+
+const FORM_ID = 'form-1';
+const FORM_STATE = {
+  steps: {
+    step1: {
+      servar_fields: [
+        { servar: { key: 'name_key', type: 'text_field', metadata: {} } },
+        { servar: { key: 'email_key', type: 'email', metadata: {} } }
+      ]
+    }
+  }
+};
 
 const HUB_FIELDS = [
   { id: 'hf1', key: 'name', type: 'text', required: false, unique: false },
@@ -99,6 +118,7 @@ const renderTable = (
         }
       }}
       responsiveStyles={mockStyles()}
+      formId={FORM_ID}
       updateFieldValues={updateFieldValues}
       submitCustom={submitCustom}
       {...extra}
@@ -140,6 +160,8 @@ const editCell = (from: string, to: string) => {
 };
 
 beforeEach(() => {
+  // A fresh object per test: the table registers its handlers onto it.
+  (internalState as any)[FORM_ID] = { ...FORM_STATE };
   stubLayout();
   Object.assign(fieldValues, {
     name_key: ['Alice', 'Bob'],
@@ -148,6 +170,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete (internalState as any)[FORM_ID];
   _clearUnsavedWorkRegistry();
   sizeSpies.forEach((restore) => restore());
   sizeSpies = [];
