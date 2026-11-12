@@ -268,7 +268,7 @@ describe('the format pack', () => {
     };
     expect(r.ok).toBe(false);
     expect(r.refusal.invariant).toBe('orphaned-dependents');
-    expect(r.refusal.read).toEqual(['binding', 'formula']);
+    expect(r.refusal.read).toEqual(['binding']);
     expect(r.refusal.destroyed).toContain('summary_subtotal');
   });
 
