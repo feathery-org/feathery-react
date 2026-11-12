@@ -9,7 +9,7 @@ import {
   fmtKeyOf,
   formatDelta,
   identityOf,
-  regionKey,
+  blockRegion,
   TOKEN_CHAR
 } from './ir';
 import { patienceAlign, similarity, wordDiff } from './lcs';
@@ -36,6 +36,7 @@ export interface WBlock {
   path: BlockPath;
   rowPath?: BlockPath;
   rawTable?: unknown;
+  region?: string;
   raw: unknown;
 }
 
@@ -63,6 +64,7 @@ export function fromFlat(doc: FlatDoc): Working {
       path: b.path,
       rowPath: b.rowPath,
       rawTable: b.rawTable,
+      region: b.region,
       raw: b.raw
     }))
   };
@@ -175,6 +177,7 @@ function spliceBlock(
   block.path = next.path;
   block.rowPath = next.rowPath;
   block.rawTable = next.rawTable;
+  block.region = next.region;
   block.raw = next.raw;
 }
 
@@ -186,6 +189,7 @@ function insertedBlock(next: FlatBlock, author: AuthorKey): WBlock {
     path: next.path,
     rowPath: next.rowPath,
     rawTable: next.rawTable,
+    region: next.region,
     raw: next.raw
   };
 }
@@ -214,10 +218,10 @@ export function applySlice(
 ): void {
   const live = working.blocks.filter((b) => !b.delBlock);
   const oldKeys = live.map(
-    (b) => `${regionKey(b.path)}:${identityOf(acceptedText(b))}`
+    (b) => `${blockRegion(b)}:${identityOf(acceptedText(b))}`
   );
   const newKeys = slice.blocks.map(
-    (b) => `${regionKey(b.path)}:${identityOf(b.text)}`
+    (b) => `${blockRegion(b)}:${identityOf(b.text)}`
   );
   const pairs = patienceAlign(oldKeys, newKeys, checkBudget);
 
@@ -250,7 +254,7 @@ export function applySlice(
       if (
         o &&
         n &&
-        regionKey(o.path) === regionKey(n.path) &&
+        blockRegion(o) === blockRegion(n) &&
         similarity(acceptedText(o), n.text) >= SIMILARITY_THRESHOLD
       ) {
         carryDeletedUpTo(o);

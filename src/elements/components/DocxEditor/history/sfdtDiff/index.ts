@@ -15,7 +15,7 @@ import {
   flattenSfdt,
   getBlock,
   normalizeForDiff,
-  regionKey,
+  blockRegion,
   visitDocumentRegions,
   tableParagraphCount,
   TOKEN_CHAR
@@ -158,23 +158,29 @@ function emitHunks(working: Working): Hunk[] {
   let nextId = 1;
   const blocks = working.blocks;
 
-  // Anchor for deleted blocks: the path of the next surviving block.
-  const nextSurvivingPath = (from: number, origin: BlockPath): BlockPath => {
-    const region = regionKey(origin);
+  // Anchor for deleted blocks: the path of the next surviving block. Null for
+  // a text box with no surviving paragraph: the shape itself was deleted.
+  const nextSurvivingPath = (
+    from: number,
+    origin: WBlock
+  ): BlockPath | null => {
+    const region = blockRegion(origin);
     for (let i = from; i < blocks.length; i++) {
-      if (!blocks[i].delBlock && regionKey(blocks[i].path) === region)
+      if (!blocks[i].delBlock && blockRegion(blocks[i]) === region)
         return blocks[i].path;
     }
     // Past the end: one past the last surviving block's index.
     for (let i = blocks.length - 1; i >= 0; i--) {
-      if (!blocks[i].delBlock && regionKey(blocks[i].path) === region) {
+      if (!blocks[i].delBlock && blockRegion(blocks[i]) === region) {
         const p = [...blocks[i].path];
         p[p.length - 1] = (p[p.length - 1] as number) + 1;
         return p;
       }
     }
+    if (origin.region) return null;
+    const path = origin.path;
     return [
-      ...origin.slice(0, origin[1] === 'headersFooters' ? 3 : 1),
+      ...path.slice(0, path[1] === 'headersFooters' ? 3 : 1),
       'blocks',
       0
     ];
@@ -192,7 +198,7 @@ function emitHunks(working: Working): Hunk[] {
       while (
         bi + 1 < blocks.length &&
         blocks[bi + 1].delBlock === author &&
-        regionKey(blocks[bi + 1].path) === regionKey(block.path)
+        blockRegion(blocks[bi + 1]) === blockRegion(block)
       ) {
         bi++;
         removed.push(rawParagraphFrom(blocks[bi]));
@@ -203,11 +209,13 @@ function emitHunks(working: Working): Hunk[] {
       const table = deletesOnlyThisTable
         ? wholeDeletedTable(runBlocks)
         : undefined;
+      const anchor = nextSurvivingPath(bi + 1, block);
+      if (!anchor) continue;
       hunks.push({
         id: nextId++,
         author,
         type: 'del_block',
-        at: { block: nextSurvivingPath(bi + 1, block.path) },
+        at: { block: anchor },
         blocks: removed,
         ...(table ? { table } : {})
       });
