@@ -448,9 +448,23 @@ function nativeProps(target: string, was: Obj, is: Obj): Obj | null {
       return null;
     }
     if (v === null || !NATIVE_SETTERS[target]?.includes(k)) return null;
+    if (
+      target === 'paragraph' &&
+      k.startsWith('lineSpacing') &&
+      !settableLineSpacing(is.lineSpacing ?? 1, is.lineSpacingType)
+    )
+      return null;
     out[k] = v;
   }
   return out;
+}
+
+// Vendored, 34.1.31: `SelectionParagraphFormat.validateLineSpacing`, whose setter resets any other value
+function settableLineSpacing(value: unknown, type: unknown): boolean {
+  const spacing = Number(value);
+  return type === 'Exactly' || type === 'AtLeast'
+    ? spacing > 0 && spacing <= 1584
+    : spacing >= 1 && spacing <= 132;
 }
 
 /** The paragraph the editor's selection goes to for a table, row or cell: its first one. */

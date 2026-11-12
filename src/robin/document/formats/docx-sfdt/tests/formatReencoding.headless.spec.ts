@@ -121,4 +121,14 @@ describe('writes the editor re-encodes land', () => {
     expect(write).toMatchObject({ ok: true, committed: true });
     expect((await native()).sections[0].blocks[0].inlines[0].characterFormat).toMatchObject({ fontSize: 9, fontSizeBidi: 9 });
   });
+
+  it('a line spacing tighter than single lands, which the editor cannot set itself (Hilb 2cb00732)', async () => {
+    await lane.call('open', doc([{ sectionFormat: page(), blocks: [para('Named Insured'), para('Last')], headersFooters: {} }]));
+    const paragraph = await nodeAt(['sections', 0, 'blocks', 0]);
+
+    const write = await dispatch('write', { intent: 'tighter', scope: { ids: [paragraph.id] }, changes: [{ kind: 'set', target: { ids: [paragraph.id], shape: { [paragraph.id]: paragraph.shape } }, props: { lineSpacing: 0.93, lineSpacingType: 'Multiple' } }] });
+
+    expect(write).toMatchObject({ ok: true, committed: true });
+    expect((await native()).sections[0].blocks[0].paragraphFormat).toMatchObject({ lineSpacing: 0.93, lineSpacingType: 'Multiple' });
+  });
 });
