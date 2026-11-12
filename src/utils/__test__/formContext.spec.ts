@@ -570,6 +570,12 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       forms: [{ id: 301, fields: { '1own.FName': 'Ada' } }]
     });
     expect(flow.mock.calls[0][0].documents[1].forms).not.toBe(explicit.forms);
+    expect(flow.mock.calls[0][0].documents[1].forms[0]).not.toBe(
+      explicit.forms[0]
+    );
+    expect(flow.mock.calls[0][0].documents[1].forms[0].fields).not.toBe(
+      explicit.forms[0].fields
+    );
 
     flow.mockClear();
     await expect(
@@ -579,6 +585,19 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       })
     ).rejects.toThrow(
       "generateDocuments: includeInQuikBundle requires a { kind: 'quik' } source in documentIds"
+    );
+    expect(flow).not.toHaveBeenCalled();
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: [
+          { kind: 'template', document_id: 'tpl-1', references: ['r1'] },
+          { kind: 'quik' }
+        ],
+        includeInQuikBundle: true,
+        signMethod: 'docusign'
+      })
+    ).rejects.toThrow(
+      'generateDocuments: templates in the Quik bundle cannot take references'
     );
     expect(flow).not.toHaveBeenCalled();
 
