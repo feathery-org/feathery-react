@@ -595,20 +595,26 @@ export const getFormContext = (formUuid: string) => {
           )
         );
       }
-      const bundlesTemplateReferences =
-        documentIds.some(
-          (doc) =>
-            typeof doc !== 'string' &&
-            doc.kind === 'quik' &&
-            !!doc.attach_documents
-        ) &&
+      const bundled = documentIds.some(
+        (doc) =>
+          typeof doc !== 'string' &&
+          doc.kind === 'quik' &&
+          !!doc.attach_documents
+      );
+      if (bundled && merge) {
+        return Promise.reject(
+          new Error('generateDocuments: a Quik bundle cannot be merged')
+        );
+      }
+      if (
+        bundled &&
         documentIds.some(
           (doc) =>
             typeof doc !== 'string' &&
             doc.kind === 'template' &&
             doc.references !== undefined
-        );
-      if (bundlesTemplateReferences) {
+        )
+      ) {
         return Promise.reject(
           new Error(
             'generateDocuments: templates in the Quik bundle cannot take references'

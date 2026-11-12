@@ -600,6 +600,14 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       'generateDocuments: templates in the Quik bundle cannot take references'
     );
     expect(flow).not.toHaveBeenCalled();
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: ['tpl-1', { kind: 'quik' }],
+        includeInQuikBundle: true,
+        merge: true
+      })
+    ).rejects.toThrow('generateDocuments: a Quik bundle cannot be merged');
+    expect(flow).not.toHaveBeenCalled();
 
     await getFormContext(uuid).generateDocuments({
       documentIds: [new Field('FileUpload1', uuid)]
