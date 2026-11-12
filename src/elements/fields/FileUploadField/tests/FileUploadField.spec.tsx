@@ -234,6 +234,72 @@ describe('FileUploadField - Base Functionality', () => {
       expect(mockOnChange).toHaveBeenCalled();
       expect(getMockFieldValue()).toHaveLength(1);
     });
+
+    it.each(['xlsx', '.xlsx'])(
+      'accepts a matching file when the custom file type is %p',
+      async (customFileType) => {
+        const mockOnChange = createStatefulFileOnChange();
+        const element = createFileUploadElement('file_upload', {
+          custom_file_types: [customFileType]
+        });
+        const props = createFileUploadProps(element);
+
+        render(<FileUploadField {...props} onChange={mockOnChange} />);
+
+        const spreadsheet = createMockFile(
+          'sov.xlsx',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        );
+        await act(async () => {
+          fireEvent.change(
+            getFileInput(),
+            createFileInputChangeEvent([spreadsheet])
+          );
+        });
+
+        expect(getFileInput().accept).toBe('.xlsx');
+        expect(getMockFieldValue()).toHaveLength(1);
+      }
+    );
+
+    it('accepts a matching file when the custom file type is a number', async () => {
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload', {
+        custom_file_types: [123]
+      });
+      const props = createFileUploadProps(element);
+
+      render(<FileUploadField {...props} onChange={mockOnChange} />);
+
+      const numberedFile = createMockFile('export.123', '');
+      await act(async () => {
+        fireEvent.change(
+          getFileInput(),
+          createFileInputChangeEvent([numberedFile])
+        );
+      });
+
+      expect(getFileInput().accept).toBe('.123');
+      expect(getMockFieldValue()).toHaveLength(1);
+    });
+
+    it('rejects other extensions when the custom file type has a leading dot', async () => {
+      const mockOnChange = createStatefulFileOnChange();
+      const element = createFileUploadElement('file_upload', {
+        custom_file_types: ['.xlsx']
+      });
+      const props = createFileUploadProps(element);
+
+      render(<FileUploadField {...props} onChange={mockOnChange} />);
+
+      const pdf = createMockFile('sov.pdf', 'application/pdf');
+      await act(async () => {
+        fireEvent.change(getFileInput(), createFileInputChangeEvent([pdf]));
+      });
+
+      expect(mockOnChange).not.toHaveBeenCalled();
+      expect(getMockFieldValue()).toHaveLength(0);
+    });
   });
 
   describe('File Limits', () => {
