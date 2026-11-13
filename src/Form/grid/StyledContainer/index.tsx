@@ -36,6 +36,11 @@ export type StyledContainerProps = PropsWithChildren & {
   viewportOnly?: boolean;
   breakpoint: number;
   documentEditorPreviewType?: 'docx' | 'pptx' | 'generic';
+  /**
+   * Editor mode shares the host's page, so it renders custom HTML only as
+   * this function returns it, and none without it. Live forms ignore it.
+   */
+  sanitizeHtml?: (html: string) => string;
 };
 
 /**
@@ -64,6 +69,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
       formId,
       assistantEnabled,
       documentEditorPreviewType,
+      sanitizeHtml,
       ...props
     },
     ref
@@ -157,15 +163,30 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
 
     if (node.properties.custom_html) {
       const html = replaceTextVariables(node.properties.custom_html);
-
-      const RenderComponent = editMode
-        ? ShadowDomHtmlContent // render inside shadow dom in designer
-        : DangerouslySetHtmlContent; // render directly on live form
       const baseStyles =
         children.length === 0 ? { height: '100%', width: '100%' } : {};
-      children.push(
-        <RenderComponent key={`html:${html}`} html={html} css={baseStyles} />
-      );
+
+      if (!editMode) {
+        // Live forms run the author's HTML as written, scripts included.
+        children.push(
+          <DangerouslySetHtmlContent
+            key={`html:${html}`}
+            html={html}
+            css={baseStyles}
+          />
+        );
+      } else if (sanitizeHtml) {
+        // A shadow root scopes styles, not script. Sanitizing after the
+        // variables are substituted keeps a field value from adding markup.
+        const sanitizedHtml = sanitizeHtml(html);
+        children.push(
+          <ShadowDomHtmlContent
+            key={`html:${sanitizedHtml}`}
+            html={sanitizedHtml}
+            css={baseStyles}
+          />
+        );
+      }
     }
 
     useContainerEngine(node, rawNode, ref);
