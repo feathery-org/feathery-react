@@ -481,3 +481,90 @@ describe('StyledContainer node type classes', () => {
     expect(containerClasses(node, 'mobile')).toContain('fill-container');
   });
 });
+
+describe('StyledContainer custom HTML', () => {
+  const UNSAFE_HTML = '<img src="x" onerror="alert(1)"><p>Welcome</p>';
+  const SANITIZED_HTML = '<p>Welcome</p>';
+  const htmlNode = {
+    ...baseNode,
+    properties: { custom_html: UNSAFE_HTML }
+  };
+
+  // Editor mode writes custom HTML into a shadow root, which
+  // container.querySelector cannot see into.
+  const editorHtml = (container: HTMLElement) => {
+    const host = Array.from(container.querySelectorAll('div')).find(
+      (div) => div.shadowRoot
+    );
+    return host?.shadowRoot?.querySelector('div')?.innerHTML;
+  };
+
+  afterEach(() => {
+    delete fieldValues.visitor_note;
+  });
+
+  it("renders only the sanitizer's output in editor mode", () => {
+    const sanitizeHtml = jest.fn(() => SANITIZED_HTML);
+    const { container } = render(
+      <StyledContainer
+        node={htmlNode}
+        breakpoint={480}
+        editMode
+        sanitizeHtml={sanitizeHtml}
+      />
+    );
+
+    expect(sanitizeHtml).toHaveBeenCalledWith(UNSAFE_HTML);
+    expect(editorHtml(container)).toBe(SANITIZED_HTML);
+  });
+
+  it('sanitizes editor HTML after field values are substituted', () => {
+    fieldValues.visitor_note = '<img src="x" onerror="alert(1)">';
+    const sanitizeHtml = jest.fn(() => SANITIZED_HTML);
+    render(
+      <StyledContainer
+        node={{
+          ...baseNode,
+          properties: { custom_html: '<p>{{visitor_note}}</p>' }
+        }}
+        breakpoint={480}
+        editMode
+        sanitizeHtml={sanitizeHtml}
+      />
+    );
+
+    expect(sanitizeHtml).toHaveBeenCalledWith(
+      '<p><img src="x" onerror="alert(1)"></p>'
+    );
+  });
+
+  it('renders no custom HTML in editor mode without a sanitizer', () => {
+    const { container } = render(
+      <StyledContainer node={htmlNode} breakpoint={480} editMode>
+        <span>Container contents</span>
+      </StyledContainer>
+    );
+
+    expect(editorHtml(container)).toBeUndefined();
+    expect(container.querySelector('img')).toBeNull();
+    expect(container).toHaveTextContent('Container contents');
+  });
+
+  it('renders custom HTML as written on a live form and ignores the sanitizer', () => {
+    const sanitizeHtml = jest.fn(() => SANITIZED_HTML);
+    const { container } = render(
+      <StyledContainer
+        node={htmlNode}
+        breakpoint={480}
+        sanitizeHtml={sanitizeHtml}
+      />
+    );
+
+    expect(sanitizeHtml).not.toHaveBeenCalled();
+    expect(container.querySelector('img')).toHaveAttribute(
+      'onerror',
+      'alert(1)'
+    );
+    expect(container.querySelector('p')).toHaveTextContent('Welcome');
+  });
+});
