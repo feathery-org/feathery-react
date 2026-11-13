@@ -25,6 +25,27 @@ import DocumentEditorContainer from '../../../elements/components/DocumentEditor
 import { ShadowDomHtmlContent } from '../../../utils/ShadowDomHtmlContent';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
 
+const EDITOR_IFRAME_PROTOCOLS = ['http:', 'https:'];
+
+// The editor renders inside the dashboard's own page, so it embeds only a web
+// page that is not the dashboard itself.
+function canEmbedInEditor(url: string): boolean {
+  if (!url) return false;
+
+  const link = featheryDoc().createElement?.('a');
+  if (!link) return false;
+  link.href = url;
+
+  // A javascript: or data: URL would run as the signed-in member.
+  if (!EDITOR_IFRAME_PROTOCOLS.includes(link.protocol)) return false;
+
+  // An unresolved variable can leave a URL pointing at the dashboard's own
+  // origin, which would load the dashboard inside its editor.
+  const hasUnresolvedVariable = Boolean(url.match(TEXT_VARIABLE_PATTERN));
+  const isDashboardOrigin = link.origin === featheryWindow().location.origin;
+  return !(hasUnresolvedVariable && isDashboardOrigin);
+}
+
 export type StyledContainerProps = PropsWithChildren & {
   key?: string;
   node: any;
@@ -117,15 +138,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
     );
 
     const url = replaceTextVariables(node.properties.iframe_url);
-    let blockEditorIframe = editMode && !url;
-    if (editMode && url.match(TEXT_VARIABLE_PATTERN)) {
-      const link = featheryDoc().createElement?.('a');
-      if (link) {
-        link.href = url;
-        // Only same-origin embeds can load the dashboard inside its editor.
-        blockEditorIframe = link.origin === featheryWindow().location.origin;
-      }
-    }
+    const blockEditorIframe = editMode && !canEmbedInEditor(url);
     if (node.properties.iframe_url && !blockEditorIframe) {
       children.push(
         <iframe
