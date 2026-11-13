@@ -15,7 +15,12 @@ import { initState } from '../init';
 // under test here. '../init' is mocked because it instantiates FeatheryClient at
 // module load, which would drag the rest of the SDK in with it.
 jest.mock('../init', () => ({
-  initState: { linkToken: '', linkSecret: '', collaboratorId: '' }
+  initState: {
+    linkToken: '',
+    linkSecret: '',
+    collaboratorId: '',
+    salesforceSession: undefined
+  }
 }));
 
 // Pinned rather than inherited from BACKEND_ENV: local, docker and staging put
@@ -33,10 +38,15 @@ const actingAsCollaborator = (collaboratorId: string) => {
   initState.collaboratorId = collaboratorId;
 };
 
+const embeddedInSalesforce = (sessionId: string, instanceUrl: string) => {
+  initState.salesforceSession = { sessionId, instanceUrl };
+};
+
 beforeEach(() => {
   setEnvironment(US_PRODUCTION);
   openedWithLink('');
   actingAsCollaborator('');
+  initState.salesforceSession = undefined;
 });
 
 describe('the credentials a gated request carries', () => {
@@ -63,6 +73,24 @@ describe('the credentials a gated request carries', () => {
   });
 
   it('sends nothing when there is neither', () => {
+    expect(linkHeadersForUrl(sessionUrl())).toBeUndefined();
+  });
+
+  it('sends the Salesforce session with the instance that can verify it', () => {
+    embeddedInSalesforce('00D!session', 'https://acme.my.salesforce.com');
+
+    expect(linkHeadersForUrl(sessionUrl())).toEqual({
+      'X-Feathery-Session': '00D!session',
+      'X-Feathery-Salesforce-Instance': 'https://acme.my.salesforce.com'
+    });
+    // The session proves who the filler is on every gated request, and only
+    // those: the CDN and S3 never see it
+    expect(linkHeadersForUrl(`${getCdnUrl()}panel/v23/`)).toBeUndefined();
+  });
+
+  it('sends no Salesforce headers for a half-specified session', () => {
+    embeddedInSalesforce('00D!session', '');
+
     expect(linkHeadersForUrl(sessionUrl())).toBeUndefined();
   });
 
