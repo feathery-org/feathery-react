@@ -19,6 +19,10 @@ import {
 import { remountAllForms, rerenderAllForms } from './formHelperFunctions';
 import internalState from './internalState';
 import { parseUserVal } from './entities/Field';
+import {
+  recordSubmittedValues,
+  resetSubmittedValues
+} from './submittedFieldValues';
 import { authState } from '../auth/LoginForm';
 // mask.ts imports nothing, so this stays free of the import cycles the rest of
 // the elements tree would introduce here.
@@ -288,6 +292,7 @@ function handleNewUserSearchParams(newUserId: string) {
  */
 function resetSubmissionState(): void {
   fieldValues = {};
+  resetSubmittedValues();
   filePathMap = {};
   restoredFileKeys.clear();
   initState.formSessions = {};
@@ -382,7 +387,9 @@ function setFieldValues(
   });
 
   Object.assign(fieldValues, result);
-  if (!skipServerSubmit) defaultClient.submitCustom(result);
+  // Values set with skipServerSubmit are ones the server already has
+  if (skipServerSubmit) recordSubmittedValues(result);
+  else defaultClient.submitCustom(result);
 
   if (rerender) rerenderAllForms();
 }
