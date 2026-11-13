@@ -30,6 +30,7 @@ function renderedWash(
     checkRevisionType: jest.fn(),
     getScaledValue: (value: number) => value,
     renderTextElementBox: jest.fn(),
+    renderListTextElementBox: jest.fn(),
     renderCellBackground: jest.fn(),
     renderWidgets: jest.fn()
   };
@@ -121,6 +122,7 @@ function renderedOutline(
     checkRevisionType: jest.fn(),
     getScaledValue: (value: number) => value,
     renderTextElementBox: jest.fn(),
+    renderListTextElementBox: jest.fn(),
     renderWidgets: jest.fn(() =>
       renderer.renderTextElementBox(elementBox, 0, 0, 0)
     )
@@ -211,5 +213,38 @@ describe('revision highlight rendering', () => {
       renderedOutline({ v: 1, source: 'history', confirmed: true }, false, true)
         .calls
     ).toEqual([]);
+  });
+});
+
+describe('tracked list markers', () => {
+  it('draw in their own colour, since the blanked revisions leave the engine none', () => {
+    let markerColor: unknown;
+    const renderer: any = {
+      checkRevisionType: jest.fn(),
+      getRevisionColor: () => undefined,
+      renderTextElementBox: jest.fn(),
+      renderListTextElementBox: jest.fn(function (this: any) {
+        markerColor = renderer.getRevisionColor(renderer.checkRevisionType());
+      }),
+      renderWidgets: jest.fn()
+    };
+    installRevisionHighlightRendering({
+      documentHelper: { render: renderer },
+      viewer: { visiblePages: [] }
+    } as any);
+    const format = (fontColor?: string) => ({
+      fontColor,
+      hasValue: (key: string) => key === 'fontColor' && fontColor !== undefined
+    });
+    const marker = (own?: string) => ({
+      listLevel: { characterFormat: format(own) },
+      line: { paragraph: { characterFormat: format('#000000') } }
+    });
+
+    renderer.renderListTextElementBox(marker('#1F3864'), 0, 0, 0);
+    expect(markerColor).toBe('#1F3864');
+    renderer.renderListTextElementBox(marker(), 0, 0, 0);
+    expect(markerColor).toBe('#000000');
+    expect(renderer.getRevisionColor()).toBeUndefined();
   });
 });

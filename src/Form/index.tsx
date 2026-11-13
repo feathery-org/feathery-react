@@ -73,9 +73,12 @@ import {
   getTextVariableReferences,
   getVisiblePositions
 } from '../utils/hideAndRepeats';
+import { getValueBoundReferences } from '../utils/valueBounds';
 import {
   ensurePhoneValidator,
   isFieldValueEmpty,
+  getSettledVisiblePositions,
+  storeAlignedSliderValues,
   validateElements,
   validators
 } from '../utils/validation';
@@ -1003,6 +1006,13 @@ function Form({
     return new Set<string>();
   }, [activeStep?.id]);
 
+  // A slider's range reads its linked min/max fields while rendering, so editing
+  // one of them has to repaint the slider too
+  const valueBoundFieldReferences = useMemo(
+    () => getValueBoundReferences(activeStep),
+    [activeStep?.id]
+  );
+
   // Servar per field key. updateFieldValues runs on every keystroke, so this
   // avoids both the linear scan in getServarByFieldKey and the Field entity,
   // whose type getter warns when the field is not on the active form. The whole
@@ -1180,6 +1190,7 @@ function Form({
         validateElements({
           step: activeStep,
           visiblePositions: getVisiblePositions(activeStep, _internalId),
+          internalId: _internalId,
           triggerErrors: true,
           reportNativeErrors: false,
           errorType: formSettings.errorType,
@@ -1251,6 +1262,10 @@ function Form({
       ([key, val]) =>
         fieldValues[key] !== val && textVariableFieldReferences.has(key)
     );
+    const valueBoundDependenciesChanged = entries.some(
+      ([key, val]) =>
+        fieldValues[key] !== val && valueBoundFieldReferences.has(key)
+    );
 
     const fields = internalState[_internalId]?.fields;
 
@@ -1279,9 +1294,11 @@ function Form({
     if (rerender || empty) setRender((render) => ({ ...render }));
     else {
       // Not exclusive: a key can drive both a hideIf rule and a text variable,
-      // and the text variable needs the faster repaint either way.
+      // and the text variable needs the faster repaint either way. A slider's
+      // range likewise only repaints a mounted field, so it shares that repaint.
       if (hideIfDependenciesChanged) debouncedRerender();
-      if (textVariableDependenciesChanged) debouncedTextVariableRerender();
+      if (textVariableDependenciesChanged || valueBoundDependenciesChanged)
+        debouncedTextVariableRerender();
     }
 
     // Only validate on each field change if auto validate is enabled due to prev submit attempt
@@ -1933,7 +1950,10 @@ function Form({
 
   const visiblePositions = useMemo(() => {
     if (!activeStep) return null;
-    const visiblePositions = getVisiblePositions(activeStep, _internalId);
+    const visiblePositions = getSettledVisiblePositions(
+      activeStep,
+      _internalId
+    );
 
     if (formSettings.clearHideIfFields) {
       // Auto-reset hidden fields to defaults when they become hidden via hideIf rules.
@@ -2280,11 +2300,13 @@ function Form({
     // Optional on purpose: undefined means the submitting element is NOT in a
     // repeated container, which must stay distinguishable from row 0.
     repeat: number | undefined,
-    hasNext: boolean
+    hasNext: boolean,
+    // Visibility once the caller has stored the settled slider values
+    settledPositions: any
   ): Promise<[Promise<any>] | undefined> => {
     let formattedFields = formatStepFields(
       activeStep,
-      formSettings.saveHideIfFields ? null : visiblePositions,
+      formSettings.saveHideIfFields ? null : settledPositions,
       false
     );
     const trigger = {
@@ -2362,6 +2384,7 @@ function Form({
       const { invalid: latestValuesInvalid } = validateElements({
         step: activeStep,
         visiblePositions: latestVisiblePositions,
+        internalId: _internalId,
         triggerErrors: true,
         errorType: formSettings.errorType,
         formRef,
@@ -2375,9 +2398,15 @@ function Form({
         setAutoValidate(true);
         return;
       }
+      // Nothing blocks the submit from here, so these values stay
+      const latestSettledPositions = storeAlignedSliderValues(
+        activeStep,
+        latestVisiblePositions,
+        _internalId
+      ).visiblePositions;
       formattedFields = formatStepFields(
         activeStep,
-        formSettings.saveHideIfFields ? null : latestVisiblePositions,
+        formSettings.saveHideIfFields ? null : latestSettledPositions,
         false
       );
     }
@@ -2495,6 +2524,7 @@ function Form({
       const { invalid, inlineErrors: newInlineErrors } = validateElements({
         step: activeStep,
         visiblePositions,
+        internalId: _internalId,
         triggerErrors: true,
         errorType: formSettings.errorType,
         formRef,
@@ -2503,6 +2533,13 @@ function Form({
         trigger
       });
       if (invalid) return false;
+      // Stripe syncs mapped fields from the stored values, so sliders store what
+      // they show, and get their answers back if the purchase fails
+      const settled = storeAlignedSliderValues(
+        activeStep,
+        visiblePositions,
+        _internalId
+      );
 
       // payment/checkout
       const pmField = activeStep.servar_fields.find(
@@ -2517,6 +2554,7 @@ function Form({
         targetElement: pmField ? getCardElement(pmField.servar.key) : null
       });
       if (errors) {
+        settled.restore();
         const { errorMessage, errorField } = errors;
         await setFormElementError({
           formRef,
@@ -2973,9 +3011,18 @@ function Form({
         });
       }
 
+      // Sliders store what they show before validation and navigation read
+      // them, so no_complete, the next step and the payload agree
+      // If the submit is blocked, the failure returns below restore them
+      const sliders = storeAlignedSliderValues(
+        activeStep,
+        visiblePositions,
+        _internalId
+      );
       const { invalid } = validateElements({
         step: activeStep,
-        visiblePositions,
+        visiblePositions: sliders.visiblePositions,
+        internalId: _internalId,
         triggerErrors: true,
         errorType: formSettings.errorType,
         formRef,
@@ -2985,6 +3032,7 @@ function Form({
       });
 
       if (invalid) {
+        sliders.restore();
         setErrorAnnouncement('');
         setShouldScrollToError(formSettings.errorType === 'inline');
         setAutoValidate(true);
@@ -3017,13 +3065,16 @@ function Form({
           // element look like row 0 and scope its errors to a row that the
           // non-repeat renderer never reads.
           element.repeat,
-          !!hasNext
+          !!hasNext,
+          sliders.visiblePositions
         );
       } catch (error) {
+        sliders.restore();
         submissionResult = [Promise.reject(error)] as [Promise<any>];
       }
 
       if (!submissionResult) {
+        sliders.restore();
         elementClicks[id] = false;
         clearButtonActionState();
 
@@ -3601,6 +3652,7 @@ function Form({
         // with, and runEnvelopeAction plus the review-viewer wiring below are
         // self-contained enough to move behind a small interface.
         const envelopeId = `envelope-${i}`;
+        let containerId = editorContainerId(action);
         updateEnvelopeGeneration(envelopeId, { status: 'incomplete' });
         await Promise.all([submitPromise, client.flushCustomFields()]);
         // Shared with the editor's finalize response: runs the same
@@ -3616,7 +3668,7 @@ function Form({
           actingAction?: string,
           draft = false
         ) => {
-          if (editorContainerId(action)) return;
+          if (containerId) return;
           const envAction = actingAction ?? action.envelope_action;
           if (!envAction || envAction === 'sign') {
             if (isDocusignSignAction(action, envAction)) {
@@ -3701,7 +3753,23 @@ function Form({
           }
           updateEnvelopeGeneration(envelopeId, { status: 'complete' });
 
-          const containerId = editorContainerId(action);
+          // The server can override a saved container target for mixed types.
+          if (data.editor_mode === 'overlay' && containerId) {
+            const win = featheryWindow() as any;
+            const cleared = { containerId, documents: [], envelopes: [] };
+            // Keep an explicitly empty packet so remounting the old container
+            // cannot fall back to its templates' previous generated envelopes.
+            win.__featheryDocxEditorDrafts = {
+              ...(win.__featheryDocxEditorDrafts ?? {}),
+              [containerId]: cleared
+            };
+            win.dispatchEvent(
+              new CustomEvent('feathery-docx-editor-refresh', {
+                detail: cleared
+              })
+            );
+            containerId = '';
+          }
           if (containerId) {
             const refreshDetail = {
               containerId,
@@ -3730,7 +3798,7 @@ function Form({
             // editing surface (and needs the plain generate response).
             setReviewViewerPayload({
               payload: data,
-              action,
+              action: { ...action, editor_mode: 'overlay' },
               onFinalize: async ({
                 envelopes,
                 envelopeAction,

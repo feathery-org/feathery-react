@@ -21,7 +21,6 @@ import {
   Verb,
   VerbResult,
   WriteInput,
-  addressedIds,
   makeRefusal,
   dispatchFailure,
   parseBridgePayload,
@@ -46,7 +45,7 @@ import { logDebug, logError, logWarn, truncatedDetail } from './log';
 import { equivalentNative } from './proof';
 import { reconcile } from './reconciler';
 import { Clock, defaultClock, TraceBuilder } from './trace';
-import { baseOf, shapeOf } from './tree';
+import { baseOf, shapeOf, withoutLists } from './tree';
 import type { NormalForm } from './tree';
 import { problem } from './verifier';
 import { conflictMessage } from './verifier/base';
@@ -57,7 +56,7 @@ import {
   prepareWrite,
   readVerb
 } from './verbs';
-import { makeView } from './view';
+import { emitFormats, makeView, referencedFormats } from './view';
 
 export interface SessionOptions {
   pack: Pack;
@@ -125,6 +124,10 @@ export class DocumentSession {
 
   /** Cards this session committed by replacing the document: the engine resolves them. */
   private readonly structural = new Set<string>();
+  private readonly beforeCards = new Map<
+    string,
+    { nf: NormalForm; restoreGuesses: () => void }
+  >();
 
   private readonly onTurnChange?: (turnId: string | null) => void;
 
@@ -202,6 +205,9 @@ export class DocumentSession {
     const outline = outlineVerb(state, {});
     const selection = this.selection(state);
     const pages = this.pages(state);
+    const cards = this.pack.cards?.(state.view, state.residue) ?? [];
+    const bindingErrors = this.pack.bindingErrors?.(state.view) ?? [];
+    const listStyles = this.pack.listStyles?.(state.view) ?? [];
     return {
       protocolVersion: PROTOCOL_VERSION,
       editorId: this.editorId,
@@ -211,7 +217,10 @@ export class DocumentSession {
       outlineHash: state.outlineHash,
       outline: outline.ok ? outline.lines : '',
       ...(selection ? { selection } : {}),
-      ...(pages ? { pageCount: pages.length } : {})
+      ...(pages ? { pageCount: pages.length } : {}),
+      ...(cards.length ? { cards } : {}),
+      ...(bindingErrors.length ? { bindingErrors } : {}),
+      ...(listStyles.length ? { listStyles } : {})
     };
   }
 
@@ -293,6 +302,7 @@ export class DocumentSession {
   /** Run one verb against the live document. */
   execute(verb: Verb, input: unknown, turnId: string): VerbResult {
     if (verb === 'write') return this.write(input, turnId);
+    if (verb === 'resolve') return this.resolve(input);
     const parsed = parseVerbInput(verb, input);
     if (!parsed.ok) return refusedResult(parsed.refusal);
     const state = this.state;
@@ -365,6 +375,7 @@ export class DocumentSession {
       };
     }
 
+    const bases = new Map(before.view.nodes().map((n) => [n.id, baseOf(n)]));
     const restoreGuesses = this.ids.checkpointUncertain();
     const outcome = this.writing(() => {
       const out = reconcile({
@@ -492,9 +503,16 @@ export class DocumentSession {
     }
 
     this.install(outcome.live.native, outcome.live);
-    if (outcome.plan.history === 'engine' && outcome.plan.landed === 'card')
+    if (outcome.plan.history === 'engine' && outcome.plan.landed === 'card') {
       this.structural.add(changeSetId);
-    trace.committed('committed', outcome.seams, prepared.touched.length);
+      this.beforeCards.set(changeSetId, { nf: before.view.nf, restoreGuesses });
+    }
+    trace.committed(
+      'committed',
+      outcome.seams,
+      prepared.touched.length,
+      outcome.diagnostics
+    );
     trace.proof({
       outcome: 'passed',
       landed: true,
@@ -502,6 +520,7 @@ export class DocumentSession {
       normalizations: outcome.proof.normalizations,
       rollback: null
     });
+    const changed = this.changedSince(bases);
     const result: VerbResult = {
       ok: true,
       committed: true,
@@ -509,12 +528,14 @@ export class DocumentSession {
       cardId: outcome.plan.landed === 'card' ? changeSetId : null,
       landed: outcome.plan.landed,
       outlineHash: (this.current as DocumentState).outlineHash,
-      fingerprints: this.fingerprints(
-        write,
-        prepared.mapping,
-        prepared.finalizerScope.flatMap((f) => f.ids)
-      ),
+      fingerprints: this.fingerprintsOf([...prepared.touched, ...changed]),
+      referencedFormats: this.formatsAfter(write, prepared.touched, changed),
       ...common,
+      mapping: this.keptMapping(
+        prepared.mapping,
+        prepared.intended,
+        prepared.touched
+      ),
       // with what the live editor reported of the commit (a contents table rebuilt, or not)
       facts: [...prepared.facts, ...outcome.facts],
       warnings: [...prepared.warnings, ...outcome.warnings],
@@ -553,7 +574,8 @@ export class DocumentSession {
   resolveCards(
     changeSetIds: string[],
     accept: boolean,
-    alongside?: () => void
+    alongside?: () => void,
+    by: 'robin' | 'person' = 'person'
   ): boolean {
     const resolveGroup = this.pack.projections.resolveGroup;
     if (!resolveGroup) return false;
@@ -575,6 +597,15 @@ export class DocumentSession {
             state.residue
           );
       this.host.open(target);
+      // the document is exactly as before the card, so its nodes keep the ids, and the certainty, they had then
+      const prior =
+        snapshot && !alongside
+          ? this.beforeCards.get(changeSetIds[0])
+          : undefined;
+      if (prior) {
+        this.adopt(target, [prior.nf]);
+        prior.restoreGuesses();
+      }
       if (alongside) {
         alongside();
         // Reopened so the editor's own resolution joins this one undo step
@@ -608,39 +639,164 @@ export class DocumentSession {
       before,
       after: this.host.serialize()
     });
-    for (const changeSetId of changeSetIds) this.structural.delete(changeSetId);
+    for (const changeSetId of changeSetIds) {
+      this.structural.delete(changeSetId);
+      this.beforeCards.delete(changeSetId);
+    }
     this.refresh();
-    this.replaced('person');
+    this.replaced(by);
     return true;
   }
 
-  /** Fresh fingerprints of what a committed write named or created, what finalizers changed, and their ancestors */
-  private fingerprints(
-    write: WriteInput,
-    mapping: Record<string, string>,
-    finalized: string[]
+  /** Accept or withdraw Robin's own pending cards, named by full id or prefix */
+  private resolve(input: unknown): VerbResult {
+    const parsed = parseVerbInput('resolve', input);
+    if (!parsed.ok) return refusedResult(parsed.refusal);
+    if (this.host.readOnly()) return readOnlyResult();
+    const { cards: asked, accept } = parsed.value;
+    const before = this.state;
+    const pending = this.pack.cards?.(before.view, before.residue) ?? [];
+    const cards: string[] = [];
+    for (const name of asked) {
+      const exact = pending.filter(
+        (card) => card.id === name || card.short === name
+      );
+      const matches = exact.length
+        ? exact
+        : pending.filter((card) => card.id.startsWith(name));
+      if (!matches.length)
+        return refusedResult(
+          makeRefusal([
+            problem(
+              'card-not-pending',
+              `Nothing was resolved: no card of yours named ${name} is pending in the document.`,
+              {
+                detail: { pending: pending.map((c) => c.id) },
+                retry: 'do_not_retry'
+              }
+            )
+          ])
+        );
+      if (matches.length > 1)
+        return refusedResult(
+          makeRefusal([
+            problem(
+              'card-ambiguous',
+              `Nothing was resolved: ${name} names more than one pending card.`,
+              {
+                detail: { matches: matches.map((c) => c.id) },
+                retry: 'modified_input'
+              }
+            )
+          ])
+        );
+      cards.push(matches[0].id);
+    }
+    const bases = new Map(before.view.nodes().map((n) => [n.id, baseOf(n)]));
+    if (
+      !this.writing(() =>
+        this.resolveCards([...new Set(cards)], accept, undefined, 'robin')
+      )
+    )
+      return refusedResult(
+        makeRefusal([
+          problem(
+            'apply-failed',
+            'Nothing was resolved: the editor could not resolve the card, and the document is as it was.',
+            { retry: 'do_not_retry' }
+          )
+        ])
+      );
+    const { view } = this.state;
+    const removed = [...bases.keys()].filter((id) => !view.get(id));
+    const touched = this.changedSince(bases);
+    return {
+      ok: true,
+      cards: [...new Set(cards)],
+      accepted: accept,
+      outlineHash: this.state.outlineHash,
+      touched,
+      removed,
+      fingerprints: this.fingerprintsOf(touched)
+    };
+  }
+
+  /** Nodes that are new or whose base differs from the bases taken before an edit */
+  private changedSince(bases: Map<string, string>): string[] {
+    return this.state.view
+      .nodes()
+      .filter((n) => bases.get(n.id) !== baseOf(n))
+      .map((n) => n.id);
+  }
+
+  /** Fresh fingerprints of nodes and their ancestors */
+  private fingerprintsOf(
+    named: string[]
   ): Record<string, { base: string; shape: string }> {
     const { view } = this.current as DocumentState;
-    const ids = new Set<string>();
-    const named = [
-      ...write.changes.flatMap(addressedIds),
-      ...Object.keys(mapping)
-    ];
-    for (const id of [...named.map((n) => mapping[n] ?? n), ...finalized]) {
-      ids.add(id);
-      let parent = view.placement(id)?.parent;
-      while (parent && !ids.has(parent.id)) {
-        ids.add(parent.id);
-        parent = view.placement(parent.id)?.parent;
+    const out: Record<string, { base: string; shape: string }> = {};
+    for (const start of named) {
+      let id: string | undefined = start;
+      while (id && !out[id]) {
+        const node = id === ROOT_ID ? view.nf.root : view.get(id);
+        if (!node) break;
+        out[id] = { base: baseOf(node), shape: shapeOf(node, this.pack.tree) };
+        id = view.placement(id)?.parent?.id;
       }
     }
-    const out: Record<string, { base: string; shape: string }> = {};
-    for (const id of ids) {
-      const node = id === ROOT_ID ? view.nf.root : view.get(id);
-      if (node)
-        out[id] = { base: baseOf(node), shape: shapeOf(node, this.pack.tree) };
-    }
     return out;
+  }
+
+  /** The formats a committed write targeted or left its changed nodes using, as they are now */
+  /** A write's mapping with each format it named by the id the editor kept for it */
+  private keptMapping(
+    mapping: Record<string, string>,
+    intended: NormalForm,
+    touched: string[]
+  ): Record<string, string> {
+    const planned = makeView(intended, this.pack);
+    const { view } = this.current as DocumentState;
+    const kept = new Map<string, string>();
+    for (const id of touched) {
+      const was = planned.get(id);
+      const now = view.get(id);
+      for (const key of this.pack.formatRefKeys) {
+        const from = was?.[key];
+        const to = now?.[key];
+        if (typeof from === 'string' && typeof to === 'string' && from !== to)
+          kept.set(from, to);
+      }
+    }
+    return Object.fromEntries(
+      Object.entries(mapping).map(([tmp, id]) => [tmp, kept.get(id) ?? id])
+    );
+  }
+
+  private formatsAfter(
+    write: WriteInput,
+    touched: string[],
+    changed: string[]
+  ) {
+    const { view } = this.current as DocumentState;
+    const used = touched.flatMap((id) => {
+      const node = view.get(id);
+      return node
+        ? [...referencedFormats(this.pack, withoutLists(node, this.pack.tree))]
+        : [];
+    });
+    // A node the editor changed beside the write names its own formats, not its contents'
+    const rekeyed = changed.flatMap((id) =>
+      this.pack.formatRefKeys.flatMap((key) => {
+        const ref = view.get(id)?.[key];
+        return typeof ref === 'string' && ref in view.nf.formats ? [ref] : [];
+      })
+    );
+    const targeted = write.changes.flatMap((change) =>
+      change.kind === 'set' && 'formatId' in change.target
+        ? [change.target.formatId]
+        : []
+    );
+    return emitFormats(view, new Set([...used, ...rekeyed, ...targeted]));
   }
 
   /** A refresh after a resolution that failed: reported, never fatal to the resolution. */

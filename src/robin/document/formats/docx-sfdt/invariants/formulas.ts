@@ -15,7 +15,7 @@ import { refusal } from './common';
 
 export const orphanedDependents: Invariant = {
   name: 'orphaned-dependents',
-  cards: ['binding', 'formula'],
+  cards: ['binding'],
   check({ before, after }) {
     const b = bindingState(before.nf);
     const a = bindingState(after.nf);
@@ -59,7 +59,7 @@ export const orphanedDependents: Invariant = {
           )
           .join('; ')}.`,
         detail,
-        ['binding', 'formula'],
+        ['binding'],
         "Either leave what they read in place, or in the same write rewrite each listed formula's `expr` so it no longer reads the removed values, or unbind it (`binding: null` on that control) so its current text stays as plain text. Only unbind when the request means the value should stop being live."
       )
     ];

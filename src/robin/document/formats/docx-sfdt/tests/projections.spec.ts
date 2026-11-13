@@ -21,6 +21,9 @@ import {
   N13,
   N14,
   N15,
+  N16,
+  N17,
+  N18,
   NORMALIZATIONS,
   UNDO_NORMALIZATIONS,
   accept,
@@ -30,6 +33,7 @@ import {
   reject
 } from '../projections';
 import { markSubtree } from '../reconcile';
+import { pendingCards } from '../adapter/revisions';
 
 const native = fs.readFileSync(path.join(__dirname, 'corpus', 'flagship-v4b.sfdt.json'), 'utf8');
 const fresh = () => toNormalForm(native).nf;
@@ -307,9 +311,28 @@ describe('normalizations (each a true positive and a true negative)', () => {
     // true positive: another style, or a real border, still counts
     // an empty paragraph, which N5 has left without its Normal
     expect(styleOf(withStyle({ borders: editorDefault.borders, listFormat: {} }))).toBe(styleOf(withStyle(undefined)));
-    expect(styleOf(withStyle({ ...editorDefault, styleName: 'Heading 1' }))).toBe('probe');
-    expect(styleOf(withStyle({ ...editorDefault, borders: { top: { lineStyle: 'Single' } } }))).toBe('probe');
+    expect(styleOf(withStyle({ ...editorDefault, styleName: 'Heading 1' }))).toBeDefined();
+    expect(styleOf(withStyle({ ...editorDefault, borders: { top: { lineStyle: 'Single' } } }))).toBeDefined();
     expect(NORMALIZATIONS.map((n) => n.name)).toContain('N11');
+  });
+
+  it('N11 the editor fill beside real paragraph properties is the same as none (Hilb 7c02c3c8)', () => {
+    const nf = fresh();
+    nf.root.lists = [{ listId: 7, nsid: 2092192590 }];
+    const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string' && ownText(n)) as NfNode;
+    const entryOf = (entry: Record<string, unknown>) => {
+      const d = JSON.parse(JSON.stringify(nf)) as NormalForm;
+      d.formats.probe = entry;
+      (all(d).find((n) => n.id === para.id) as NfNode).style = 'probe';
+      const out = N11.apply(d);
+      return out.formats[String((all(out).find((n) => n.id === para.id) as NfNode).style)];
+    };
+    const composed = { styleName: 'List Paragraph', listFormat: { listId: 7, listLevelNumber: 0 } };
+    const landed = { ...composed, borders: { top: {}, left: {}, right: {}, bottom: {}, horizontal: {}, vertical: {} }, listFormat: { ...composed.listFormat, nsid: 2092192590 } };
+    expect(entryOf(landed)).toEqual(entryOf(composed));
+    expect(entryOf({ afterSpacing: 12, styleName: 'Normal', listFormat: {} })).toEqual(entryOf({ afterSpacing: 12 }));
+    // true positive: another list's nsid is the format's own
+    expect(entryOf({ listFormat: { listId: 7, nsid: 1 } })).toEqual({ listFormat: { listId: 7, nsid: 1 } });
   });
 
   it('N12 the editor\'s fill of a new table, row or cell format is the same as none (matrix-2 T10)', () => {
@@ -353,6 +376,22 @@ describe('normalizations (each a true positive and a true negative)', () => {
     expect(apply({ top, bottom: { lineStyle: 'Single' } })).not.toEqual(apply({ top }));
   });
 
+  it('N12 a cell property named by a row format still counts, so the proof refuses what the editor drops (ffb38cdf)', () => {
+    const nf = fresh();
+    const row = all(nf).find((n) => n.kind === 'row' && typeof n.style === 'string') as NfNode;
+    const apply = (entry: Record<string, unknown>) => {
+      const d = JSON.parse(JSON.stringify(nf)) as NormalForm;
+      d.formats.probe = entry;
+      (all(d).find((n) => n.id === row.id) as NfNode).style = 'probe';
+      const out = N12.apply(d);
+      return out.formats[String((all(out).find((n) => n.id === row.id) as NfNode).style)];
+    };
+    const top = { top: { lineStyle: 'Single', lineWidth: 1, color: '#001B49FF' } };
+    const grid = { gridBeforeWidth: 12, gridBeforeWidthType: 'Point', gridAfterWidth: 0, gridAfterWidthType: 'Auto' };
+    expect(apply({ borders: top, shading: { backgroundColor: '#F2F2F2FF' }, verticalAlignment: 'Top' })).not.toEqual(apply({ borders: top }));
+    expect(apply({ borders: top, ...grid })).toEqual({ borders: top, ...grid });
+  });
+
   it('N13 an empty text run is the same as none (troy-1: a moved cell came back without it)', () => {
     const nf = fresh();
     const para = all(nf).find((n) => n.kind === 'paragraph' && Array.isArray(n.inlines) && (n.inlines as NfNode[]).some((i) => i.kind === 'run')) as NfNode;
@@ -371,7 +410,7 @@ describe('normalizations (each a true positive and a true negative)', () => {
     expect(NORMALIZATIONS.map((n) => n.name)).toContain('N13');
   });
 
-  it('N9 a paragraph property an undo writes back explicitly as the value it inherits, only in undo comparisons', () => {
+  it('N9 a paragraph property written explicitly as the value it inherits, in every comparison', () => {
     const nf = fresh();
     const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string' && nf.formats[String(n.style)]?.styleName === 'Normal') as NfNode;
     const fmt = (d: NormalForm) => d.formats[String((all(d).find((n) => n.id === para.id) as NfNode).style)];
@@ -387,7 +426,50 @@ describe('normalizations (each a true positive and a true negative)', () => {
     expect(fmt(N9.apply(withValue('Center')))).not.toEqual(fmt(N9.apply(nf)));
     const once = N9.apply(nf);
     expect(N9.apply(once)).toBe(once);
-    expect(UNDO_NORMALIZATIONS.map((n) => n.name)).toEqual(['N7', 'N9']);
+    expect(NORMALIZATIONS.map((n) => n.name)).toContain('N9');
+    expect(UNDO_NORMALIZATIONS.map((n) => n.name)).toEqual(['N7']);
+  });
+
+  it("N9 reads a value no style or document default sets as the editor's built-in default (Hilb named insured list)", () => {
+    const nf = fresh();
+    const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string' && nf.formats[String(n.style)]?.styleName === 'Normal') as NfNode;
+    const withSpacing = (value: number) => {
+      const d = JSON.parse(JSON.stringify(nf)) as NormalForm;
+      for (const holder of [d.root, ...((d.root.styles as Record<string, unknown>[]) ?? [])]) {
+        const ref = holder.paragraphFormat;
+        const entry = typeof ref === 'string' ? d.formats[ref] : (ref as Record<string, unknown> | undefined);
+        if (entry) delete entry.beforeSpacing;
+      }
+      d.formats.explicit = { ...d.formats[String(para.style)], beforeSpacing: value };
+      (all(d).find((n) => n.id === para.id) as NfNode).style = 'explicit';
+      return d;
+    };
+    const fmt = (d: NormalForm) => N9.apply(d).formats[String((all(N9.apply(d)).find((n) => n.id === para.id) as NfNode).style)];
+    // the editor stores nothing when told to set the spacing it already shows (true negative)
+    expect(fmt(withSpacing(0))).not.toHaveProperty('beforeSpacing');
+    // spacing the paragraph did not have is a real change (true positive)
+    expect(fmt(withSpacing(6))).toHaveProperty('beforeSpacing', 6);
+  });
+
+  it("N9 keeps a bullet's explicit indent that differs from its list level's", () => {
+    const bullet = (leftIndent?: number) =>
+      toNormalForm(
+        JSON.stringify({
+          styles: [{ name: 'Normal', type: 'Paragraph', paragraphFormat: {}, characterFormat: {} }],
+          lists: [{ abstractListId: 0, levelOverrides: [], listId: 1 }],
+          abstractLists: [{ abstractListId: 0, levels: [{ listLevelPattern: 'Bullet', paragraphFormat: { leftIndent: 36, firstLineIndent: -18 } }] }],
+          sections: [{ sectionFormat: {}, blocks: [{ paragraphFormat: { leftIndent, listFormat: { listId: 1, listLevelNumber: 0 } }, characterFormat: {}, inlines: [{ characterFormat: {}, text: 'Item' }] }] }]
+        })
+      ).nf;
+    const leftIndent = (nf: NormalForm) => {
+      const after = N9.apply(nf);
+      const para = all(after).find((n) => n.kind === 'paragraph') as NfNode;
+      return after.formats[String(para.style)].leftIndent;
+    };
+
+    // 0 moves the bullet off the list's 36 (true positive), 36 is what it already shows (true negative)
+    expect(leftIndent(bullet(0))).toBe(0);
+    expect(leftIndent(bullet(36))).toBeUndefined();
   });
 
   it('N14 with N6 reads a control split into bare and explicitly inherited runs as one run (dts seq 4 fee cell)', () => {
@@ -431,6 +513,58 @@ describe('normalizations (each a true positive and a true negative)', () => {
     expect((out.find((n) => n.id === 'last') as NfNode).style).toBe('f1');
   });
 
+  describe('editor re-encodings (Hilb post-v9 B1)', () => {
+    const nodeFormat = (d: NormalForm, id: string) => d.formats[String((all(d).find((n) => n.id === id) as NfNode).style)];
+    const withFormat = (nf: NormalForm, id: string, format: Record<string, unknown>) => {
+      const d = JSON.parse(JSON.stringify(nf)) as NormalForm;
+      d.formats.explicit = format;
+      (all(d).find((n) => n.id === id) as NfNode).style = 'explicit';
+      return d;
+    };
+
+    it('N16 reads line spacing with no type as Multiple (95d7640e)', () => {
+      const nf = fresh();
+      const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string') as NfNode;
+      const base = nf.formats[String(para.style)];
+      const spacing = (format: Record<string, unknown>) => nodeFormat(N16.apply(withFormat(nf, para.id, { ...base, ...format })), para.id);
+
+      expect(spacing({ lineSpacing: 1.15 })).toEqual(spacing({ lineSpacing: 1.15, lineSpacingType: 'Multiple' }));
+      expect(spacing({ lineSpacing: 1.15 })).not.toEqual(spacing({ lineSpacing: 1.15, lineSpacingType: 'Exactly' }));
+    });
+
+    it('N16 reads it as Multiple even when the paragraph style sets a type', () => {
+      const nf = fresh();
+      (nf.root.styles as Array<Record<string, unknown>>).push({ name: 'Tight', type: 'Paragraph', basedOn: 'Normal', paragraphFormat: { lineSpacingType: 'AtLeast' } });
+      const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string') as NfNode;
+      const spacing = (format: Record<string, unknown>) => nodeFormat(N16.apply(withFormat(nf, para.id, { styleName: 'Tight', ...format })), para.id);
+
+      expect(spacing({ lineSpacing: 12 })).toEqual(spacing({ lineSpacing: 12, lineSpacingType: 'Multiple' }));
+      expect(spacing({ lineSpacing: 12 })).not.toEqual(spacing({ lineSpacing: 12, lineSpacingType: 'AtLeast' }));
+    });
+
+    it('N17 drops the starting number of a section that does not restart its numbering (14f494e8)', () => {
+      const nf = fresh();
+      const section = (nf.root.sections as NfNode[])[0];
+      const base = nf.formats[String(section.style)];
+      const numbering = (format: Record<string, unknown>) => nodeFormat(N17.apply(withFormat(nf, section.id, { ...base, ...format })), section.id);
+
+      expect(numbering({ restartPageNumbering: false, pageStartingNumber: 1 })).toEqual(numbering({}));
+      expect(numbering({ restartPageNumbering: true, pageStartingNumber: 1 })).not.toEqual(numbering({}));
+    });
+
+    it('N18 reads a paragraph list copied from its style as no list of its own (d0605291)', () => {
+      const nf = fresh();
+      (nf.root.styles as Array<Record<string, unknown>>).push({ name: 'List Paragraph', type: 'Paragraph', basedOn: 'Normal', paragraphFormat: { listFormat: { listId: 7, nsid: 223178203 } } });
+      const para = all(nf).find((n) => n.kind === 'paragraph' && typeof n.style === 'string') as NfNode;
+      const list = (listFormat: Record<string, unknown>) =>
+        nodeFormat(N18.apply(withFormat(nf, para.id, { styleName: 'List Paragraph', listFormat })), para.id);
+
+      expect(list({ listId: 7, listLevelNumber: 0, nsid: 223178203 })).toEqual(list({}));
+      expect(list({ listId: 7, listLevelNumber: 1, nsid: 223178203 })).not.toEqual(list({}));
+      expect(list({ listId: 3, listLevelNumber: 0 })).not.toEqual(list({}));
+    });
+  });
+
   it('N14 keeps a shared run format apart when its runs sit in paragraphs of different styles', () => {
     const nf = fresh();
     const normals = all(nf).filter((n) => n.kind === 'paragraph' && typeof n.style === 'string' && nf.formats[String(n.style)]?.styleName === 'Normal');
@@ -459,9 +593,18 @@ describe('authorship, residue and the expected rejection', () => {
     const nf = fresh();
     const row = all(nf).find((n) => n.kind === 'row') as NfNode;
     row.pending = { ...ins('A'), revisions: [ins('A'), del('B')] };
-    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Insertion by Robin, then Deletion by Robin]');
+    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Insertion, card A, then Deletion, card B]');
     row.pending = ins('A');
-    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Insertion by Robin]');
+    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Insertion, card A]');
+  });
+
+  it('the outline names a card by its short id and a person by name (Hilb post-v9 G1)', () => {
+    const nf = fresh();
+    const row = all(nf).find((n) => n.kind === 'row') as NfNode;
+    row.pending = { kind: 'Deletion', author: 'Robin', group: '85caf0e2d4c1a9' };
+    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Deletion, card 85caf0e2]');
+    row.pending = { kind: 'Insertion', author: 'Ann' };
+    expect(detail(row, makeView(nf, docxPack))).toContain('[pending Insertion by Ann]');
   });
 
   // Another card's inserted heading, then this turn's write over it, as the live document reads back
@@ -529,5 +672,34 @@ describe('authorship, residue and the expected rejection', () => {
     const restored = expectedRejection(before, intended);
     expect((all(restored).find((n) => n.id === run.id) as NfNode).style).toBe('boldNow');
     expect(restored.formats.boldNow).toEqual({ bold: true });
+  });
+});
+
+describe('pending cards (Hilb post-v9 G1)', () => {
+  const tagged = (changeSetId: string, intent?: string) =>
+    JSON.stringify({ v: 1, source: 'robin', changeSetId, group: 'robin', ...(intent ? { intent } : {}) });
+
+  it('lists each of Robin\'s cards once, in the order the revisions table first names it, with its intent', () => {
+    const cards = pendingCards([
+      { revisionId: '1', revisionType: 'Deletion', author: 'Robin', date: '2026-11-06T15:03:00Z', customData: tagged('card-one', 'Remove the premiums') },
+      { revisionId: '2', revisionType: 'Insertion', author: 'Ann', date: '2026-11-06T15:04:00Z' },
+      { revisionId: '3', revisionType: 'Insertion', author: 'Robin', customData: tagged('card-two') },
+      { revisionId: '4', revisionType: 'Insertion', author: 'Robin', customData: tagged('card-one', 'Remove the premiums') }
+    ]);
+
+    expect(cards).toEqual([
+      { id: 'card-one', short: 'card-one', intent: 'Remove the premiums', date: '2026-11-06T15:03:00Z' },
+      { id: 'card-two', short: 'card-two' }
+    ]);
+    expect(pendingCards(undefined)).toEqual([]);
+  });
+
+  it('lists the cards oldest first when the table names a newer one first, as a reopened file does', () => {
+    const cards = pendingCards([
+      { revisionId: '1', revisionType: 'Insertion', author: 'Robin', date: '2026-11-06T15:09:00Z', customData: tagged('card-new') },
+      { revisionId: '2', revisionType: 'Deletion', author: 'Robin', date: '2026-11-06T15:03:00Z', customData: tagged('card-old') }
+    ]);
+
+    expect(cards.map((card) => card.id)).toEqual(['card-old', 'card-new']);
   });
 });

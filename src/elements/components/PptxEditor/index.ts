@@ -17,3 +17,4 @@ export type {
   Invalidation
 } from './engine/commands';
 export type { PptxChangeRecord } from './engine/changes';
+export type { PptxEditorStore } from './state/PptxEditorStore';

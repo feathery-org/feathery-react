@@ -24,7 +24,7 @@ import {
   shapeOf,
   withoutLists
 } from '../tree';
-import { emitNode, matchQuery, referencedFormats } from '../view';
+import { emitFormats, emitNode, matchQuery, referencedFormats } from '../view';
 import { SHAPE_PREFIX } from '../outline';
 import { problem } from './index';
 
@@ -195,7 +195,23 @@ export function checkBases(
   };
   write.changes.forEach(check);
   if (!stale.size && !bulk.length && !formats.length) return null;
-  return { stale: [...stale.values()], bulk, formats, outlineHash };
+  // the formats the changed nodes now name, so a change made since the read shows without a re-read
+  const referenced = emitFormats(
+    view,
+    referencedFormats(
+      pack,
+      [...stale.values()].map((s) => s.live)
+    )
+  );
+  return {
+    stale: [...stale.values()],
+    bulk,
+    formats,
+    ...(Object.keys(referenced).length
+      ? { referencedFormats: referenced }
+      : {}),
+    outlineHash
+  };
 }
 
 /** A one-line message for a conflict result. */

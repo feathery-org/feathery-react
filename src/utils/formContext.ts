@@ -17,6 +17,7 @@ import internalState, {
   AlloyEntities,
   GetConfigParams,
   CreateEgnyteFolderParams,
+  DocusignNotification,
   GetDocusignEnvelopeParams,
   UploadFileToEgnyteParams,
   LoanProCustomerObject,
@@ -49,10 +50,13 @@ import {
 } from './formActions/tables';
 import { STEP_EVENT_SKIP } from './stepEvents';
 import { AnswersPendingError } from './offlineRequestHandler';
+import { buildHubFileRefs } from './hubFileRefs';
 import {
+  ExtractionActionOptions,
   FillQuikParams,
   ForwardInboxEmailOptions,
   HubActionOptions,
+  HubAssociation,
   IntegrationActionIds,
   IntegrationActionOptions,
   PageSelectionInput
@@ -277,6 +281,7 @@ export const getFormContext = (formUuid: string) => {
       const { errors } = validateElements({
         step: currentStep,
         visiblePositions,
+        internalId: formUuid,
         triggerErrors: showErrors,
         errorType: formSettings.errorType,
         formRef,
@@ -312,7 +317,7 @@ export const getFormContext = (formUuid: string) => {
     },
     runAIExtraction: async (
       extractionId: string,
-      options = { waitForCompletion: false },
+      options: ExtractionActionOptions | boolean = { waitForCompletion: false },
       pages?: PageSelectionInput
     ) => formState.runAIExtraction(extractionId, options, pages),
     forwardInboxEmail: (options: ForwardInboxEmailOptions) =>
@@ -340,22 +345,50 @@ export const getFormContext = (formUuid: string) => {
       formState.client.setCollaboratorAsCompleted(templateId),
     setTaskStatus: (templateId: string, taskStatusId: string) =>
       formState.client.setTaskStatus(templateId, taskStatusId),
-    dataHubAction: ({
+    dataHubAction: async ({
       hubId,
       operation,
       entryId,
       data,
       where,
-      verification
-    }: HubActionOptions) =>
-      formState.client.dataHubAction({
+      verification,
+      fields,
+      sort,
+      sortDirection,
+      limit,
+      relations
+    }: HubActionOptions) => {
+      // Create/update file a form file field from the server's copy, uploading
+      // it first if unsubmitted. Other operations never file, so pass `data`.
+      const refs =
+        operation === 'create' || operation === 'update'
+          ? buildHubFileRefs(data, formState.steps)
+          : { data, submissions: [], fields: [] };
+      // Drafts and no-save forms keep no files server-side to file from.
+      const { client } = formState;
+      if (refs.fields.length && (client.draft || client.getNoSave())) {
+        const names = refs.fields.join(', ');
+        throw new Error(
+          `Form file fields (${names}) can't be filed into a data hub from ` +
+            "a preview, draft or a form that doesn't save data"
+        );
+      }
+      if (refs.submissions.length)
+        await formState.client.submitFiles(refs.submissions);
+      return formState.client.dataHubAction({
         hubId,
         operation,
         entryId,
-        data,
+        data: refs.data,
         where,
-        verification
-      }),
+        verification,
+        fields,
+        sort,
+        sortDirection,
+        limit,
+        relations
+      });
+    },
     generateDocuments: ({
       documentIds: documentSources,
       signers,
@@ -363,9 +396,11 @@ export const getFormContext = (formUuid: string) => {
       signMethod,
       draft,
       toolbarActions,
+      readOnly,
       closeOnAction,
       emailSubject,
       emailBlurb,
+      notification,
       ccRecipients,
       customFields,
       repeatable,
@@ -374,7 +409,8 @@ export const getFormContext = (formUuid: string) => {
       mergedFileName,
       zipName,
       saveDocumentFieldKey,
-      redirect
+      redirect,
+      hubAssociation
     }: {
       // A plain template UUID string, a file upload field itself (e.g.
       // `FileUpload1`), or a source object such as the Quik item
@@ -412,6 +448,11 @@ export const getFormContext = (formUuid: string) => {
       // toolbar offers. 'draft' is DocuSign-only (it finalizes as a sign with
       // draft=true).
       toolbarActions?: ('sign' | 'download' | 'save' | 'draft')[];
+      // Only for envelopeAction 'open_in_editor': true locks the PDF fields in
+      // the review viewer, like the Generate Documents action's editor "Read
+      // only" setting. Has no effect on docx or pptx documents. Defaults to
+      // false.
+      readOnly?: boolean;
       // Only for envelopeAction 'open_in_editor': false keeps the editor open
       // after a toolbar action, and the flow continues once the filler closes
       // it. Defaults to true.
@@ -420,6 +461,9 @@ export const getFormContext = (formUuid: string) => {
       // signing email, as sendDocusignEnvelope takes them.
       emailSubject?: string;
       emailBlurb?: string;
+      // Only for signMethod 'docusign': reminder and expiration schedule, as
+      // sendDocusignEnvelope takes it.
+      notification?: DocusignNotification;
       // Completion copies added to the integration's configured recipients.
       // excludedDocuments uses 0-based positions in the generated packet.
       ccRecipients?: SendDocusignParams['ccRecipients'];
@@ -436,6 +480,8 @@ export const getFormContext = (formUuid: string) => {
       saveDocumentFieldKey?: string;
       // Where the signing page sends the filler when they finish.
       redirect?: boolean | string;
+      // The data hub entry the generated files are filed in.
+      hubAssociation?: HubAssociation;
     }) => {
       if (ccRecipients !== undefined && signMethod !== 'docusign') {
         return Promise.reject(
@@ -648,11 +694,15 @@ export const getFormContext = (formUuid: string) => {
               })
             ),
             editor_toolbar_actions: toolbarActions,
+            ...(readOnly !== undefined
+              ? { editor_read_only: readOnly === true }
+              : {}),
             ...(closeOnAction !== undefined
               ? { editor_close_on_action: closeOnAction }
               : {}),
             email_subject: emailSubject,
             email_blurb: emailBlurb,
+            notification,
             cc_recipients: ccCopies,
             custom_fields: customFields,
             repeatable,
@@ -661,6 +711,7 @@ export const getFormContext = (formUuid: string) => {
             envelope_zip_name: zipName,
             save_document_field_key: saveDocumentFieldKey,
             redirect,
+            hub_association: hubAssociation,
             run_async: true
           })
         );
@@ -700,7 +751,8 @@ export const getFormContext = (formUuid: string) => {
           merge,
           repeatable,
           mergedFileName,
-          zipName
+          zipName,
+          hubAssociation
         })
       );
     },

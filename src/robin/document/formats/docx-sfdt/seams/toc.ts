@@ -36,7 +36,9 @@ export function tocReport(ids: string[], outcome: TocRefresh): SeamReport {
     logWarn({ seam: 'toc', failed: outcome.reason });
   return {
     facts: [{ kind: 'finalizer', name: 'toc', ids, summary } as Fact],
-    ...(outcome.status === 'failed' ? { failed: true } : {})
+    ...(outcome.status === 'failed'
+      ? { failed: true, diagnostics: { tocStack: outcome.stack } }
+      : {})
   };
 }
 

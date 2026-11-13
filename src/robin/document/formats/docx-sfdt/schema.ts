@@ -2,8 +2,9 @@
  * The property schema (architecture 5.1a): every property a node kind has, typed from the SDK's
  * own definitions (`@syncfusion/ej2-documenteditor` 34.1.31, `CharacterFormatProperties`,
  * `ParagraphFormatProperties`, `SectionFormatProperties` and the enums in `base/types.d.ts`), plus
- * the keys the format objects carry in the corpus. Three classes: content (written by replace and
- * insert, not here), properties (written by `set`), derived (reported, never written).
+ * the keys the format objects carry in the corpus. Four classes: content (written by replace and
+ * insert, not here), properties (written by `set`), derived (reported, never written), carried
+ * (kept by a copied format entry, never set).
  *
  * A property's name is the native format key it lives in, so a format entry read from the
  * document and a `set` speak the same names. Where it lives on a node:
@@ -16,12 +17,14 @@
 import type {
   DocumentView,
   EffectiveProperty,
+  ForeignFormat,
   FormatTable,
   PropertySpec
 } from '../../pack';
 import type { FormatEntry, NfNode } from '../../tree';
 import { KIND } from './adapter/keys';
-import { arr } from './util';
+import { paragraphInheritance } from './inheritance';
+import { arr, entryOf } from './util';
 
 type Obj = Record<string, unknown>;
 const isObject = (v: unknown): v is Obj =>
@@ -227,6 +230,23 @@ const shading: Check = (v) => {
   return null;
 };
 
+const listFormat: Check = (v) => {
+  if (!isObject(v)) return 'must be an object';
+  for (const [k, x] of Object.entries(v)) {
+    if (x === null) continue;
+    const why =
+      k === 'listId' || k === 'nsid'
+        ? Number.isInteger(x)
+          ? null
+          : 'must be a whole number'
+        : k === 'listLevelNumber'
+        ? int(0, 8)(x)
+        : 'is not a list format key: a paragraph joins a list by listId and listLevelNumber, and that list sets its bullets or numbers';
+    if (why) return `${k} ${why}`;
+  }
+  return null;
+};
+
 const prop = (name: string, type: string, validate: Check): PropertySpec => ({
   name,
   type,
@@ -238,6 +258,12 @@ const derived = (name: string, type: string): PropertySpec => ({
   type,
   class: 'derived',
   validate: () => 'derived: computed by the engine'
+});
+const carried = (name: string, type: string): PropertySpec => ({
+  name,
+  type,
+  class: 'carried',
+  validate: () => 'carried by the document, not set directly'
 });
 
 // ------------------------------------------------------------------ the property groups
@@ -273,7 +299,10 @@ export const CHARACTER: readonly PropertySpec[] = [
   prop('localeIdFarEast', 'locale id', int(0, 65535)),
   prop('ligature', 'ligature mode', text(32)),
   prop('scaling', 'percent', num(1, 600)),
-  prop('styleName', 'character style name', text(120))
+  prop('styleName', 'character style name', text(120)),
+  carried('characterSpacing', 'points'),
+  carried('complexScript', 'boolean'),
+  carried('bdo', 'text direction override')
 ];
 
 export const PARAGRAPH: readonly PropertySpec[] = [
@@ -303,7 +332,7 @@ export const PARAGRAPH: readonly PropertySpec[] = [
     text(120)
   ),
   prop('borders', 'paragraph borders by side', borders),
-  prop('listFormat', 'list format {listId, listLevelNumber}', anyOf('object')),
+  prop('listFormat', 'list format {listId, listLevelNumber}', listFormat),
   prop('tabs', 'tab stops', anyOf('array'))
 ];
 
@@ -343,7 +372,11 @@ export const ROW: readonly PropertySpec[] = [
   prop('leftMargin', 'points', num(0, 1584)),
   prop('rightMargin', 'points', num(0, 1584)),
   prop('topMargin', 'points', num(0, 1584)),
-  prop('bottomMargin', 'points', num(0, 1584))
+  prop('bottomMargin', 'points', num(0, 1584)),
+  carried('gridBeforeWidth', 'points'),
+  carried('gridBeforeWidthType', 'width type'),
+  carried('gridAfterWidth', 'points'),
+  carried('gridAfterWidthType', 'width type')
 ];
 
 export const TABLE: readonly PropertySpec[] = [
@@ -444,15 +477,36 @@ export function schemaFor(kind: string): readonly PropertySpec[] | null {
   return out;
 }
 
-/** Every key a format entry may hold: the union of the groups, writable properties only. */
+/** Every key a format entry may hold: the union of the groups, writable and carried properties. */
 export const FORMAT_SCHEMA: readonly PropertySpec[] = (() => {
   const byName = new Map<string, PropertySpec>();
   for (const group of [CHARACTER, PARAGRAPH, CELL, ROW, TABLE, SECTION])
     for (const spec of group)
-      if (spec.class === 'property' && !byName.has(spec.name))
+      if (spec.class !== 'derived' && !byName.has(spec.name))
         byName.set(spec.name, spec);
   return [...byName.values()];
 })();
+
+/** Format entries the node points at that hold properties its kind cannot, with the kinds that hold all of them */
+export function foreignFormats(
+  node: NfNode,
+  formats: Readonly<Record<string, FormatEntry>>
+): ForeignFormat[] {
+  const held = new Set(schemaFor(node.kind)?.map((spec) => spec.name));
+  const out: ForeignFormat[] = [];
+  for (const group of arr<readonly PropertySpec[]>(GROUPS_BY_KIND[node.kind])) {
+    const ref = node[GROUP_FORMAT.get(group)?.nfKey(node.kind) ?? ''];
+    const entry = typeof ref === 'string' ? formats[ref] : undefined;
+    const keys = Object.keys(entry ?? {}).filter((key) => !held.has(key));
+    if (!entry || !keys.length || out.some((f) => f.formatId === ref)) continue;
+    const heldBy = Object.keys(GROUPS_BY_KIND).filter((kind) => {
+      const names = new Set(schemaFor(kind)?.map((spec) => spec.name));
+      return Object.keys(entry).every((key) => names.has(key));
+    });
+    out.push({ formatId: ref as string, keys, heldBy });
+  }
+  return out;
+}
 
 /** The group (and so the native format) a property of `kind` belongs to; the first match wins. */
 function groupOf(
@@ -553,21 +607,30 @@ function referrers(view: DocumentView, formatId: string): number {
   return counts.get(formatId) ?? 0;
 }
 
-/** The named style a node's paragraph uses, from the document's `styles`. */
-function namedStyle(view: DocumentView, node: NfNode): Obj | null {
+/** The named style a node's paragraph uses, then the styles it is based on */
+function namedStyles(view: DocumentView, node: NfNode): Obj[] {
   let p: NfNode | null | undefined = node;
   while (p && p.kind !== KIND.paragraph) p = view.placement(p.id)?.parent;
-  if (!p || typeof p.style !== 'string') return null;
-  const name = view.nf.formats[p.style]?.styleName;
-  const styles = view.nf.root.styles;
-  if (typeof name !== 'string' || !Array.isArray(styles)) return null;
-  return (styles as Obj[]).find((s) => s.name === name) ?? null;
+  if (!p) return [];
+  const styles = new Map(
+    arr<Obj>(view.nf.root.styles).map((s) => [String(s.name), s] as const)
+  );
+  const name =
+    typeof p.style === 'string' ? view.nf.formats[p.style]?.styleName : null;
+  const chain: Obj[] = [];
+  let style = styles.get(String(name ?? 'Normal'));
+  while (style && !chain.includes(style)) {
+    chain.push(style);
+    style = styles.get(String(style.basedOn));
+  }
+  return chain;
 }
 
 /**
  * Effective values with their source, in resolution order: the node's own format (`override`
  * when no other node shares the entry, `format` when it is shared), the paragraph's named style
- * (`container`), then `default` (the value is null: the editor's own default applies).
+ * through `basedOn` (`container`), then `default`, the document's default, else for a paragraph
+ * property the editor's own, or null when there is none.
  */
 export function effective(
   node: NfNode,
@@ -580,24 +643,38 @@ export function effective(
     const ref = node[placement.nfKey(node.kind)];
     const entry = typeof ref === 'string' ? view.nf.formats[ref] : undefined;
     const shared = typeof ref === 'string' && referrers(view, ref) > 1;
-    const style = namedStyle(view, node);
-    const styleFormat = style?.[placement.native];
+    const styleFormats = namedStyles(view, node).flatMap<Obj>(
+      (style) => entryOf(view.nf, style[placement.native]) ?? []
+    );
+    const documentDefault: Obj =
+      entryOf(view.nf, view.nf.root[placement.native]) ?? {};
+    const inheritParagraph =
+      group === PARAGRAPH ? paragraphInheritance(view.nf) : null;
     for (const spec of group) {
       if (spec.class !== 'property' || spec.name in out) continue;
+      const fromStyle = styleFormats.find((f) => f[spec.name] !== undefined);
       if (entry && spec.name in entry)
         out[spec.name] = {
           value: entry[spec.name],
           source: shared ? 'format' : 'override'
         };
-      else if (
-        typeof styleFormat === 'string' &&
-        view.nf.formats[styleFormat]?.[spec.name] !== undefined
-      )
+      else if (inheritParagraph) {
+        const inherited = inheritParagraph(
+          entry?.styleName,
+          spec.name,
+          entry?.listFormat
+        );
         out[spec.name] = {
-          value: view.nf.formats[styleFormat][spec.name],
-          source: 'container'
+          value: inherited?.value ?? null,
+          source: inherited?.from === 'default' ? 'default' : 'container'
         };
-      else out[spec.name] = { value: null, source: 'default' };
+      } else if (fromStyle)
+        out[spec.name] = { value: fromStyle[spec.name], source: 'container' };
+      else
+        out[spec.name] = {
+          value: documentDefault[spec.name] ?? null,
+          source: 'default'
+        };
     }
   }
   return out;

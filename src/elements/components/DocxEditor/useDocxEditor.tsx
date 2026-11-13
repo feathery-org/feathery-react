@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { CardTableEntry } from '../../../robin/document/cardTable';
+import { cardTableIn, restoreCards, stampCardTable } from './robinCardTable';
 import { installHistoryRouting } from './historyRouting';
 import { featheryWindow } from '../../../utils/browser';
 import { dynamicImport } from '../../../integrations/utils';
@@ -6,6 +8,7 @@ import {
   disableUserTrackChanges,
   findReplaceCounterpart,
   installExportContentControlRecovery,
+  installPasteIconReset,
   installRevisionGroupIsolation,
   installTrackedContentControlDeletion,
   preserveDocumentViewDuring
@@ -35,6 +38,7 @@ const BUILT_IN_SYNCFUSION_LICENSE_KEY =
 /** Snapshot synchronously, with a separate archive for overlapping saves. */
 export function exportDocxSnapshot(editor: any): Promise<Blob> {
   if (!editor) return Promise.reject(new Error('Editor is not ready'));
+  stampCardTable(editor);
   const Writer = editor.wordExportModule?.constructor;
   if (!Writer || Writer === Object) return editor.saveAsBlob('Docx');
   const writer = new Writer();
@@ -233,6 +237,23 @@ export function installRevisionHighlightRendering(
   };
 
   renderer.checkRevisionType = () => [];
+
+  // Vendored override, 34.1.31: renderListTextElementBox has no colour for a blank revision, so tracked list markers keep their own
+  const originalRenderListText =
+    renderer.renderListTextElementBox.bind(renderer);
+  renderer.renderListTextElementBox = (elementBox: any, ...rest: any[]) => {
+    const format = elementBox.listLevel.characterFormat;
+    const markerColor = format.hasValue('fontColor')
+      ? format.fontColor
+      : elementBox.line.paragraph.characterFormat.fontColor;
+    const prevColor = renderer.getRevisionColor;
+    renderer.getRevisionColor = () => markerColor;
+    try {
+      return originalRenderListText(elementBox, ...rest);
+    } finally {
+      renderer.getRevisionColor = prevColor;
+    }
+  };
 
   const originalRenderText = renderer.renderTextElementBox.bind(renderer);
   renderer.renderTextElementBox = (
@@ -1100,6 +1121,7 @@ export function useDocxEditor({
           installHistoryRouting(ed);
           installTrackedContentControlDeletion(ed);
           installExportContentControlRecovery(ed);
+          installPasteIconReset(ed);
           // Status bar (bottom right): hide the Web-layout toggle — it flips
           // the document into continuous view, which breaks the paginated
           // editing/print flows this editor is built around.
@@ -1231,6 +1253,7 @@ export function useDocxEditor({
         // reading the document here sees the previous (often blank) one.
         // Registered before the open so a fast load cannot outrun the listener.
         const documentLoaded = waitForDocumentLoad(liveEditor);
+        let cardTable: CardTableEntry[] = [];
         try {
           if ('sfdt' in openSource) {
             // A restored version can carry this exact clean snapshot. Opening
@@ -1240,6 +1263,7 @@ export function useDocxEditor({
           } else {
             const buffer = await resolveBuffer(openSource);
             if (cancelled) return;
+            cardTable = cardTableIn(buffer);
             if (!serviceUrl) {
               throw new Error('serviceUrl is required to open a .docx');
             }
@@ -1277,6 +1301,7 @@ export function useDocxEditor({
         // for every document, not just bound ones: a template authored in Word
         // hits it too. See contentControlSafety.
         stampMissingContentControlColors(liveEditor);
+        restoreCards(liveEditor, cardTable);
         // Opening SFDT can copy trackChanges=true onto the editor (and the
         // container, via documentChange). Put the review host back in user
         // mode before keystrokes can land.

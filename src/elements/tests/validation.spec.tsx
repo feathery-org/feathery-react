@@ -66,6 +66,7 @@ function ValidationForm({ errorType }: { errorType: string }) {
 
   const validate = (reportNativeErrors = true) =>
     validateElements({
+      internalId: 'form',
       step,
       visiblePositions,
       errorType,

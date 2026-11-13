@@ -17,6 +17,7 @@ import {
   AttachedBindings
 } from '../../../../../../elements/components/DocxEditor/bindings/attachBindings';
 import { SyncfusionEditorLike } from '../../../../../../elements/components/DocxEditor/bindings/editorAdapter';
+import { printedPageNumber } from '../../../../../../elements/components/DocxEditor/printedPageNumber';
 import { comparable, differences, equivalentNative } from '../../../../proof';
 import { DocumentSession } from '../../../../session';
 import type { Verb } from '../../../../envelope';
@@ -29,6 +30,7 @@ import HistoryGroup from '../../../../../../elements/components/DocxEditor/DocxT
 import { installHistoryRouting } from '../../../../../../elements/components/DocxEditor/historyRouting';
 import { registerCardResolver, registerHistoryRoute } from '../../../../mounts';
 import { installDocumentTailInvariant } from '../../../../../../elements/components/DocxEditor/documentTailInvariant';
+import { installPasteIconReset } from '../../../../../../utils/documentEditorPrimitives';
 import { robinMarks } from '../../../../../../elements/components/DocxEditor/robinDocument';
 import { isRobinWriting, onDocumentReplaced } from '../../../../../../elements/components/DocxEditor/robinActivity';
 
@@ -121,6 +123,7 @@ function makeEditor(id: string): DocumentEditor {
   });
   instance.appendTo(host);
   installDocumentTailInvariant(instance as any);
+  installPasteIconReset(instance as any);
   return instance;
 }
 
@@ -301,6 +304,14 @@ const api = {
     return settled();
   },
 
+  /** The person's line-spacing shortcut (Ctrl+1, Ctrl+2, Ctrl+5) on the paragraph at `at` */
+  async userLineSpacing(at: string, value: number): Promise<string> {
+    const e = live() as any;
+    e.selection.select(at, at);
+    e.editorModule.onApplyParagraphFormat('lineSpacing', value, false, false);
+    return settled();
+  },
+
   async userEdit(at: string, text: string): Promise<string> {
     const e = live() as any;
     e.enableTrackChanges = false;
@@ -318,9 +329,9 @@ const api = {
    * deletion) and the page the editor's layout puts them on (its own page number, as a contents
    * table shows it).
    */
-  headingPages(styles: string[]): Array<{ text: string; page: number }> {
+  headingPages(styles: string[]): Array<{ text: string; page: number; printed: number | null }> {
     const e = live() as any;
-    const out: Array<{ text: string; page: number }> = [];
+    const out: Array<{ text: string; page: number; printed: number | null }> = [];
     let w = e.documentHelper.pages[0].bodyWidgets[0].childWidgets[0];
     while (w) {
       const style = w.paragraphFormat?.baseStyle?.name;
@@ -328,7 +339,7 @@ const api = {
         let text = '';
         for (const split of w.getSplitWidgets())
           for (const line of split.childWidgets) for (const el of line.children) if (el instanceof TextElementBox && !(el as any).revisions?.some((r: any) => r.revisionType === 'Deletion')) text += el.text;
-        if (text.trim()) out.push({ text: text.trim(), page: e.editorModule.getPageNumber(w) });
+        if (text.trim()) out.push({ text: text.trim(), page: e.editorModule.getPageNumber(w), printed: printedPageNumber(w.bodyWidget.page, e.selection) });
       }
       w = e.selection.getNextParagraphBlock(w.getSplitWidgets().pop());
     }
@@ -399,6 +410,39 @@ const api = {
 
   /** How many pages the editor lays the document out on */
   pageCount: (): number => (live() as any).documentHelper.pages.length,
+
+  /** Test support: the person pastes lines at one place until the document runs onto one more page, true when the editor kept a footer's page number as its last pasted element */
+  pasteOntoNewPage(): boolean {
+    const editor = live() as any;
+    const { editorModule, selection, documentHelper } = editor;
+    const line = JSON.stringify({
+      sections: [{ sectionFormat: {}, blocks: [{ paragraphFormat: { styleName: 'Normal' }, characterFormat: {}, inlines: [{ characterFormat: {}, text: 'Pasted line' }] }] }],
+      characterFormat: {},
+      paragraphFormat: {},
+      styles: []
+    });
+    let block = documentHelper.pages[0].bodyWidgets[0].childWidgets[0];
+    while (block) {
+      const splits = block.getSplitWidgets ? block.getSplitWidgets() : [block];
+      const style = String(block.paragraphFormat?.baseStyle?.name ?? '');
+      if (!block.isInsideTable && block.isEmpty && !block.isEmpty() && !/^TOC/.test(style)) {
+        const pages = documentHelper.pages.length;
+        let pasted = 0;
+        while (documentHelper.pages.length === pages && pasted < 60) {
+          const at = selection.getHierarchicalIndex(block, '0');
+          selection.select(at, at);
+          editorModule.paste(line);
+          pasted += 1;
+        }
+        const container = editorModule.lastElementForPasteIcon?.line?.paragraph?.containerWidget;
+        if (container?.parentHeaderFooter) return true;
+        for (let i = 0; i < pasted; i += 1) editor.editorHistory.undo();
+        editorModule.lastElementForPasteIcon = undefined;
+      }
+      block = selection.getNextParagraphBlock(splits[splits.length - 1]);
+    }
+    return false;
+  },
 
   /** Test support: the person bolds what is selected, as the toolbar's Bold does. */
   boldSelection(): void {

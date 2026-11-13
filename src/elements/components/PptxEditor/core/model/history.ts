@@ -2,8 +2,9 @@ import { applySlideJSON } from './applyJson';
 import { deckToJSON, slideToJSON, type DeckJSON, type SlideJSON } from './json';
 import { refreshSlideModel, rebuildSlides } from './import';
 import { presentationSizeType, setPresentationSize } from './slideSize';
-import type { Deck } from './types';
-import type { OTree } from '../opc/xml';
+import { readShapeNode } from './read';
+import type { Deck, Slide } from './types';
+import { child, childrenOf, root, type ONode, type OTree } from '../opc/xml';
 import { deepClone } from '../opc/deepClone';
 
 const PRES = 'ppt/presentation.xml';
@@ -220,12 +221,172 @@ function slideJSON(
   return snapshot.document.slides.find((slide) => slide.path === path);
 }
 
-function restoreSourceSlide(deck: Deck, path: string, raw: OTree): void {
+const sameRaw = (a: OTree | undefined, b: OTree | undefined) =>
+  a === b || serialized(a) === serialized(b);
+
+/** The slides a change added or rewrote */
+export function slidesChangedBetween(
+  before: PptxHistorySnapshot,
+  after: PptxHistorySnapshot
+): Set<string> {
+  return new Set(
+    after.document.slides
+      .map((slide) => slide.path)
+      .filter(
+        (path) =>
+          !(path in before.sourceSlides) ||
+          !sameRaw(before.sourceSlides[path], after.sourceSlides[path])
+      )
+  );
+}
+
+/** Whether the deck still has the slide order, size and package parts it had at `after`, and these slides as it left them */
+export function unchangedSince(
+  present: PptxHistorySnapshot,
+  after: PptxHistorySnapshot,
+  paths: Set<string>
+): boolean {
+  const order = (snapshot: PptxHistorySnapshot) =>
+    serialized(snapshot.document.slides.map((slide) => slide.path));
+  if (order(present) !== order(after)) return false;
+  if (
+    present.presentationSizeType !== after.presentationSizeType ||
+    serialized(present.document.sizeEMU) !== serialized(after.document.sizeEMU)
+  )
+    return false;
+  if (
+    !sameRaw(present.manifest.contentTypes, after.manifest.contentTypes) ||
+    !sameRaw(present.manifest.presentationRels, after.manifest.presentationRels)
+  )
+    return false;
+  return [...paths].every((path) =>
+    sameRaw(present.sourceSlides[path], after.sourceSlides[path])
+  );
+}
+
+/** `target` with every slide outside `paths` as the deck has it now, so restoring it puts back only the slide order and those slides */
+export function keepingOtherSlides(
+  target: PptxHistorySnapshot,
+  present: PptxHistorySnapshot,
+  paths: Set<string>
+): PptxHistorySnapshot {
+  const isKept = (path: string) =>
+    !paths.has(path) && path in present.sourceSlides;
+  const slideRels: Record<string, OTree> = {};
+  for (const slide of target.document.slides) {
+    const rels = isKept(slide.path)
+      ? present.manifest.slideRels[slide.path]
+      : target.manifest.slideRels[slide.path];
+    if (rels) slideRels[slide.path] = rels;
+  }
+  return {
+    ...target,
+    document: {
+      ...target.document,
+      slides: target.document.slides.map((slide) =>
+        isKept(slide.path)
+          ? {
+              ...(slideJSON(present, slide.path) as SlideJSON),
+              index: slide.index
+            }
+          : slide
+      )
+    },
+    sourceSlides: Object.fromEntries(
+      Object.entries(target.sourceSlides).map(([path, raw]) => [
+        path,
+        isKept(path) ? present.sourceSlides[path] : raw
+      ])
+    ),
+    manifest: { ...target.manifest, slideRels }
+  };
+}
+
+export function restoreSourceSlide(deck: Deck, path: string, raw: OTree): void {
   const slide = deck.slides.find((candidate) => candidate.path === path);
   if (!slide) throw new Error(`History cannot restore missing slide ${path}`);
   const restored = clone(raw);
   slide.raw.splice(0, slide.raw.length, ...restored);
   deck.pkg.markDirty(path);
+  refreshSlideModel(deck, slide);
+}
+
+function shapeTreeChildren(raw: OTree): OTree {
+  const cSld = child(root(raw), 'p:cSld');
+  const spTree = cSld && child(cSld, 'p:spTree');
+  return spTree ? childrenOf(spTree) : [];
+}
+
+/** A slide's top-level shapes in stacking order, read from its raw XML */
+export function slideShapes(raw: OTree): Array<{ id: string; node: ONode }> {
+  return shapeTreeChildren(raw).flatMap((node) => {
+    const id = readShapeNode(node)?.id;
+    return id ? [{ id, node }] : [];
+  });
+}
+
+/** Put these top-level shapes back as an earlier copy of the slide had them, each where it sits now */
+export function restoreShapes(
+  deck: Deck,
+  slide: Slide,
+  earlierRaw: OTree,
+  shapeIds: string[]
+): void {
+  const earlier = new Map(
+    slideShapes(earlierRaw).map(({ id, node }) => [id, node])
+  );
+  const siblings = childrenOf(slide.spTree);
+  for (const shapeId of shapeIds) {
+    const index = siblings.findIndex(
+      (node) => readShapeNode(node)?.id === shapeId
+    );
+    if (index < 0) continue;
+    const node = earlier.get(shapeId);
+    if (node) siblings[index] = clone(node);
+    else siblings.splice(index, 1);
+  }
+  deck.pkg.markDirty(slide.path);
+  refreshSlideModel(deck, slide);
+}
+
+/**
+ * Put these top-level shapes back as an earlier copy of the slide had them, in its stacking order,
+ * for a slide whose order has not changed since apart from these shapes
+ */
+export function restoreShapesInOrder(
+  deck: Deck,
+  slide: Slide,
+  earlierRaw: OTree,
+  shapeIds: string[]
+): void {
+  const targets = new Set(shapeIds);
+  const siblings = childrenOf(slide.spTree);
+  // Shapes by id, other nodes by XML plus which copy it is, so identical nodes stay apart
+  const keysOf = (nodes: OTree) => {
+    const copies = new Map<string, number>();
+    return nodes.map((node) => {
+      const id = readShapeNode(node)?.id;
+      const base = id ? `shape:${id}` : JSON.stringify(node);
+      copies.set(base, (copies.get(base) ?? 0) + 1);
+      return `${base}#${copies.get(base)}`;
+    });
+  };
+  for (let i = siblings.length - 1; i >= 0; i--)
+    if (targets.has(readShapeNode(siblings[i])?.id ?? ''))
+      siblings.splice(i, 1);
+
+  // Each goes back right after the node that preceded it earlier, exact since the order is otherwise unchanged
+  const earlier = shapeTreeChildren(earlierRaw);
+  const earlierKeys = keysOf(earlier);
+  earlier.forEach((node, index) => {
+    if (!targets.has(readShapeNode(node)?.id ?? '')) return;
+    const currentKeys = keysOf(siblings);
+    let anchor = -1;
+    for (let p = index - 1; p >= 0 && anchor < 0; p--)
+      anchor = currentKeys.indexOf(earlierKeys[p]);
+    siblings.splice(anchor + 1, 0, clone(node));
+  });
+  deck.pkg.markDirty(slide.path);
   refreshSlideModel(deck, slide);
 }
 

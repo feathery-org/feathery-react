@@ -28,6 +28,7 @@ import {
   textFieldShouldSubmit
 } from './utils/utils';
 import { getVisibleElements } from '../../../utils/hideAndRepeats';
+import { getSliderSources } from '../../../utils/validation';
 import debounce from 'lodash.debounce';
 import { isMobile } from '../../../utils/browser';
 import {
@@ -584,6 +585,7 @@ const Element = ({ node, form }: any) => {
           <Elements.SliderField
             {...fieldProps}
             fieldVal={fieldVal}
+            linkedValues={getSliderSources(activeStep, visiblePositions)}
             onChange={(val: number) => {
               const change = changeValue(val, el, index);
               if (change) debouncedOnChange();

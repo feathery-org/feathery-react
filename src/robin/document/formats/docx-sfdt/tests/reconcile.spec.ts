@@ -16,6 +16,7 @@ import { ownText } from '../outline';
 import { composeTracked, editorOffset, hierOf, inOrder, plan } from '../reconcile';
 import { docxTree } from '../tree';
 import { arr } from '../util';
+import { revisionsIn } from '../adapter/revisions';
 
 const flagship = fs.readFileSync(path.join(__dirname, 'corpus', 'flagship-v4b.sfdt.json'), 'utf8');
 const state = () => {
@@ -165,6 +166,47 @@ describe('composeTracked: moving text still pending in an earlier card', () => {
     };
     expect(groups(placed)).toEqual(['Insertion Y']);
     expect(groups(left)).toEqual(['Deletion Y', 'Insertion X']);
+  });
+
+  it('the moved copy takes the earlier card as accepted: its deleted text is gone, the copy left behind keeps it (0590e168)', () => {
+    const nf = JSON.parse(JSON.stringify(state().view.nf)) as NormalForm;
+    const blocks = arr<NfNode>(arr<NfNode>(nf.root.sections)[1].blocks);
+    const at = blocks.findIndex((b, i) => i > 3 && b.kind === 'paragraph' && arr<NfNode>(b.inlines).length > 0 && arr<NfNode>(b.inlines).every((r) => r.kind === 'run'));
+    const moving = blocks[at];
+    const runs = arr<NfNode>(moving.inlines);
+    runs.push({ id: 'old-premium', kind: 'run', text: '$3,026.00', pending: { kind: 'Deletion', author: 'Robin', group: 'X' } });
+    runs.push({ id: 'new-premium', kind: 'run', text: '$4,555.47', pending: { kind: 'Insertion', author: 'Robin', group: 'X' } });
+    const intended = JSON.parse(JSON.stringify(nf)) as NormalForm;
+    const list = arr<NfNode>(arr<NfNode>(intended.root.sections)[1].blocks);
+    list.splice(2, 0, ...list.splice(at, 1));
+    const { tracked } = composeTracked(makeView(nf, docxPack), intended, 'Y');
+    const [placed, left] = occurrences(tracked, moving.id);
+    const texts = (n: NfNode) => arr<NfNode>(n.inlines).map((r) => r.text);
+
+    expect(texts(placed)).not.toContain('$3,026.00');
+    expect(texts(placed)).toContain('$4,555.47');
+    expect(texts(left)).toContain('$3,026.00');
+    const pendingIn = (n: NfNode) => arr<NfNode>(n.inlines).flatMap((r) => revisionsIn(r.pending).map((p) => `${p.kind} ${p.group}`));
+    expect(new Set(pendingIn(placed))).toEqual(new Set(['Insertion Y']));
+  });
+
+  it("the moved copy keeps a person's pending changes as theirs, never applied or taken over", () => {
+    const nf = JSON.parse(JSON.stringify(state().view.nf)) as NormalForm;
+    const blocks = arr<NfNode>(arr<NfNode>(nf.root.sections)[1].blocks);
+    const at = blocks.findIndex((b, i) => i > 3 && b.kind === 'paragraph' && arr<NfNode>(b.inlines).length > 0 && arr<NfNode>(b.inlines).every((r) => r.kind === 'run'));
+    const moving = blocks[at];
+    const runs = arr<NfNode>(moving.inlines);
+    runs.push({ id: 'ann-old', kind: 'run', text: 'old words', pending: { kind: 'Deletion', author: 'Ann' } });
+    runs.push({ id: 'ann-new', kind: 'run', text: 'new words', pending: { kind: 'Insertion', author: 'Ann' } });
+    const intended = JSON.parse(JSON.stringify(nf)) as NormalForm;
+    const list = arr<NfNode>(arr<NfNode>(intended.root.sections)[1].blocks);
+    list.splice(2, 0, ...list.splice(at, 1));
+    const { tracked } = composeTracked(makeView(nf, docxPack), intended, 'Y');
+    const [placed] = occurrences(tracked, moving.id);
+    const authorsOf = (id: string) => revisionsIn(arr<NfNode>(placed.inlines).find((r) => r.id === id)?.pending).map((p) => `${p.kind} ${p.author}`);
+
+    expect(authorsOf('ann-old')).toContain('Deletion Ann');
+    expect(authorsOf('ann-new')).toContain('Insertion Ann');
   });
 });
 

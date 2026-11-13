@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useId, useMemo, useRef, useState } from 'react';
 import { FormControl } from '../../components/FormControl';
 import { resetStyles } from '../../styles';
 import {
@@ -37,6 +37,7 @@ function RadioButtonGroupField({
   const asciiOnly = formSettings?.asciiOnly ?? false;
   const servar = element.servar;
   const containerRef = useRef(null);
+  const optionLabelIdPrefix = useId();
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
     useSalesforceSync(servar, editMode, asciiOnly, formSettings?.formKey);
 
@@ -110,6 +111,7 @@ function RadioButtonGroupField({
           const value = option.value ?? option;
           const label = option.label ?? option;
           const tooltip = option.tooltip ?? '';
+          const labelId = `${optionLabelIdPrefix}-${i}`;
 
           return (
             <div
@@ -132,6 +134,9 @@ function RadioButtonGroupField({
                   disabled={disabled || loadingDynamicOptions}
                   onChange={onChange}
                   onFocus={iosScrollOnFocus}
+                  // Preserve custom CSS selectors while naming each option by its text.
+                  aria-label={element.properties.aria_label}
+                  aria-labelledby={labelId}
                   value={value}
                   style={{
                     padding: 0,
@@ -145,6 +150,7 @@ function RadioButtonGroupField({
                   }}
                 />
                 <span
+                  id={labelId}
                   css={{
                     whiteSpace: 'pre-wrap',
                     overflowWrap: 'anywhere',

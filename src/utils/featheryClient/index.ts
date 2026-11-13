@@ -69,6 +69,7 @@ import {
   getS3Url,
   getStaticUrl,
   HubActionOptions,
+  HubAssociation,
   inviteFormCollaborator as apiInviteFormCollaborator,
   setTaskStatus as apiSetTaskStatus,
   PageSelectionInput,
@@ -1571,7 +1572,8 @@ export default class FeatheryClient extends IntegrationClient {
     merge = false,
     repeatable = false,
     zipName,
-    mergedFileName
+    mergedFileName,
+    hubAssociation
   }: {
     documentIds: string[];
     download?: boolean;
@@ -1579,6 +1581,7 @@ export default class FeatheryClient extends IntegrationClient {
     repeatable?: boolean;
     zipName?: string;
     mergedFileName?: string;
+    hubAssociation?: HubAssociation;
   }) {
     const { userId, sdkKey } = initInfo();
     const payload = await apiGenerateFormDocuments({
@@ -1589,7 +1592,8 @@ export default class FeatheryClient extends IntegrationClient {
       envelopeAction: 'fill',
       mergeDocuments: merge,
       repeatable,
-      mergedFileName
+      mergedFileName,
+      hubAssociation
     });
     if (payload.status === 'error') throw Error(payload.message);
 
@@ -1626,7 +1630,7 @@ export default class FeatheryClient extends IntegrationClient {
       options.operation === 'create' && options.idFieldId && !options.idValue
         ? { ...options, idValue: userId }
         : options;
-    return apiDataHubAction(sdkKey, resolved, this.formKey);
+    return apiDataHubAction(sdkKey, resolved, this.formKey, userId);
   }
 
   // `hubKeys` resolves hubs by key as well as id, for a table whose hub is

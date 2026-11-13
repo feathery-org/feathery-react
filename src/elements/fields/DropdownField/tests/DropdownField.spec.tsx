@@ -1,5 +1,17 @@
 import React from 'react';
-import { createDropdownElement, createDropdownProps, createStatefulOnChange, createOptionsMetadata, getMockFieldValue, resetMockFieldValue, getOptionByValue, expectOptionToHaveTooltip, expectSelectToHaveValue, expectSelectToHaveOptionCount, expectFieldToBeDisabled } from './test-utils';
+import {
+  createDropdownElement,
+  createDropdownProps,
+  createStatefulOnChange,
+  createOptionsMetadata,
+  getMockFieldValue,
+  resetMockFieldValue,
+  getOptionByValue,
+  expectOptionToHaveTooltip,
+  expectSelectToHaveValue,
+  expectSelectToHaveOptionCount,
+  expectFieldToBeDisabled
+} from './test-utils';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import DropdownField from '../index';
 
@@ -66,6 +78,29 @@ describe('DropdownField - Base Functionality', () => {
       render(<DropdownField {...props} />);
 
       expectFieldToBeDisabled(dropdown());
+    });
+  });
+
+  describe('Placeholder styles', () => {
+    // Spreading two getTarget() results drops the resting @media block.
+    it('merges the resting and pinned placeholder targets with getTargets', () => {
+      const element = createDropdownElement(
+        'dropdown',
+        createOptionsMetadata(['Option 1'])
+      );
+      element.properties.placeholder = 'Pick one';
+      const props = createDropdownProps(element, { fieldVal: 'Option 1' });
+      const getTargets = props.responsiveStyles.getTargets as jest.Mock;
+      getTargets.mockClear();
+      render(<DropdownField {...props} />);
+      expect(getTargets).toHaveBeenCalledWith(
+        'placeholder',
+        'placeholderFocus'
+      );
+      expect(getTargets).toHaveBeenCalledWith(
+        'placeholderFocus',
+        'placeholderActive'
+      );
     });
   });
 

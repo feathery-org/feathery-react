@@ -518,6 +518,41 @@ describe('IntegrationClient', () => {
   });
 
   describe('generateEnvelopes', () => {
+    it('lets the server resolve saved container actions without dropping overlay signers', async () => {
+      const client = new IntegrationClient('test_form_key');
+      const response = {
+        editor_mode: 'overlay',
+        documents: [{ envelope_id: 'env-1', pdf_url: 'https://x/1.pdf' }]
+      };
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(response)
+      });
+      Object.assign(fieldValues, { signer_field: 'filler@example.com' });
+
+      const result = await client.generateEnvelopes({
+        envelope_action: 'open_in_editor',
+        editor_mode: 'container-abc',
+        documents: ['word', 'slides'],
+        envelope_signer_field_key: 'signer_field',
+        editor_toolbar_actions: ['sign', 'download', 'save'],
+        run_async: false
+      });
+
+      expect(requestBody()).toEqual(
+        expect.objectContaining({
+          envelope_action: 'open_in_editor',
+          editor_mode: 'container-abc',
+          editor_toolbar_actions: ['sign', 'download', 'save'],
+          signers: [
+            { document_id: 'word', email: 'filler@example.com', filler: true },
+            { document_id: 'slides', email: 'filler@example.com', filler: true }
+          ]
+        })
+      );
+      expect(result).toEqual(response);
+    });
+
     it('forwards signer names, copy-specific signers, SMS and all-copy defaults to the API', async () => {
       const client = new IntegrationClient('test_form_key');
       const signers = [
@@ -713,42 +748,61 @@ describe('IntegrationClient', () => {
       expect(result).toEqual(documentsPayload);
     });
 
-    it('polls until complete when open_in_editor runs async', async () => {
-      const formKey = 'test_form_key';
-      const integrationClient = new IntegrationClient(formKey);
-      integrationClient.ENVELOPE_CHECK_INTERVAL = 1;
-      integrationClient.ENVELOPE_MAX_TIME = 20;
-      const action = {
-        documents: ['doc1'],
-        run_async: true,
-        envelope_action: 'open_in_editor'
-      };
+    it.each([
+      [undefined, 'overlay'],
+      ['container-abc', 'overlay'],
+      ['container-abc', 'container-abc']
+    ])(
+      'polls an editor request for %s resolved to %s',
+      async (requestedMode, resolvedMode) => {
+        const formKey = 'test_form_key';
+        const integrationClient = new IntegrationClient(formKey);
+        integrationClient.ENVELOPE_CHECK_INTERVAL = 1;
+        integrationClient.ENVELOPE_MAX_TIME = 20;
+        const action = {
+          documents: ['doc1'],
+          run_async: true,
+          envelope_action: 'open_in_editor',
+          editor_mode: requestedMode
+        };
 
-      const completePayload = {
-        documents: [{ envelope_id: 'env-1', pdf_url: 'https://x/1.pdf' }],
-        expires_at: '2026-07-15T00:00:00Z',
-        status: 'complete'
-      };
+        const completePayload = {
+          editor_mode: resolvedMode,
+          ...(resolvedMode === 'overlay'
+            ? {
+                documents: [
+                  { envelope_id: 'env-1', pdf_url: 'https://x/1.pdf' }
+                ]
+              }
+            : {
+                envelopes: [
+                  { id: 'env-1', type: 'pptx', file: 'https://x/1.pptx' }
+                ]
+              }),
+          expires_at: '2026-07-15T00:00:00Z',
+          status: 'complete'
+        };
 
-      global.fetch
-        .mockResolvedValueOnce({
-          ok: true,
-          json: jest.fn().mockResolvedValue({ status: 'running' })
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          json: jest.fn().mockResolvedValue(completePayload)
-        });
+        global.fetch
+          .mockResolvedValueOnce({
+            ok: true,
+            json: jest.fn().mockResolvedValue({ status: 'running' })
+          })
+          .mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: jest.fn().mockResolvedValue(completePayload)
+          });
 
-      const result = await integrationClient.generateEnvelopes(action);
+        const result = await integrationClient.generateEnvelopes(action);
 
-      expect(global.fetch).toHaveBeenCalledTimes(2);
-      expect(global.fetch.mock.calls[1][0]).toBe(
-        `${API_URL}document/form/generate/poll/?fid=test_user_id&dids=${action.documents}`
-      );
-      expect(result).toEqual(completePayload);
-    });
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+        expect(global.fetch.mock.calls[1][0]).toBe(
+          `${API_URL}document/form/generate/poll/?fid=test_user_id&dids=${action.documents}`
+        );
+        expect(result).toEqual(completePayload);
+      }
+    );
 
     it('polls with canonical cache keys for a mixed template/quik/upload array', async () => {
       const formKey = 'test_form_key';
@@ -1013,11 +1067,15 @@ describe('IntegrationClient', () => {
         sign_method: 'docusign',
         email_subject: 'Please sign this',
         email_blurb: 'Two signatures needed.',
+        notification: { reminders: { enabled: true, delay: 2, frequency: 3 } },
         custom_fields: { account_submission_id: 'account-123' }
       });
       let body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(body.email_subject).toBe('Please sign this');
       expect(body.email_blurb).toBe('Two signatures needed.');
+      expect(body.notification).toEqual({
+        reminders: { enabled: true, delay: 2, frequency: 3 }
+      });
       expect(body.custom_fields).toEqual({
         account_submission_id: 'account-123'
       });
@@ -1032,6 +1090,7 @@ describe('IntegrationClient', () => {
       body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(body.email_subject).toBeUndefined();
       expect(body.email_blurb).toBeUndefined();
+      expect(body.notification).toBeUndefined();
       expect(body.custom_fields).toBeUndefined();
     });
 
@@ -1302,6 +1361,41 @@ describe('IntegrationClient', () => {
       const body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(body.documents).toEqual(mixedDocuments);
     });
+
+    it('forwards a hub association on both generate paths, omitting it when unset', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: [], documents: [] })
+      });
+      const hubAssociation = {
+        hubId: 'hub-1',
+        entryId: 'entry-1',
+        label: 'NDA'
+      };
+      const actions = [
+        { documents: ['doc1'], run_async: false },
+        {
+          documents: ['doc1'],
+          run_async: false,
+          envelope_action: 'open_in_editor'
+        }
+      ];
+
+      for (const [call, action] of actions.entries()) {
+        await integrationClient.generateEnvelopes(action);
+        expect(requestBody(call * 2)).not.toHaveProperty('hub_association');
+        await integrationClient.generateEnvelopes({
+          ...action,
+          hub_association: hubAssociation
+        });
+        expect(requestBody(call * 2 + 1).hub_association).toEqual({
+          hub_id: 'hub-1',
+          entry_id: 'entry-1',
+          label: 'NDA'
+        });
+      }
+    });
   });
 
   describe('finalizeEnvelopeReview', () => {
@@ -1416,6 +1510,7 @@ describe('IntegrationClient', () => {
           sign_method: 'docusign',
           email_subject: 'Signed, sealed',
           email_blurb: 'Last step.',
+          notification: { expirations: { enabled: true, after: 30, warn: 5 } },
           custom_fields: { account_submission_id: 'account-123' }
         },
         { envelopes: [{ envelopeId: 'env-1' }], envelopeAction: 'sign' }
@@ -1424,6 +1519,9 @@ describe('IntegrationClient', () => {
       const body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(body.email_subject).toBe('Signed, sealed');
       expect(body.email_blurb).toBe('Last step.');
+      expect(body.notification).toEqual({
+        expirations: { enabled: true, after: 30, warn: 5 }
+      });
       expect(body.custom_fields).toEqual({
         account_submission_id: 'account-123'
       });

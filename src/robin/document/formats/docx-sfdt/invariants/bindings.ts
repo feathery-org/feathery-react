@@ -8,7 +8,7 @@
 import type { Invariant } from '../../../pack';
 import type { NfNode } from '../../../tree';
 import { KIND } from '../adapter/keys';
-import { bindingState } from '../features/binding';
+import { bindingErrors } from '../features/binding';
 import { refusal } from './common';
 import { arr } from '../util';
 
@@ -20,21 +20,13 @@ export const bindingConsistency: Invariant = {
   cards: ['binding'],
   check({ before, after }) {
     const problems = [];
-    const keyed = (nf: typeof before.nf) => {
-      const state = bindingState(nf);
-      return new Map(
-        state.result.diagnostics
-          .filter((d) => d.severity === 'error')
-          .map((d) => [
-            `${d.code}:${state.nodeAt(d.path)?.id ?? JSON.stringify(d.path)}`,
-            {
-              code: d.code,
-              message: d.message,
-              id: state.nodeAt(d.path)?.id ?? null
-            }
-          ])
+    const keyed = (nf: typeof before.nf) =>
+      new Map(
+        bindingErrors(nf).map((d) => [
+          `${d.code}:${d.id ?? d.message}`,
+          { code: d.code, message: d.message, id: d.id ?? null }
+        ])
       );
-    };
     const was = keyed(before.nf);
     const now = keyed(after.nf);
     // a formula that fails only because what it read was removed is orphaned-dependents' to report

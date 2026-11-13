@@ -11,7 +11,10 @@ import {
   AttachedBindings
 } from '../../bindings/attachBindings';
 import { SyncfusionEditorLike } from '../../bindings/editorAdapter';
-import { installExportContentControlRecovery } from '../../../../../utils/documentEditorPrimitives';
+import {
+  installExportContentControlRecovery,
+  installRevisionGroupIsolation
+} from '../../../../../utils/documentEditorPrimitives';
 
 declare const __SYNCFUSION_LICENSE_KEY__: string;
 if (__SYNCFUSION_LICENSE_KEY__) registerLicense(__SYNCFUSION_LICENSE_KEY__);
@@ -44,7 +47,7 @@ const live = (): DocumentEditor => {
 const api = {
   async open(
     sfdt: string,
-    options: { bindings?: boolean; recovery?: boolean } = {}
+    options: { bindings?: boolean; recovery?: boolean; isolation?: boolean } = {}
   ): Promise<void> {
     try {
       attached?.dispose();
@@ -72,6 +75,7 @@ const api = {
     });
     const ed = live();
     if (options.recovery) installExportContentControlRecovery(ed as any);
+    if (options.isolation) installRevisionGroupIsolation(ed as any);
     ed.open(sfdt);
     await frame();
     await frame();
@@ -90,6 +94,15 @@ const api = {
       inlines: [],
       props: { type: 'Text', title: 'stale', tag: 'stale' }
     }),
+  /** Mark a block control inline, as the editor does once its end marker is deleted */
+  relabelInline(tag: string): void {
+    const control = (live() as any).documentHelper.contentControlCollection.find(
+      (candidate: any) => candidate.contentControlProperties?.tag === tag
+    );
+    control.contentControlWidgetType = 'Inline';
+    control.reference.contentControlWidgetType = 'Inline';
+    control.contentControlProperties.contentControlWidgetType = 'Inline';
+  },
   async docx(): Promise<number> {
     const blob: Blob = await (live() as any).saveAsBlob('Docx');
     return blob.size;
@@ -165,6 +178,8 @@ const api = {
         return;
       case 'delete':
         return ed.editor.delete();
+      case 'enter':
+        return ed.editor.onEnter();
       case 'acceptAll':
         return ed.revisions.acceptAll();
       case 'undo':

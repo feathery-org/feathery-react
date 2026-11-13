@@ -6,7 +6,8 @@ import type { Pack } from '../../pack';
 import { fromNormalForm } from './adapter/fromNormalForm';
 import { FEATURE_KEYS, FORMAT_REF_KEYS } from './adapter/keys';
 import { toNormalForm } from './adapter/toNormalForm';
-import { bindingAnnotations } from './features/binding';
+import { pendingCards } from './adapter/revisions';
+import { bindingAnnotations, bindingErrors } from './features/binding';
 import { layoutOnly } from './host';
 import { formulasFinalizer } from './finalizers/formulas';
 import { restripeFinalizer } from './finalizers/appearance';
@@ -28,6 +29,7 @@ import { fieldTriplets } from './invariants/fields';
 import { orphanedDependents } from './invariants/formulas';
 import { controlShape } from './invariants/identity';
 import { styleReferences } from './invariants/references';
+import { listStyles } from './lists';
 import { belowBlocks, detail, features, listLabel, ownText } from './outline';
 import {
   NORMALIZATIONS,
@@ -45,6 +47,7 @@ import { plan, tocStep, transaction } from './reconcile';
 import {
   FORMAT_SCHEMA,
   effective,
+  foreignFormats,
   schemaFor,
   setOnFormat,
   setOnSpan,
@@ -79,6 +82,7 @@ export const docxPack: Pack = {
   properties: {
     schema: schemaFor,
     formatSchema: FORMAT_SCHEMA,
+    foreignFormats,
     effective,
     setOverride,
     setOnSpan,
@@ -130,6 +134,13 @@ export const docxPack: Pack = {
   featureKeys: FEATURE_KEYS,
   selection: selectionOf,
   pages: pagesOf,
+  cards: (view, residue) =>
+    pendingCards(
+      (residue[view.nf.root.id] as { hidden?: { revisions?: unknown } })?.hidden
+        ?.revisions
+    ),
+  bindingErrors: (view) => bindingErrors(view.nf),
+  listStyles,
   // the server's card for how to edit a document (what it attached to these refusals on the rig)
   methodCards: ['edit-document'],
   residueKeys: {

@@ -19,6 +19,7 @@ import {
   encodeValue,
   parseTag
 } from '../../../../../elements/components/DocxEditor/bindings/core/tagDsl';
+import type { BindingError } from '../../../envelope';
 import type { Annotation } from '../../../pack';
 import type { NfNode, NormalForm } from '../../../tree';
 import { fromNormalForm } from '../adapter/fromNormalForm';
@@ -145,6 +146,17 @@ export function bindingState(nf: NormalForm): BindingState {
   const state = computeBindingState(nf);
   states.set(nf, state);
   return state;
+}
+
+/** The errors the binding engine reports in a document, each at the node it names */
+export function bindingErrors(nf: NormalForm): BindingError[] {
+  const state = bindingState(nf);
+  return state.result.diagnostics
+    .filter((d) => d.severity === 'error')
+    .map((d) => {
+      const id = state.nodeAt(d.path)?.id;
+      return { code: d.code, ...(id ? { id } : {}), message: d.message };
+    });
 }
 
 /** The binding engine's view of a normal form as it is now, not cached. */

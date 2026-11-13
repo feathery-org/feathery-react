@@ -71,6 +71,25 @@ describe('adapter round trip', () => {
 });
 
 describe('pending changes both ways', () => {
+  it('dates minted revisions the way the editor dates the person\'s, local time marked Z', () => {
+    const offset = jest.spyOn(Date.prototype, 'getTimezoneOffset').mockReturnValue(480);
+    try {
+      const { nf, residue } = toNormalForm(fs.readFileSync(files[0], 'utf8'));
+      let run: Record<string, unknown> | undefined;
+      walk(nf.root, docxTree, ({ node }) => {
+        if (node.kind === 'run' && !run) run = node;
+      });
+      (run as Record<string, unknown>).pending = { kind: 'Deletion', author: 'Robin', group: 'turn-7' };
+
+      const date = JSON.parse(fromNormalForm(nf, residue)).revisions[0].date;
+
+      expect(date).toMatch(/Z$/);
+      expect(Math.abs(Date.parse(date) - (Date.now() - 480 * 60000))).toBeLessThan(60000);
+    } finally {
+      offset.mockRestore();
+    }
+  });
+
   it('mints revisions for pending the engine authored, grouped by change set, and reads them back', () => {
     const native = fs.readFileSync(files[0], 'utf8');
     const { nf, residue } = toNormalForm(native);

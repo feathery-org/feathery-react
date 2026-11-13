@@ -24,6 +24,7 @@
  *   N6  runs are re-split at layout boundaries while pending
  *   N8  an over-wide table's cellWidth and grid are scaled to the page (absorbed: both live in
  *       the residue, which the proof compares without geometry)
+ *   N9  a paragraph property written explicitly as the value it inherits is the same as absent
  *   N14 a run property written explicitly as the value it inherits is the same as absent
  *
  * and, only where an undo is compared with the document it should restore:
@@ -41,8 +42,9 @@ import {
 } from './adapter/keys';
 import { revisionsIn } from './adapter/revisions';
 import { tocField } from './toc';
+import { paragraphInheritance } from './inheritance';
 import { docxTree } from './tree';
-import { arr } from './util';
+import { arr, entryOf } from './util';
 
 type Obj = Record<string, unknown>;
 const isObject = (v: unknown): v is Obj =>
@@ -629,9 +631,9 @@ const emptyDeep = (v: unknown): boolean =>
   isObject(v) && Object.values(v).every(emptyDeep);
 
 /**
- * N11: a paragraph whose format is only the Normal style (or nothing), with empty borders and an
- * empty list format beside it, is the same as one with no format: the editor gives a paragraph written
- * without one exactly that (measured in the headless lane), and Normal is the default style.
+ * N11: what the editor fills into every paragraph format is the same as absent: the Normal style,
+ * empty borders and list format, and the nsid of the list the format names (measured live and in
+ * the headless lane, 34.1.31). A format left with nothing is no format.
  */
 export const N11: Normalization = {
   name: 'N11',
@@ -641,17 +643,30 @@ export const N11: Normalization = {
         return false;
       const entry = out.formats[n.style];
       if (!entry) return false;
-      // nothing but empty members, or only the Normal style beside them (an empty paragraph has
-      // already lost its Normal to N5)
-      const rest = Object.entries(entry).filter(([, v]) => !emptyDeep(v));
-      if (
-        rest.length > 1 ||
-        (rest.length === 1 &&
-          (rest[0][0] !== 'styleName' || rest[0][1] !== 'Normal'))
-      )
-        return false;
-      delete n.style;
-      return true;
+      const fill = Object.keys(entry).filter(
+        (k) =>
+          emptyDeep(entry[k]) || (k === 'styleName' && entry[k] === 'Normal')
+      );
+      const list = entry.listFormat;
+      const stamped =
+        isObject(list) &&
+        list.nsid !== undefined &&
+        arr<Obj>(out.root.lists).some(
+          (l) => l.listId === list.listId && l.nsid === list.nsid
+        );
+      if (!fill.length && !stamped) return false;
+      if (fill.length === Object.keys(entry).length) {
+        delete n.style;
+        return true;
+      }
+      return rewriteRef(out, n, 'style', (e) => {
+        for (const k of fill) delete e[k];
+        if (stamped) {
+          e.listFormat = { ...(e.listFormat as Obj) };
+          delete (e.listFormat as Obj).nsid;
+        }
+        return e;
+      });
     })
 };
 
@@ -751,6 +766,67 @@ export const N15: Normalization = {
     })
 };
 
+/** N16: line spacing with no type is `Multiple` whatever its style says, as the editor reopens it */
+export const N16: Normalization = {
+  name: 'N16',
+  apply: (nf) =>
+    eachNode(nf, (n, _s, out) => {
+      if (n.kind !== KIND.paragraph || typeof n.style !== 'string')
+        return false;
+      const entry = out.formats[n.style];
+      if (!entry || !('lineSpacing' in entry) || 'lineSpacingType' in entry)
+        return false;
+      return rewriteRef(out, n, 'style', (e) => ({
+        ...e,
+        lineSpacingType: 'Multiple'
+      }));
+    })
+};
+
+/** N17: a section that does not restart its page numbering has no starting number, as the editor exports it */
+export const N17: Normalization = {
+  name: 'N17',
+  apply: (nf) =>
+    eachNode(nf, (n, _s, out) => {
+      if (n.kind !== KIND.section || typeof n.style !== 'string') return false;
+      const entry = out.formats[n.style];
+      if (
+        !entry ||
+        entry.restartPageNumbering ||
+        !('restartPageNumbering' in entry || 'pageStartingNumber' in entry)
+      )
+        return false;
+      return rewriteRef(out, n, 'style', (e) => {
+        delete e.restartPageNumbering;
+        delete e.pageStartingNumber;
+        return e;
+      });
+    })
+};
+
+/** N18: a paragraph list copied from its style is no list of its own, as the editor copies it on typing */
+export const N18: Normalization = {
+  name: 'N18',
+  apply: (nf) => {
+    const inherited = paragraphInheritance(nf);
+    return eachNode(nf, (n, _s, out) => {
+      if (n.kind !== KIND.paragraph || typeof n.style !== 'string')
+        return false;
+      const entry = out.formats[n.style];
+      const own = entry?.listFormat;
+      if (!isObject(own) || own.listId === undefined) return false;
+      const fromStyle = inherited(entry.styleName, 'listFormat')?.value;
+      if (
+        !isObject(fromStyle) ||
+        fromStyle.listId !== own.listId ||
+        (fromStyle.listLevelNumber ?? 0) !== (own.listLevelNumber ?? 0)
+      )
+        return false;
+      return rewriteRef(out, n, 'style', (e) => ({ ...e, listFormat: {} }));
+    });
+  }
+};
+
 const ROW_UNDO_DEFAULTS = [
   'gridBefore',
   'gridAfter',
@@ -777,50 +853,38 @@ export const N7: Normalization = {
     })
 };
 
-/** A format entry read whole: a hoisted reference resolved, an inline object as it is. */
-const entryOf = (nf: NormalForm, ref: unknown): Obj | null =>
-  typeof ref === 'string'
-    ? (nf.formats[ref] as Obj | undefined) ?? null
-    : isObject(ref)
-    ? ref
-    : null;
-
 /**
- * N9 (undo only, measured in the headless lane): undoing a native paragraph property writes the
- * previous value back explicitly, where before it was inherited (an explicit `textAlignment: Left`
- * where the paragraph had none). A paragraph property the editor sets natively, explicit with the
- * value its named style (through `basedOn`) or the document default gives it, is the same as absent.
+ * N9: a paragraph property the editor sets natively, explicit with the value it inherits, is the
+ * same as absent. The editor stores nothing when set to the value a paragraph already shows, and
+ * an undo writes the previous value back explicitly where before it was inherited
  */
 export const N9: Normalization = {
   name: 'N9',
   apply: (nf) => {
-    const styles = new Map(
-      arr<Obj>(nf.root.styles).map((s) => [String(s.name), s] as const)
-    );
-    const documentDefault = entryOf(nf, nf.root.paragraphFormat) ?? {};
-    const inherited = (styleName: unknown, key: string): unknown => {
-      const seen = new Set<string>();
-      let style = styles.get(String(styleName ?? 'Normal'));
-      while (style && !seen.has(String(style.name))) {
-        seen.add(String(style.name));
-        const pf = entryOf(nf, style.paragraphFormat);
-        if (pf && key in pf) return pf[key];
-        style = styles.get(String(style.basedOn));
-      }
-      return documentDefault[key];
+    const inherited = paragraphInheritance(nf);
+    const dropsByFormat = new Map<string, string[]>();
+    const dropsOf = (entry: FormatEntry): string[] => {
+      const drop = NATIVE_SETTERS.paragraph.filter((k) => {
+        const value = inherited(entry.styleName, k, entry.listFormat)?.value;
+        return (
+          k in entry &&
+          value !== undefined &&
+          JSON.stringify(entry[k]) === JSON.stringify(value)
+        );
+      });
+      // Line spacing keeps its type while it stays explicit, as N16 reads the two together
+      return 'lineSpacing' in entry && !drop.includes('lineSpacing')
+        ? drop.filter((k) => k !== 'lineSpacingType')
+        : drop;
     };
     return eachNode(nf, (n, _s, out) => {
       if (n.kind !== KIND.paragraph || typeof n.style !== 'string')
         return false;
       const entry = out.formats[n.style];
       if (!entry) return false;
-      const drop = NATIVE_SETTERS.paragraph.filter(
-        (k) =>
-          k in entry &&
-          inherited(entry.styleName, k) !== undefined &&
-          JSON.stringify(entry[k]) ===
-            JSON.stringify(inherited(entry.styleName, k))
-      );
+      if (!dropsByFormat.has(n.style))
+        dropsByFormat.set(n.style, dropsOf(entry));
+      const drop = dropsByFormat.get(n.style) as string[];
       if (!drop.length) return false;
       return rewriteRef(out, n, 'style', (e) => {
         for (const k of drop) delete e[k];
@@ -887,13 +951,17 @@ export const NORMALIZATIONS: readonly Normalization[] = [
   N4,
   N5,
   N6,
+  N9,
   N11,
   N12,
   N13,
   N14,
-  N15
+  N15,
+  N16,
+  N17,
+  N18
 ];
-export const UNDO_NORMALIZATIONS: readonly Normalization[] = [N7, N9];
+export const UNDO_NORMALIZATIONS: readonly Normalization[] = [N7];
 
 // ------------------------------------------------------------------ what rejecting restores
 

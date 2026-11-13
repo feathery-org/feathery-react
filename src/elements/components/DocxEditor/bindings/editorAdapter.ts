@@ -48,6 +48,7 @@ export interface SyncfusionEditorLike {
     ) => void;
     insertText?: (text: string) => void;
     handleTextInput?: (text: string) => void;
+    pasteContents?: (content: unknown, ...rest: unknown[]) => void;
     [key: string]: unknown;
   };
   /**

@@ -33,7 +33,12 @@ import {
   refusedResult,
   stripReadOnlyKeys
 } from './envelope';
-import { IdTable, mintWritten, renameFormatRefs } from './ids';
+import {
+  IdTable,
+  liftInlineFormats,
+  mintWritten,
+  renameFormatRefs
+} from './ids';
 import { renderOutline } from './outline';
 import type {
   DocumentView,
@@ -65,6 +70,7 @@ import {
   referrersOf
 } from './verifier/base';
 import {
+  formatKindProblems,
   formatPropertyProblems,
   newFormatProblems,
   propertyProblems,
@@ -586,7 +592,9 @@ export function prepareWrite(
   }
 
   // New format entries and the format references of written nodes.
-  const newFormats = write.formats ?? {};
+  const newFormats = { ...write.formats };
+  for (const c of changes)
+    if ('node' in c) liftInlineFormats(c.node, pack.formatRefKeys, newFormats);
   runner.run('format-entry-rejected', () =>
     newFormatProblems(pack, newFormats)
   );
@@ -594,12 +602,16 @@ export function prepareWrite(
     ...Object.keys(view.nf.formats),
     ...Object.keys(newFormats)
   ]);
+  const writtenNodes = changes.flatMap((c) => ('node' in c ? [c.node] : []));
   runner.run('unknown-format', () =>
-    unknownFormatProblems(
-      pack,
-      changes.flatMap((c) => ('node' in c ? [c.node] : [])),
-      knownFormats
-    )
+    unknownFormatProblems(pack, writtenNodes, knownFormats)
+  );
+  if (runner.failed) return refused();
+  runner.run('format-kind-mismatch', () =>
+    formatKindProblems(pack, writtenNodes, {
+      ...view.nf.formats,
+      ...newFormats
+    })
   );
   if (runner.failed) return refused();
 

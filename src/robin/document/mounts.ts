@@ -64,9 +64,13 @@ const created = (session: DocumentSession): MountedSession => ({
   peek: () => session
 });
 
+/** What the product around the editor tells Robin about it: saving and the toolbar's buttons */
+export type EditorFacts = Pick<Descriptor, 'autosaves' | 'toolbar'>;
+
 interface Slot {
   slot: string;
   session: MountedSession;
+  facts: EditorFacts;
 }
 
 const forms = new Map<string, Map<string, Slot>>();
@@ -75,7 +79,8 @@ const forms = new Map<string, Map<string, Slot>>();
 export function mountDocument(
   formKey: string,
   slot: string,
-  session: DocumentSession | MountedSession
+  session: DocumentSession | MountedSession,
+  facts: EditorFacts = {}
 ): () => void {
   let slots = forms.get(formKey);
   if (!slots) {
@@ -84,7 +89,8 @@ export function mountDocument(
   }
   const entry = {
     slot,
-    session: session instanceof DocumentSession ? created(session) : session
+    session: session instanceof DocumentSession ? created(session) : session,
+    facts
   };
   slots.set(slot, entry);
   return () => {
@@ -96,11 +102,13 @@ export function mountDocument(
 }
 
 /** The documents mounted in a form, the descriptor's first. */
-function slotsOf(formKey: string): MountedSession[] {
-  return [...(forms.get(formKey)?.values() ?? [])]
-    .sort((a, b) => (a.slot < b.slot ? -1 : a.slot > b.slot ? 1 : 0))
-    .map((s) => s.session);
+function entriesOf(formKey: string): Slot[] {
+  return [...(forms.get(formKey)?.values() ?? [])].sort((a, b) =>
+    a.slot < b.slot ? -1 : a.slot > b.slot ? 1 : 0
+  );
 }
+const slotsOf = (formKey: string): MountedSession[] =>
+  entriesOf(formKey).map((s) => s.session);
 
 /** The sessions mounted in a form, the descriptor's first; creates any not yet created. */
 export function mountedDocuments(formKey: string): DocumentSession[] {
@@ -118,11 +126,12 @@ export interface LiveDocumentAccessor {
    * the editor; null when no document is mounted.
    */
   descriptor(): Descriptor | null;
-  /** Section 10: the four document actions, `document_outline` to `document_write`. */
+  /** Section 10: the document actions, `document_outline` to `document_resolve`. */
   outline: DocumentAction;
   read: DocumentAction;
   find: DocumentAction;
   write: DocumentAction;
+  resolve: DocumentAction;
   /** The form's Robin turn settled: every mounted document ends its editing turn. */
   finishTurn(): void;
   /**
@@ -220,13 +229,15 @@ export function liveDocumentAccessor(
     };
   return {
     descriptor() {
-      const [first] = slotsOf(formKey);
-      return first?.get()?.descriptor() ?? null;
+      const [first] = entriesOf(formKey);
+      const descriptor = first?.session.get()?.descriptor();
+      return descriptor ? { ...descriptor, ...first.facts } : null;
     },
     outline: action('outline'),
     read: action('read'),
     find: action('find'),
     write: action('write'),
+    resolve: action('resolve'),
     finishTurn() {
       // a session not yet created has no turn to finish
       for (const session of slotsOf(formKey)) session.peek()?.finishTurn();

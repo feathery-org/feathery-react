@@ -171,12 +171,25 @@ export function inlineKind(i: Record<string, unknown>): string {
 }
 
 /**
- * The editor's native setters for paragraph, table, row and cell properties (the selection's
- * paragraphFormat, tableFormat, rowFormat and cellFormat, 34.1.31), by the property's name in the
- * format entry. A property not here (borders, styles, spans, lists, tabs) has no native setter and
- * the change goes by splice.
+ * The editor's native setters for character, paragraph, table, row and cell properties (the
+ * selection's characterFormat, paragraphFormat, tableFormat, rowFormat and cellFormat, 34.1.31), by
+ * the property's name in the format entry. A property not here (borders, styles, spans, lists, tabs,
+ * the bidi character sizes and fonts) has no native setter and the change goes by splice.
  */
 export const NATIVE_SETTERS: Record<string, readonly string[]> = {
+  character: [
+    'fontSize',
+    'fontFamily',
+    'fontColor',
+    'bold',
+    'bidi',
+    'italic',
+    'strikethrough',
+    'baselineAlignment',
+    'underline',
+    'highlightColor',
+    'allCaps'
+  ],
   paragraph: [
     'leftIndent',
     'rightIndent',

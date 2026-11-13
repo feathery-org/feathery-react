@@ -78,6 +78,14 @@ describe('the format pack', () => {
     expect(formulas.total).toBeGreaterThan(10);
   });
 
+  it("reads each node's own format before its children, so a cell's format is not read as its row's (Hilb ffb38cdf)", () => {
+    const { call } = mount();
+    const row = nodeOf(call('read', { ids: ['n133'] }), 'n133') as unknown as Record<string, unknown>;
+    const cell = (row.cells as Array<Record<string, unknown>>)[0];
+    expect(Object.keys(row).indexOf('style')).toBeLessThan(Object.keys(row).indexOf('cells'));
+    expect(Object.keys(cell).indexOf('style')).toBeLessThan(Object.keys(cell).indexOf('blocks'));
+  });
+
   it('outlines at block level: every container with its shape prefix, rows and text boxes with a preview, no runs or cells', () => {
     const { session, call } = mount();
     const outline = call('outline', {}) as { lines: string; depth: number };
@@ -106,6 +114,28 @@ describe('the format pack', () => {
     expect(outline.lines.length).toBeLessThan(12000);
     // an explicit depth renders every kind
     expect((call('outline', { depth: 6 }) as { lines: string }).lines).toMatch(/ run "/);
+  });
+
+  it('describes the paragraph styles that make a list item, so a new list can use one (Hilb 08d37625)', () => {
+    const doc = JSON.parse(flagship);
+    doc.styles = [
+      ...doc.styles,
+      { name: 'List Bullet', type: 'Paragraph', basedOn: 'Normal', paragraphFormat: { listFormat: { listId: 3 } } },
+      { name: 'List Number', type: 'Paragraph', basedOn: 'Normal', paragraphFormat: { listFormat: { listId: 4, listLevelNumber: 1 } } }
+    ];
+    doc.lists = [
+      { listId: 3, abstractListId: 30 },
+      { listId: 4, abstractListId: 40 }
+    ];
+    doc.abstractLists = [
+      { abstractListId: 30, levels: [{ listLevelPattern: 'Bullet' }] },
+      { abstractListId: 40, levels: [{ listLevelPattern: 'Bullet' }, { listLevelPattern: 'Arabic' }] }
+    ];
+    expect(mount(JSON.stringify(doc)).session.descriptor().listStyles).toEqual([
+      { name: 'List Bullet', listId: 3, look: 'bullet' },
+      { name: 'List Number', listId: 4, look: 'numbered' }
+    ]);
+    expect(mount().session.descriptor()).not.toHaveProperty('listStyles');
   });
 
   it('accepts the outline\'s shape prefix as a container in a write', () => {
@@ -150,6 +180,25 @@ describe('the format pack', () => {
     expect((call('find', { feature: { name: 'binding' } }) as { total: number }).total).toBe(3);
   });
 
+  it('describes the binding errors that hold saving at the node they name (Hilb 54cbff54)', () => {
+    const control = (tag: string, title: string, text: string) => ({ inlines: [{ text }], contentControlProperties: { lockContents: true, tag, color: '#00000000', title, type: 'Text' } });
+    const doc = (expr: string) =>
+      JSON.stringify({
+        sections: [
+          {
+            blocks: [
+              { inlines: [{ text: 'Umbrella ' }, control('[[name=Row4Fees|type=currency]]', 'Row4Fees', '$149.95')] },
+              { inlines: [{ text: 'Total ' }, control(`[[name=Row4Total|expr=${expr}]]`, 'Row4Total', '…')] }
+            ]
+          }
+        ]
+      });
+    const broken = mount(doc('sum(Row4Premium,Row4Fees)')).session;
+    const total = broken.state.view.nodes().find((n) => n.kind === 'control' && JSON.stringify(n.binding).includes('Row4Total')) as NfNode;
+    expect(broken.descriptor().bindingErrors).toEqual([expect.objectContaining({ id: total.id, message: expect.stringContaining('Row4Premium') })]);
+    expect(mount(doc('sum(Row4Fees)')).session.descriptor()).not.toHaveProperty('bindingErrors');
+  });
+
   it('flags a paragraph or row holding tracked changes in the outline and on find hits, since its text joins both sides', () => {
     const doc = JSON.stringify({
       sections: [
@@ -175,7 +224,7 @@ describe('the format pack', () => {
     expect(hits('Hilb').map((h) => h.trackedChangesInside)).toEqual([true]);
     expect(hits('Untouched').map((h) => h.trackedChangesInside)).toEqual([undefined]);
     const shallow = (call('outline', { depth: 3 }) as { lines: string }).lines.split('\n');
-    expect(shallow.find((l) => / cell /.test(l))).toMatch(/"Premium \$1,000" \(tracked changes inside\)/);
+    expect(shallow.find((l) => / cell /.test(l))).toMatch(/"Premium \$1,000" \(tracked changes inside: by Robin\)/);
     const sections = (call('find', { kind: 'section' }) as { hits: Array<{ trackedChangesInside?: boolean }> }).hits;
     expect(sections.map((h) => h.trackedChangesInside)).toEqual([undefined]);
   });
@@ -219,7 +268,7 @@ describe('the format pack', () => {
     };
     expect(r.ok).toBe(false);
     expect(r.refusal.invariant).toBe('orphaned-dependents');
-    expect(r.refusal.read).toEqual(['binding', 'formula']);
+    expect(r.refusal.read).toEqual(['binding']);
     expect(r.refusal.destroyed).toContain('summary_subtotal');
   });
 
@@ -367,5 +416,29 @@ describe('verifying a write the model got wrong', () => {
       changes: [{ kind: 'insert_after', anchor: 'n119', container: 'x', node: { kind: 'table', rows: (table.rows as NfNode[]).slice(0, 1).map((x) => JSON.parse(JSON.stringify(x))) } }]
     } as never);
     expect(r.outcome).not.toBe('verified');
+  });
+
+  it('refuses a row pointed at a cell format, naming the cell format, and takes a copied row format with its grid widths (Hilb ffb38cdf)', () => {
+    const session = new DocumentSession({ pack: docxPack, host: new ByteHost(flagship), target: { type: 'envelope', id: 'env' } });
+    const state = session.state;
+    const row = [...state.view.nodes()].find((n) => n.kind === 'row' && typeof n.style === 'string') as NfNode;
+    const cells = row.cells as NfNode[];
+    const restyled = (style: string, formats?: Record<string, unknown>) =>
+      prepareWrite(state, {
+        intent: 'Give the row a new look.',
+        scope: { ids: [row.id] },
+        ...(formats ? { formats } : {}),
+        dryRun: true,
+        changes: [{ kind: 'replace', id: row.id, base: baseOf(row), node: { id: row.id, kind: 'row', style, cells: cells.map((c) => ({ id: c.id, kind: c.kind })) } }]
+      } as never);
+
+    const mismatch = restyled(String(cells[0].style));
+    expect(mismatch.outcome).toBe('refused');
+    const problem = (mismatch as { refusal: { invariant: string; destroyed: string } }).refusal;
+    expect(problem.invariant).toBe('format-kind-mismatch');
+    expect(problem.destroyed).toContain(`${cells[0].style} is a cell format`);
+
+    const copied = { ...state.view.nf.formats[String(row.style)], gridBeforeWidth: 0, gridBeforeWidthType: 'Point' };
+    expect(restyled('tmp:row', { 'tmp:row': copied }).outcome).toBe('verified');
   });
 });

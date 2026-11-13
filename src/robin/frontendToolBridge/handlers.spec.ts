@@ -66,7 +66,8 @@ describe('the action map', () => {
       'trigger_table_action',
       'set_table_findings',
       'focus_table_cell',
-      'document_write'
+      'document_write',
+      'document_resolve'
     ]);
     expect(actions.get_form_state.render).toBe(false);
     expect(actions.document_read.render).toBe(false);

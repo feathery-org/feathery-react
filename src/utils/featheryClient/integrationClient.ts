@@ -5,6 +5,7 @@ import { OfflineRequestHandler } from '../offlineRequestHandler';
 import {
   AlloyEntities,
   CreateEgnyteFolderParams,
+  DocusignNotification,
   GetDocusignEnvelopeParams,
   LoanProCustomerObject,
   SendDocusignParams,
@@ -28,6 +29,8 @@ import {
   getQuikAccountForms as apiGetQuikAccountForms,
   getQuikFormRoles as apiGetQuikFormRoles,
   getQuikForms as apiGetQuikForms,
+  HubAssociation,
+  hubAssociationPayload,
   IntegrationActionIds,
   IntegrationActionOptions,
   parseAPIError,
@@ -750,13 +753,12 @@ export default class IntegrationClient {
       );
     }
     const { userId, sdkKey } = initInfo();
-    // Editor flow: the backend converts a docx envelope to PDF at generation
-    // whenever a signer is present, which would make the draft uneditable in
-    // the targeted document-editor container. Hold every signer back there —
-    // the editor's Sign action forwards them at finalize time
-    // (finalizeEnvelope), when that conversion is meant to happen.
+    const openInEditor = action.envelope_action === 'open_in_editor';
+    // The server resolves container eligibility before suppressing signers;
+    // mixed selections need them when falling back to the PDF overlay.
     const isDraftView =
-      !!editorContainerId(action) || !!action.view_draft_container;
+      !openInEditor &&
+      (!!editorContainerId(action) || !!action.view_draft_container);
     // The configured field names whoever signs inline, in the form. Nobody does
     // on a DocuSign action - every recipient is mailed by DocuSign, and the
     // per-role mappings are what name them - so the field is ignored there
@@ -835,8 +837,6 @@ export default class IntegrationClient {
         }))
     ].filter((entry: any) => entry.email);
 
-    const openInEditor = action.envelope_action === 'open_in_editor';
-
     // `@feathery/client-utils`'s generateFormDocuments only forwards a fixed
     // set of known fields, so it can't carry the review-step flag or
     // DocuSign's sign_method through to the endpoint. Call the endpoint
@@ -844,10 +844,8 @@ export default class IntegrationClient {
     // either is requested; other sign_method values (e.g. Feathery's own
     // hosted eSign) still go through the maintained library path below.
     //
-    // The draft-editor container is deliberately excluded: it consumes the
-    // generate response's `envelopes` metadata, which the review payload
-    // replaces, and it presents its own editing surface instead of the review
-    // viewer. Targeting a container therefore keeps the plain generate flow.
+    // Container requests also go directly: the backend resolves the source
+    // types and returns native envelopes or a PDF overlay payload.
     // A polymorphic entry has to take the direct call too. client-utils'
     // generateFormDocuments interpolates `documentIds` straight into its poll
     // URL, so an object entry stringifies to "[object Object]" and never
@@ -858,7 +856,11 @@ export default class IntegrationClient {
       (doc: GenerateDocumentRef) => typeof doc !== 'string'
     );
 
-    if (editorContainerId(action) && templateIdOrNull.includes(null)) {
+    if (
+      !openInEditor &&
+      editorContainerId(action) &&
+      templateIdOrNull.includes(null)
+    ) {
       return {
         status: 'error',
         message:
@@ -868,10 +870,9 @@ export default class IntegrationClient {
     }
 
     if (
-      (openInEditor ||
-        isDocusignSignAction(action) ||
-        hasPolymorphicDocument) &&
-      !editorContainerId(action)
+      openInEditor ||
+      ((isDocusignSignAction(action) || hasPolymorphicDocument) &&
+        !editorContainerId(action))
     ) {
       return await this.generateEnvelopesForEditor({
         documentIds,
@@ -881,13 +882,16 @@ export default class IntegrationClient {
         toolbarActions: action.editor_toolbar_actions ?? [],
         mergeDocs: action.merge_docs ?? false,
         openInEditor,
+        editorMode: openInEditor ? action.editor_mode : undefined,
         envelopeAction,
         signMethod: action.sign_method,
         draft: action.draft,
         emailSubject: action.email_subject,
         emailBlurb: action.email_blurb,
+        notification: action.notification,
         ccRecipients: action.cc_recipients,
-        customFields: action.custom_fields
+        customFields: action.custom_fields,
+        hubAssociation: action.hub_association
       });
     }
 
@@ -907,6 +911,7 @@ export default class IntegrationClient {
       repeatable,
       runAsync,
       envelopeAction,
+      hubAssociation: action.hub_association,
       checkInterval: this.ENVELOPE_CHECK_INTERVAL,
       maxTime: this.ENVELOPE_MAX_TIME
     });
@@ -1188,13 +1193,16 @@ export default class IntegrationClient {
     toolbarActions,
     mergeDocs,
     openInEditor,
+    editorMode,
     envelopeAction,
     signMethod,
     draft,
     emailSubject,
     emailBlurb,
+    notification,
     ccRecipients,
-    customFields
+    customFields,
+    hubAssociation
   }: {
     documentIds: GenerateDocumentRef[];
     signers: Record<string, any>[];
@@ -1205,12 +1213,15 @@ export default class IntegrationClient {
     // False for a direct DocuSign sign, which also needs this call because
     // client-utils can't forward sign_method.
     openInEditor: boolean;
+    editorMode?: string;
     envelopeAction: 'sign' | 'fill';
     signMethod?: string;
     draft?: boolean;
     // DocuSign sign only: subject and body of the envelope's signing email.
     emailSubject?: string;
     emailBlurb?: string;
+    // DocuSign sign only: reminder and expiration schedule.
+    notification?: DocusignNotification;
     ccRecipients?: (
       | string
       | { email: string; name?: string; excluded_documents?: number[] }
@@ -1219,6 +1230,7 @@ export default class IntegrationClient {
       string,
       string | { listItems: string[]; value?: string }
     >;
+    hubAssociation?: HubAssociation;
   }) {
     const { userId } = initInfo();
     const payload: Record<string, any> = {
@@ -1249,15 +1261,19 @@ export default class IntegrationClient {
       // Generate reads the toolbar only to decide whether default field values
       // are baked in; the pressed action is sent to finalize separately.
       payload.editor_toolbar_actions = toolbarActions;
+      if (editorMode) payload.editor_mode = editorMode;
     }
     if (draft !== undefined) payload.draft = draft;
     if (signMethod) payload.sign_method = signMethod;
     if (emailSubject) payload.email_subject = emailSubject;
     if (emailBlurb) payload.email_blurb = emailBlurb;
+    if (notification) payload.notification = notification;
     if (ccRecipients !== undefined) payload.cc_recipients = ccRecipients;
     if (customFields !== undefined) payload.custom_fields = customFields;
     if (signers.length) payload.signers = signers;
     if (repeatable) payload.repeatable = repeatable;
+    if (hubAssociation)
+      payload.hub_association = hubAssociationPayload(hubAssociation);
 
     const url = `${getApiUrl()}document/form/generate/`;
     const options = {
@@ -1334,6 +1350,7 @@ export default class IntegrationClient {
     // DocuSign envelope until the filler presses Sign.
     if (action.email_subject) payload.email_subject = action.email_subject;
     if (action.email_blurb) payload.email_blurb = action.email_blurb;
+    if (action.notification) payload.notification = action.notification;
     if (action.cc_recipients !== undefined)
       payload.cc_recipients = action.cc_recipients;
     if (action.custom_fields !== undefined)

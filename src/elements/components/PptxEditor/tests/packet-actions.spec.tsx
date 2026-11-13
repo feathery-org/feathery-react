@@ -133,6 +133,43 @@ it('retains edits and undo history when a loaded editor is hidden and shown agai
   expect(screen.queryByRole('button', { name: 'Slide 10' })).toBeNull();
 });
 
+it('hands the host the loaded deck store with its engine and selection', async () => {
+  const ready = jest.fn();
+  const bytes = sampleBytes();
+  render(
+    <PptxEditor
+      source={{
+        buffer: bytes.buffer.slice(
+          bytes.byteOffset,
+          bytes.byteOffset + bytes.byteLength
+        ) as ArrayBuffer
+      }}
+      onReady={ready}
+    />
+  );
+  await waitFor(() => expect(ready).toHaveBeenCalledTimes(1));
+  const store = ready.mock.calls[0][0];
+  expect(store.engine.readDeck().slides).toHaveLength(9);
+  const shapeId = store.engine.readDeck().slides[0].shapes[0].id;
+  store.select(shapeId);
+  expect(store.getState().selectedIds).toEqual([shapeId]);
+
+  const revBefore = store.getState().rev;
+  store.transaction({ origin: 'assistant', label: 'Robin edit' }, () => {
+    store.engine.execute({
+      type: 'set-shape-fill',
+      slideId: store.engine.readDeck().slides[0].path,
+      shapeId,
+      color: '00FF00'
+    });
+  });
+  expect(store.getState().rev).toBe(revBefore + 1);
+  expect(store.getState().undoStack.map((entry: { label: string }) => entry.label)).toEqual([
+    'Robin edit'
+  ]);
+  expect(await screen.findByRole('button', { name: /Undo Robin edit/ })).toBeInTheDocument();
+});
+
 it('uses the active presentation shortcuts while its document tab has focus', async () => {
   const bytes = sampleBytes();
   render(
