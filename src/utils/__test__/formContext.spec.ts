@@ -528,6 +528,110 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(flow).not.toHaveBeenCalled();
   });
 
+  it('attaches the other sources to the Quik bundle on request', async () => {
+    setFormInternalState(uuid, {
+      fields: {},
+      client,
+      generateEnvelopeFlow: flow,
+      steps: {
+        s1: {
+          servar_fields: [
+            { servar: { id: 'id-up', key: 'FileUpload1', type: 'file_upload' } }
+          ]
+        }
+      }
+    } as any);
+    const quik = { kind: 'quik' as const };
+    await getFormContext(uuid).generateDocuments({
+      documentIds: [quik, new Field('FileUpload1', uuid)],
+      includeInQuikBundle: true
+    });
+    expect(flow.mock.calls[0][0].documents).toEqual([
+      { kind: 'quik', attach_documents: true },
+      { kind: 'file_upload', field_id: 'id-up' }
+    ]);
+    expect(quik).toEqual({ kind: 'quik' });
+
+    // Explicit hosted-form selections ride along with the flag.
+    flow.mockClear();
+    const explicit = {
+      kind: 'quik' as const,
+      forms: [{ id: 301, fields: { '1own.FName': 'Ada' } }]
+    };
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1', explicit],
+      includeInQuikBundle: true
+    });
+    expect(flow.mock.calls[0][0].documents).toEqual([
+      'tpl-1',
+      {
+        kind: 'quik',
+        forms: [{ id: 301, fields: { '1own.FName': 'Ada' } }],
+        attach_documents: true
+      }
+    ]);
+    expect(explicit).toEqual({
+      kind: 'quik',
+      forms: [{ id: 301, fields: { '1own.FName': 'Ada' } }]
+    });
+    expect(flow.mock.calls[0][0].documents[1].forms).not.toBe(explicit.forms);
+    expect(flow.mock.calls[0][0].documents[1].forms[0]).not.toBe(
+      explicit.forms[0]
+    );
+    expect(flow.mock.calls[0][0].documents[1].forms[0].fields).not.toBe(
+      explicit.forms[0].fields
+    );
+
+    flow.mockClear();
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: ['tpl-1', new Field('FileUpload1', uuid)],
+        includeInQuikBundle: true
+      })
+    ).rejects.toThrow(
+      "generateDocuments: includeInQuikBundle requires a { kind: 'quik' } source in documentIds"
+    );
+    expect(flow).not.toHaveBeenCalled();
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: [
+          { document_id: 'tpl-1', references: ['r1'] },
+          { kind: 'quik' }
+        ],
+        includeInQuikBundle: true,
+        signMethod: 'docusign'
+      })
+    ).rejects.toThrow(
+      'generateDocuments: templates in the Quik bundle cannot take references'
+    );
+    expect(flow).not.toHaveBeenCalled();
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: ['tpl-1', { kind: 'quik' }],
+        includeInQuikBundle: true,
+        merge: true
+      })
+    ).rejects.toThrow('generateDocuments: a Quik bundle cannot be merged');
+    expect(flow).not.toHaveBeenCalled();
+
+    // An explicit false wins over a flag set on the source object.
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1', { kind: 'quik', attach_documents: true }],
+      includeInQuikBundle: false
+    });
+    expect(flow.mock.calls[0][0].documents[1].attach_documents).toBe(false);
+    flow.mockClear();
+
+    await getFormContext(uuid).generateDocuments({
+      documentIds: [new Field('FileUpload1', uuid)]
+    });
+    expect(flow.mock.calls[0][0].documents).toEqual([
+      { kind: 'file_upload', field_id: 'id-up' }
+    ]);
+    expect(client.generateDocuments).not.toHaveBeenCalled();
+    expect(client.flushCustomFields).toHaveBeenCalledTimes(4);
+  });
+
   it('keeps the simple client path for plain template fill/merge (no rich options)', async () => {
     await getFormContext(uuid).generateDocuments({
       documentIds: ['tpl-1'],

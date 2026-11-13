@@ -70,6 +70,9 @@ export type QuikDocumentSource = {
     // DocuSign-only: Quik role prefix -> stable person ID, e.g. { '1own': 'client-123' }.
     signerIds?: Record<string, string>;
   }[];
+  // Wire field for the Quik bundle; callers set it with generateDocuments'
+  // includeInQuikBundle, which checks the packet has a Quik source.
+  attach_documents?: boolean;
 };
 // Every file uploaded to the field becomes a document, converted to PDF.
 // Logic rules name the field by `field_key`, resolved to `field_id` before sending.
@@ -102,7 +105,7 @@ export const documentRefTemplateId = (
 // Must match the backend's document_cache_keys, which key the generate poll.
 const documentRefCacheKey = (doc: GenerateDocumentRef) => {
   if (typeof doc === 'string') return doc;
-  if (doc.kind === 'quik') return 'quik';
+  if (doc.kind === 'quik') return doc.attach_documents ? 'quik:bundle' : 'quik';
   if (doc.kind === 'file_upload') return `file_upload:${doc.field_id}`;
   return String(doc.document_id);
 };
