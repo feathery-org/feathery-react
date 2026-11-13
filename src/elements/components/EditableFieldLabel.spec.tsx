@@ -1,27 +1,36 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import EditableFieldLabel from './EditableFieldLabel';
+import { LabelRun } from '../utils/fieldLabelRuns';
+import { featheryDoc } from '../../utils/browser';
 
-const setup = (label = 'Address (legal or civic)', focused = false) => {
+const responsiveStyles = {
+  getRichFontStyles: (attrs: any) =>
+    attrs.font_weight ? { fontWeight: attrs.font_weight } : {}
+};
+
+const labelSpan = () =>
+  featheryDoc().getElementById('span-el-1') as HTMLElement;
+
+const setup = (
+  label = 'Address (legal or civic)',
+  focused = false,
+  runs: LabelRun[] | null = null
+) => {
   const setLabel = jest.fn();
-  const { rerender } = render(
+  const renderLabel = (nextFocused: boolean) => (
     <EditableFieldLabel
       elementId='el-1'
       label={label}
-      focused={focused}
+      runs={runs}
+      responsiveStyles={responsiveStyles}
+      focused={nextFocused}
       setLabel={setLabel}
     />
   );
-  const span = screen.getByText(label);
+  const { rerender } = render(renderLabel(focused));
   const setFocused = (nextFocused: boolean) =>
-    rerender(
-      <EditableFieldLabel
-        elementId='el-1'
-        label={label}
-        focused={nextFocused}
-        setLabel={setLabel}
-      />
-    );
-  return { span, setLabel, setFocused };
+    rerender(renderLabel(nextFocused));
+  return { span: labelSpan(), setLabel, setFocused };
 };
 
 describe('EditableFieldLabel', () => {
@@ -47,7 +56,7 @@ describe('EditableFieldLabel', () => {
     span.textContent = 'Renamed by click';
     fireEvent.blur(span);
 
-    expect(setLabel).toHaveBeenCalledWith('Renamed by click');
+    expect(setLabel).toHaveBeenCalledWith('Renamed by click', null);
   });
 
   it('ends editing when the element is deselected', () => {
@@ -69,7 +78,7 @@ describe('EditableFieldLabel', () => {
     span.textContent = 'New Label';
     fireEvent.blur(span);
 
-    expect(setLabel).toHaveBeenCalledWith('New Label');
+    expect(setLabel).toHaveBeenCalledWith('New Label', null);
   });
 
   it('does not commit a blur without prior focus', () => {
@@ -87,7 +96,7 @@ describe('EditableFieldLabel', () => {
     fireEvent.keyDown(span, { key: 'Enter' });
     fireEvent.blur(span);
 
-    expect(setLabel).toHaveBeenCalledWith('Enter Label');
+    expect(setLabel).toHaveBeenCalledWith('Enter Label', null);
   });
 
   it('does not commit on Shift+Enter (inserts a newline instead)', () => {
@@ -100,7 +109,7 @@ describe('EditableFieldLabel', () => {
     expect(setLabel).not.toHaveBeenCalled();
 
     fireEvent.blur(span);
-    expect(setLabel).toHaveBeenCalledWith('Line one');
+    expect(setLabel).toHaveBeenCalledWith('Line one', null);
   });
 
   it('reverts on Escape without committing', () => {
@@ -111,7 +120,7 @@ describe('EditableFieldLabel', () => {
     fireEvent.blur(span);
 
     expect(setLabel).not.toHaveBeenCalled();
-    expect(span.textContent).toBe('Address (legal or civic)');
+    expect(labelSpan().textContent).toBe('Address (legal or civic)');
   });
 
   it('reverts an empty or unchanged label instead of committing', () => {
@@ -121,11 +130,12 @@ describe('EditableFieldLabel', () => {
     fireEvent.blur(span);
 
     expect(setLabel).not.toHaveBeenCalled();
-    expect(span.textContent).toBe('Address (legal or civic)');
+    const reverted = labelSpan();
+    expect(reverted.textContent).toBe('Address (legal or civic)');
 
-    fireEvent.focus(span);
-    span.textContent = 'Address (legal or civic)';
-    fireEvent.blur(span);
+    fireEvent.focus(reverted);
+    reverted.textContent = 'Address (legal or civic)';
+    fireEvent.blur(reverted);
     expect(setLabel).not.toHaveBeenCalled();
   });
 
@@ -135,6 +145,28 @@ describe('EditableFieldLabel', () => {
     span.textContent = '  Trimmed  ';
     fireEvent.blur(span);
 
-    expect(setLabel).toHaveBeenCalledWith('Trimmed');
+    expect(setLabel).toHaveBeenCalledWith('Trimmed', null);
+  });
+
+  it('renders formatted runs and keeps their formatting through an edit', () => {
+    const runs = [
+      { insert: 'Full ' },
+      { insert: 'legal', attributes: { font_weight: 700 } },
+      { insert: ' name' }
+    ];
+    const { span, setLabel } = setup('Full legal name', true, runs);
+    const bold = span.querySelector('[data-index="1"]') as HTMLElement;
+    expect(bold.textContent).toBe('legal');
+    expect(getComputedStyle(bold).fontWeight).toBe('700');
+
+    fireEvent.focus(span);
+    bold.textContent = 'legal given';
+    fireEvent.blur(span);
+
+    expect(setLabel).toHaveBeenCalledWith('Full legal given name', [
+      { insert: 'Full ' },
+      { insert: 'legal given', attributes: { font_weight: 700 } },
+      { insert: ' name' }
+    ]);
   });
 });

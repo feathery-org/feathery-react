@@ -20,6 +20,8 @@ import {
   getLabelGapDefault
 } from '../utils/labelStyleResolver';
 import EditableFieldLabel from '../components/EditableFieldLabel';
+import FieldLabelRuns from '../components/FieldLabelRuns';
+import { getLabelRuns } from '../utils/fieldLabelRuns';
 
 type VisiblePositions = Record<string, boolean[]>;
 
@@ -709,6 +711,7 @@ Object.entries(Fields).map(([key, Field]: any) => {
       // Label editing is only enabled in the form builder canvas
       const labelEditable =
         props.editMode === 'editable' && !!labelCallbacks?.setLabel;
+      const labelRuns = getLabelRuns(servar);
       const fieldLabel = servar?.name ? (
         <label
           // Doesn't work for repeats currently since repeating field IDs aren't unique
@@ -725,11 +728,18 @@ Object.entries(Fields).map(([key, Field]: any) => {
             <EditableFieldLabel
               elementId={element.id}
               label={servar.name}
+              runs={labelRuns}
+              responsiveStyles={styles}
               focused={props.focused}
               setLabel={labelCallbacks.setLabel}
+              onTextSelect={labelCallbacks.onTextSelect}
             />
           ) : (
-            servar.name
+            <FieldLabelRuns
+              label={servar.name}
+              runs={labelRuns}
+              responsiveStyles={styles}
+            />
           )}
           {markRequired && (
             <span
