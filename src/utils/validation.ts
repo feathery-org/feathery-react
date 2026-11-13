@@ -6,7 +6,8 @@ import { ARRAY_FIELD_TYPES } from './fieldHelperFunctions';
 import React from 'react';
 import { stateFieldHasNoOptions } from './addressState';
 import { fieldValues, initInfo } from './init';
-import { getVisibleElements } from './hideAndRepeats';
+import { getVisibleElements, getVisiblePositions } from './hideAndRepeats';
+import { alignToSlider, getLinkedValue } from './valueBounds';
 import { Trigger } from '../types/Form';
 // @ts-ignore
 import isUrl from 'is-url';
@@ -30,6 +31,7 @@ const DOMAIN_ALLOWED_CHARACTERS = /^[a-zA-Z0-9.\\-]+$/;
 function validateElements({
   step,
   visiblePositions,
+  internalId,
   triggerErrors,
   reportNativeErrors = true,
   errorType,
@@ -40,6 +42,7 @@ function validateElements({
 }: {
   step: any;
   visiblePositions: any;
+  internalId: string;
   triggerErrors: boolean;
   reportNativeErrors?: boolean;
   errorType: string;
@@ -54,84 +57,89 @@ function validateElements({
 } {
   let invalid = false;
   const inlineErrors: InlineErrors = {};
-  const errors = getVisibleElements(
+  // Validate against the slider values submit will store, then put the answers
+  // back: validation also runs without submitting
+  const settled = settleSliderValues(step, visiblePositions, internalId);
+  const visibleElements = getVisibleElements(
     step,
-    visiblePositions,
+    settled.visiblePositions,
     ['servar_fields', 'buttons'],
     true
-  ).reduce((errors: any, { element, repeat, last, type: elementType }) => {
-    let key, type;
-    if (elementType === 'servar_fields') {
-      if (element.servar.repeat_trigger === 'set_value' && last && repeat) {
-        // Skip validation on last repeat since it might be default value
-        return errors;
+  );
+  const errors = visibleElements.reduce(
+    (errors: any, { element, repeat, last, type: elementType }) => {
+      let key, type;
+      if (elementType === 'servar_fields') {
+        if (isTrailingSetValueRow(element, repeat, last)) return errors;
+        // A state field disabled for want of states can never be filled in
+        if (stateFieldHasNoOptions(element, step, fieldValues, repeat)) {
+          return errors;
+        }
+        type = element.servar.type;
+        key = element.servar.key;
+      } else {
+        // if not a servar, then a button
+        type = 'button';
+        key = element.id;
       }
-      // A state field disabled for want of states can never be filled in
-      if (stateFieldHasNoOptions(element, step, fieldValues, repeat)) {
-        return errors;
-      }
-      type = element.servar.type;
-      key = element.servar.key;
-    } else {
-      // if not a servar, then a button
-      type = 'button';
-      key = element.id;
-    }
 
-    let message = validateElement(element, repeat);
+      let message = validateElement(element, repeat);
 
-    // We want to clear button errors when the button is not "relevant" to what the user is doing.
-    // If the element is a button and was NOT the trigger or no trigger,
-    // then we don't show the error.
-    if (type === 'button' && ((trigger && key !== trigger.id) || !trigger))
-      message = '';
+      // We want to clear button errors when the button is not "relevant" to what the user is doing.
+      // If the element is a button and was NOT the trigger or no trigger,
+      // then we don't show the error.
+      if (type === 'button' && ((trigger && key !== trigger.id) || !trigger))
+        message = '';
 
-    if (!(key in errors)) errors[key] = message;
-    else if (Array.isArray(errors[key])) errors[key].push(message);
-    else errors[key] = [errors[key], message];
+      if (!(key in errors)) errors[key] = message;
+      else if (Array.isArray(errors[key])) errors[key].push(message);
+      else errors[key] = [errors[key], message];
 
-    if (message && !invalid) invalid = true;
+      if (message && !invalid) invalid = true;
 
-    let inputKey = key;
-    if (type === 'matrix' && message && errorType === 'html5') {
-      // The `${key}-${questionIndex}` suffix targets the specific unanswered
-      // matrix question's DOM control, so it is only for HTML5 targeting.
-      // Inline storage must keep the real servar key, otherwise the renderer
-      // (which reads inlineErrors[servar.key]) never finds the message.
-      let fieldValue: any = fieldValues[key];
-      // handle repeated matrix fields
-      if (repeat != null && Array.isArray(fieldValue))
-        fieldValue = fieldValue[repeat] ?? {};
-      const { questions } = element.servar.metadata;
-      const questionIds = questions.map((q: { id: string }) => q.id);
+      let inputKey = key;
+      if (type === 'matrix' && message && errorType === 'html5') {
+        // The `${key}-${questionIndex}` suffix targets the specific unanswered
+        // matrix question's DOM control, so it is only for HTML5 targeting.
+        // Inline storage must keep the real servar key, otherwise the renderer
+        // (which reads inlineErrors[servar.key]) never finds the message.
+        let fieldValue: any = fieldValues[key];
+        // handle repeated matrix fields
+        if (repeat != null && Array.isArray(fieldValue))
+          fieldValue = fieldValue[repeat] ?? {};
+        const { questions } = element.servar.metadata;
+        const questionIds = questions.map((q: { id: string }) => q.id);
 
-      for (let i = 0; i < questionIds.length; i++) {
-        const value = fieldValue[questionIds[i]];
-        if (
-          value === undefined ||
-          (Array.isArray(value) && value.length === 0)
-        ) {
-          inputKey = `${key}-${i}`;
-          break;
+        for (let i = 0; i < questionIds.length; i++) {
+          const value = fieldValue[questionIds[i]];
+          if (
+            value === undefined ||
+            (Array.isArray(value) && value.length === 0)
+          ) {
+            inputKey = `${key}-${i}`;
+            break;
+          }
         }
       }
-    }
 
-    if (triggerErrors) {
-      setFormElementError({
-        formRef,
-        errorCallback,
-        fieldKey: key,
-        inputKey,
-        message,
-        errorType: errorType,
-        servarType: type,
-        inlineErrors,
-        index: repeat
-      });
-    }
-    return errors;
-  }, {});
+      if (triggerErrors) {
+        setFormElementError({
+          formRef,
+          errorCallback,
+          fieldKey: key,
+          inputKey,
+          message,
+          errorType: errorType,
+          servarType: type,
+          inlineErrors,
+          index: repeat
+        });
+      }
+      return errors;
+    },
+    {}
+  );
+  writeSliderValues(settled.replaced);
   if (triggerErrors) {
     setFormElementError({
       formRef,
@@ -143,6 +151,161 @@ function validateElements({
     });
   }
   return { errors, inlineErrors, invalid };
+}
+
+// A set_value repeat adds a trailing row holding the default value, which isn't
+// an answer until the user sets it, so it isn't validated
+function isTrailingSetValueRow(element: any, repeat: any, last?: boolean) {
+  return Boolean(
+    element.servar.repeat_trigger === 'set_value' && last && repeat
+  );
+}
+
+type SliderValue = { servar: any; repeat: any; value: number };
+
+// A slider submits the value it shows within its range. Sliders can bound
+// other fields, so this runs before any field is validated. Each pass aligns the
+// original answers against the previous pass's results, so a slider bounded by
+// another slider sees its settled value whatever order the fields are in.
+// `sources` holds the values the result was aligned against, for rendering
+function settleSliders(
+  elements: { element: any; repeat: any; last?: boolean }[]
+) {
+  const answers = elements.flatMap(({ element, repeat, last }) => {
+    const { servar } = element;
+    if (servar?.type !== 'slider') return [];
+    // Unlike validation, this skips the default row even when it's the only row
+    if (servar.repeated && servar.repeat_trigger === 'set_value' && last)
+      return [];
+    const stored: any = fieldValues[servar.key];
+    const value = servar.repeated ? stored?.[repeat] : stored;
+    if (isFieldValueEmpty(value, servar)) return [];
+    const num = Number(value);
+    return Number.isFinite(num) ? [{ servar, repeat, num }] : [];
+  });
+  let aligned = answers.map(({ num }) => num);
+  let sources: Record<string, any> = fieldValues;
+  let shown = { aligned, sources };
+  let settled = false;
+  for (let pass = 0; !settled && pass <= answers.length; pass++) {
+    // Repeated fields can't bound others, so only single sliders are sources
+    sources = { ...fieldValues };
+    answers.forEach(({ servar }, i) => {
+      if (!servar.repeated) sources[servar.key] = aligned[i];
+    });
+    const next = answers.map(({ servar, num }) =>
+      alignToSlider(num, servar, sources)
+    );
+    settled = next.every((value, i) => value === aligned[i]);
+    aligned = next;
+    if (pass === 0) shown = { aligned, sources };
+  }
+  // A chain settles within the passes, but sliders bounding each other in a
+  // cycle can alternate forever, leaving where they stop up to the slider count.
+  // Fall back to the first pass, aligned against the stored values
+  if (!settled) ({ aligned, sources } = shown);
+  return { answers, aligned, sources };
+}
+
+function getAlignedSliderValues(
+  elements: { element: any; repeat: any; last?: boolean }[]
+): SliderValue[] {
+  const { answers, aligned } = settleSliders(elements);
+  return answers.flatMap(({ servar, repeat, num }, i) =>
+    aligned[i] === num ? [] : [{ servar, repeat, value: aligned[i] }]
+  );
+}
+
+// The values a slider's linked range reads, so a slider bounded by another
+// slider renders the range submit stores against
+function getSliderSources(step: any, visiblePositions: any) {
+  if (!step || !visiblePositions) return fieldValues;
+  return settleSliders(
+    getVisibleElements(step, visiblePositions, ['servar_fields'], true)
+  ).sources;
+}
+
+function readSliderValue(servar: any, repeat: any) {
+  const stored: any = fieldValues[servar.key];
+  return servar.repeated ? stored?.[repeat] : stored;
+}
+
+// Writes each slider value and returns the values it replaced
+function writeSliderValues(sliderValues: SliderValue[]): SliderValue[] {
+  return sliderValues.map(({ servar, repeat, value }) => {
+    const stored: any = fieldValues[servar.key];
+    const previous = readSliderValue(servar, repeat);
+    if (servar.repeated) stored[repeat] = value;
+    else fieldValues[servar.key] = value;
+    return { servar, repeat, value: previous };
+  });
+}
+
+// Writes each visible slider's settled value. Returns the values it replaced
+// and the visibility once hide-if rules see the settled values. Settled values
+// can reveal or hide sliders, so each round puts the answers back and settles
+// them again against the visibility the last round produced, until it stops
+// changing. Starting from the answers each time keeps the result the same as
+// the handles, which settle the answers against the rendered visibility
+function settleSliderValues(
+  step: any,
+  visiblePositions: any,
+  internalId: string
+) {
+  let replaced: SliderValue[] = [];
+  let positions = visiblePositions;
+  for (let pass = 0; pass <= step.servar_fields.length; pass++) {
+    if (pass) writeSliderValues(replaced);
+    replaced = writeSliderValues(
+      getAlignedSliderValues(
+        getVisibleElements(step, positions, ['servar_fields'], true)
+      )
+    );
+    if (!pass && !replaced.length) break;
+    const next = getVisiblePositions(step, internalId);
+    const same = JSON.stringify(next) === JSON.stringify(positions);
+    positions = next;
+    if (same) break;
+  }
+  return { replaced, visiblePositions: positions };
+}
+
+// The step's visibility as hide-if rules see the values its sliders show,
+// leaving the answers as they are. A blocked submit puts back answers the
+// sliders can't show, and fields that the shown values reveal must stay
+// reachable
+function getSettledVisiblePositions(step: any, internalId: string) {
+  const settled = settleSliderValues(
+    step,
+    getVisiblePositions(step, internalId),
+    internalId
+  );
+  writeSliderValues(settled.replaced);
+  return settled.visiblePositions;
+}
+
+// Submit stores the settled values before validating and resolving navigation,
+// so both see what it sends, and snapshots the fields this returns as visible.
+// If the submit is blocked before it's sent, restore puts back each answer that
+// nothing has changed since
+function storeAlignedSliderValues(
+  step: any,
+  visiblePositions: any,
+  internalId: string
+) {
+  const settled = settleSliderValues(step, visiblePositions, internalId);
+  const written = settled.replaced.map(({ servar, repeat }) =>
+    readSliderValue(servar, repeat)
+  );
+  const restore = () => {
+    writeSliderValues(
+      settled.replaced.filter(
+        ({ servar, repeat }, i) =>
+          readSliderValue(servar, repeat) === written[i]
+      )
+    );
+  };
+  return { visiblePositions: settled.visiblePositions, restore };
 }
 
 /**
@@ -304,6 +467,21 @@ function isFieldValueEmpty(value: any, servar: any) {
   return noVal;
 }
 
+// Static bounds are left to the input mask; only linked bounds are checked here
+function getValueBoundError(
+  value: number,
+  servar: any,
+  defaultErrors: Record<string, string>
+) {
+  const min = getLinkedValue(servar.metadata?.min_value_field_key);
+  const max = getLinkedValue(servar.metadata?.max_value_field_key);
+  if (min !== undefined && value < min)
+    return defaultErrors.minimum_value.replace('{value}', String(min));
+  if (max !== undefined && value > max)
+    return defaultErrors.maximum_value.replace('{value}', String(max));
+  return '';
+}
+
 /**
  * Default validations.
  * Returns the error message for a field value if it's invalid.
@@ -370,6 +548,8 @@ function getStandardFieldError(value: any, servar: any, repeat: any) {
       return msg('lowercase letter');
     if (meta.number_required && !NUMBER_MATCH.test(value)) return msg('number');
     if (meta.symbol_required && !SYMBOL_MATCH.test(value)) return msg('symbol');
+  } else if (servar.type === 'integer_field') {
+    return getValueBoundError(Number(value), servar, defaultErrors);
   }
 
   // No error
@@ -379,6 +559,9 @@ function getStandardFieldError(value: any, servar: any, repeat: any) {
 export {
   validateElement,
   validateElements,
+  storeAlignedSliderValues,
+  getSettledVisiblePositions,
+  getSliderSources,
   getStandardFieldError,
   isFieldValueEmpty,
   emailPatternStr,

@@ -73,11 +73,21 @@ jest.mock('../../utils/hideAndRepeats', () => {
 
 // Validation
 jest.mock('../../utils/validation', () => {
-  const state = { invalid: false };
+  const state = { invalid: false, restoreSliderValues: jest.fn() };
   return {
     validateElements: jest.fn(() => ({
       invalid: state.invalid,
       inlineErrors: {}
+    })),
+    // Render visibility with sliders settled, which the mocks leave unchanged
+    getSettledVisiblePositions: jest.fn((step: any, internalId: string) =>
+      jest
+        .requireMock('../../utils/hideAndRepeats')
+        .getVisiblePositions(step, internalId)
+    ),
+    storeAlignedSliderValues: jest.fn((_step: any, positions: any) => ({
+      visiblePositions: positions,
+      restore: state.restoreSliderValues
     })),
     validators: { phone: () => true, email: () => true },
     _spies: state
@@ -190,7 +200,7 @@ jest.mock('../../utils/stepHelperFunctions', () => ({
   isValidFieldIdentifier: () => true,
   lookUpTrigger: () => ({}),
   mapFormSettingsResponse: () => ({ shared_codes: [] }),
-  nextStepKey: () => undefined,
+  nextStepKey: jest.fn(() => undefined),
   recurseProgressDepth: () => [0, 1],
   setUrlStepHash: jest.fn()
 }));

@@ -21,10 +21,14 @@ import { NextStepResult } from './types';
 
 // html5 forms report a blocked submit via DOM constraint validation, not
 // inlineErrors, so ask the form's own validation without displaying anything
-const currentStepErrors = (state: any): Record<string, string> => {
+const currentStepErrors = (
+  state: any,
+  formUuid: string
+): Record<string, string> => {
   const { errors } = validateElements({
     step: state.currentStep,
     visiblePositions: state.visiblePositions,
+    internalId: formUuid,
     triggerErrors: false,
     errorType: 'inline',
     formRef: { current: null },
@@ -145,7 +149,7 @@ export async function nextStepTool(
     newErrors.forEach((e) => (errors[e.key] = e.message));
     return { status: 'errors', fromStep, errors };
   }
-  const stepErrors = currentStepErrors(afterState);
+  const stepErrors = currentStepErrors(afterState, formUuid);
   if (Object.keys(stepErrors).length > 0)
     return { status: 'errors', fromStep, errors: stepErrors };
 
