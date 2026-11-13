@@ -162,7 +162,38 @@ function parseInviteError(body?: string) {
   return body;
 }
 
+// Step answers still being submitted. Custom field writes wait on them because
+// some SDK field updates use a shared client while a form submits on its own
+// client, and other writes must follow the form client's offline queue.
+let stepAnswersInFlight: Promise<void> | null = null;
+
+const trackStepAnswers = (answers: Promise<unknown>) => {
+  const settled: Promise<void> = Promise.all([
+    stepAnswersInFlight,
+    answers.catch(() => undefined)
+  ]).then(() => {
+    if (stepAnswersInFlight === settled) stepAnswersInFlight = null;
+  });
+  stepAnswersInFlight = settled;
+};
+
 export default class FeatheryClient extends IntegrationClient {
+  private submissionResults = new WeakMap<
+    Promise<unknown>,
+    Promise<PromiseSettledResult<unknown>[]>
+  >();
+
+  async hasRecoveredSubmission(submission: Promise<unknown>, error: unknown) {
+    if (!this.offlineRequestHandler.hasRecoveredWrite(error)) return false;
+    const results = this.submissionResults.get(submission);
+    if (!results) return false;
+    return (await results).every(
+      (result) =>
+        result.status === 'fulfilled' ||
+        this.offlineRequestHandler.hasRecoveredWrite(result.reason)
+    );
+  }
+
   /**
    * Used to aggregate field value updates for successive calls to
    * submitCustom within the debounce window
@@ -966,100 +997,112 @@ export default class FeatheryClient extends IntegrationClient {
       return;
     }
 
-    const customKeyValues = { ...this.pendingCustomFieldUpdates };
-    this.pendingCustomFieldUpdates = {}; // Clear pending updates after copying them
-    const repeatedFileKeys = this.pendingRepeatedFileKeys;
-    this.pendingRepeatedFileKeys = new Set();
+    const uniqueId = uuidv4();
+    const req = (async () => {
+      // Keep the whole flush registered as in flight, including this wait and
+      // value resolution, so concurrent flushers cannot mistake it for a
+      // completed request before the custom fields are sent.
+      let stepAnswers = stepAnswersInFlight;
+      while (stepAnswers) {
+        await stepAnswers;
+        if (stepAnswers === stepAnswersInFlight) break;
+        stepAnswers = stepAnswersInFlight;
+      }
 
-    const { userId } = initInfo();
-    const url = `${API_URL}panel/custom/submit/v3/`;
+      const customKeyValues = { ...this.pendingCustomFieldUpdates };
+      this.pendingCustomFieldUpdates = {}; // Clear pending updates after copying them
+      const repeatedFileKeys = this.pendingRepeatedFileKeys;
+      this.pendingRepeatedFileKeys = new Set();
 
-    const jsonKeyVals: Record<string, any> = {};
-    const formData = new FormData();
-    const fileIndices: Record<string, { length: number; indices: number[] }> =
-      {};
+      const { userId } = initInfo();
+      const url = `${API_URL}panel/custom/submit/v3/`;
 
-    await Promise.all(
-      Object.entries(customKeyValues).map(async ([key, entry]) => {
-        if (repeatedFileKeys.has(key)) {
-          const vals = Array.isArray(entry)
-            ? await Promise.all(entry)
-            : entry == null
-            ? []
-            : [await entry];
-          const indices: number[] = [];
-          vals.forEach((val, index) => {
-            if (val === null || val === undefined || val === '') return;
-            if (!(val instanceof Blob))
-              throw new Error(`${key} must contain files or empty rows`);
-            formData.append('files', val);
-            formData.append('file_keys', key);
-            indices.push(index);
-          });
-          fileIndices[key] = { length: vals.length, indices };
-          // The custom endpoint stores new uploads at new paths. It does not
-          // return those paths, so a later step submit must resolve the files
-          // again instead of sending paths from before this save.
-          filePathMap[key] = null;
-          delete fileDeduplicationCount[key];
-          return;
-        }
-        if (Array.isArray(entry)) {
-          // Need to resolve the promises for successful file upload.
-          const vals = await Promise.all(entry);
-          if (vals.some((val) => val instanceof Blob)) {
-            vals.forEach((val) => {
+      const jsonKeyVals: Record<string, any> = {};
+      const formData = new FormData();
+      const fileIndices: Record<string, { length: number; indices: number[] }> =
+        {};
+
+      await Promise.all(
+        Object.entries(customKeyValues).map(async ([key, entry]) => {
+          if (repeatedFileKeys.has(key)) {
+            const vals = Array.isArray(entry)
+              ? await Promise.all(entry)
+              : entry == null
+              ? []
+              : [await entry];
+            const indices: number[] = [];
+            vals.forEach((val, index) => {
+              if (val === null || val === undefined || val === '') return;
+              if (!(val instanceof Blob))
+                throw new Error(`${key} must contain files or empty rows`);
               formData.append('files', val);
               formData.append('file_keys', key);
+              indices.push(index);
             });
+            fileIndices[key] = { length: vals.length, indices };
+            // The custom endpoint stores new uploads at new paths. It does not
+            // return those paths, so a later step submit must resolve the files
+            // again instead of sending paths from before this save.
+            filePathMap[key] = null;
+            delete fileDeduplicationCount[key];
             return;
           }
-        }
+          if (Array.isArray(entry)) {
+            // Need to resolve the promises for successful file upload.
+            const vals = await Promise.all(entry);
+            if (vals.some((val) => val instanceof Blob)) {
+              vals.forEach((val) => {
+                formData.append('files', val);
+                formData.append('file_keys', key);
+              });
+              return;
+            }
+          }
 
-        entry = await entry;
-        if (entry instanceof Blob) {
-          formData.append('files', entry);
-          formData.append('file_keys', key);
-          return;
-        }
+          entry = await entry;
+          if (entry instanceof Blob) {
+            formData.append('files', entry);
+            formData.append('file_keys', key);
+            return;
+          }
 
-        jsonKeyVals[key] = entry;
-      })
-    );
-
-    formData.set('custom_key_values', JSON.stringify(jsonKeyVals));
-    if (Object.keys(fileIndices).length)
-      formData.set(
-        '__feathery_custom_file_indices',
-        JSON.stringify(fileIndices)
+          jsonKeyVals[key] = entry;
+        })
       );
-    // @ts-expect-error TS(2345): Argument of type 'boolean' is not assignable to pa... Remove this comment to see the full error message
-    formData.set('override', override);
-    if (this.formKey) {
-      formData.set('form_key', this.formKey);
-      if (this.version) formData.set('__feathery_version', this.version);
-    }
-    if (userId) formData.set('fuser_key', userId);
 
-    const options: RequestOptions = {
-      method: 'POST',
-      body: formData,
-      // Ran into a situation with Baldwin where request would not go through
-      // with keepalive = true
-      keepalive: false
-    };
+      formData.set('custom_key_values', JSON.stringify(jsonKeyVals));
+      if (Object.keys(fileIndices).length)
+        formData.set(
+          '__feathery_custom_file_indices',
+          JSON.stringify(fileIndices)
+        );
+      // @ts-expect-error TS(2345): Argument of type 'boolean' is not assignable to pa... Remove this comment to see the full error message
+      formData.set('override', override);
+      if (this.formKey) {
+        formData.set('form_key', this.formKey);
+        if (this.version) formData.set('__feathery_version', this.version);
+      }
+      if (userId) formData.set('fuser_key', userId);
 
-    // Here we can safely remove the listener because offlineRequestHandler has its own beforeunload
-    this._removeCustomFieldListener();
-    const uniqueId = uuidv4();
-    const req = this.offlineRequestHandler.runOrSaveRequest(
-      () => this._fetch(url, options, true, true),
-      url,
-      options,
-      'submit'
-    );
-    // Clean up on both success and failure so a failed request doesn't
-    // permanently register as in flight and block future flush cycles
+      const options: RequestOptions = {
+        method: 'POST',
+        body: formData,
+        // Ran into a situation with Baldwin where request would not go through
+        // with keepalive = true
+        keepalive: false
+      };
+
+      // Here we can safely remove the listener because offlineRequestHandler has its own beforeunload
+      this._removeCustomFieldListener();
+      return this.offlineRequestHandler.runOrSaveRequest(
+        () => this._fetch(url, options, true, true),
+        url,
+        options,
+        'submit'
+      );
+    })();
+    // Keep the wait and send under the same entry. Flushers only resolve once
+    // the request, including its initial step-answer wait, has settled.
     const removeInFlight = () => delete this.customSubmitInFlight[uniqueId];
     this.customSubmitInFlight[uniqueId] = req.then(
       removeInFlight,
@@ -1184,7 +1227,16 @@ export default class FeatheryClient extends IntegrationClient {
 
     this.releaseHeldEvents();
     const earlierSubmissions = this.submitQueue;
-    const submission = (async () => {
+    // Resolved once every answer request for this step settles. Registered before
+    // anything is awaited so a rule that runs right after this call sees it.
+    let answersSent: () => void = () => {};
+    trackStepAnswers(
+      new Promise<void>((resolve) => {
+        answersSent = resolve;
+      })
+    );
+    let answersStarted = false;
+    const runSubmission = async (): Promise<unknown[]> => {
       // A step submission is the user's manual retry for answers still queued
       // from earlier steps, including a confirmation step with no fields.
       await this.offlineRequestHandler
@@ -1192,15 +1244,30 @@ export default class FeatheryClient extends IntegrationClient {
         .catch((error) =>
           console.warn('Error resetting saved answer retries', error)
         );
-      return Promise.all([
-        earlierSubmissions.catch(() => undefined),
-        this.submitCustom(hiddenFields, { shouldFlush: true }),
+      const answerRequests = [
         this._submitJSONData(jsonServars, step.key, hasNext),
         ...fileServars.map((servar: any) =>
           this._submitFileData(servar, step.key)
         )
-      ]);
-    })();
+      ];
+      answersStarted = true;
+      // A failed request must not release custom writes while a sibling upload
+      // can still finish and overwrite them. Keep submission rejection separate.
+      Promise.allSettled(answerRequests).then(answersSent);
+      const tasks = [
+        earlierSubmissions.catch(() => undefined),
+        this.submitCustom(hiddenFields, { shouldFlush: true }),
+        ...answerRequests
+      ];
+      this.submissionResults.set(submission, Promise.allSettled(tasks));
+      return Promise.all([tasks[0], tasks[1], Promise.all(answerRequests)]);
+    };
+    const submission = runSubmission();
+    submission.catch(() => {
+      // Setup can fail before any answer requests exist; those failures must
+      // release the gate too, without bypassing the all-settled wait above.
+      if (!answersStarted) answersSent();
+    });
 
     // Maintain submitQueue semantics so downstream consumers (like registerEvent)
     // still see actual success/failure while preventing previous rejections
@@ -1222,12 +1289,14 @@ export default class FeatheryClient extends IntegrationClient {
     if (!fileEntries.length) return;
 
     this.releaseHeldEvents();
-    const submission = Promise.all([
+    const tasks = [
       this.submitQueue.catch(() => undefined),
       ...fileEntries.map(({ servar, stepKey }) =>
         this._submitFileData(servar, stepKey)
       )
-    ]);
+    ];
+    const submission = Promise.all(tasks);
+    this.submissionResults.set(submission, Promise.allSettled(tasks));
     this.submitQueue = submission;
     return submission;
   }

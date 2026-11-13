@@ -61,7 +61,12 @@ export default class Field {
     const source = internalState[this._formUuid]?.steps
       ? this._getSourceField()
       : null;
-    return defaultClient.submitCustom(
+    const formClient: any = internalState[this._formUuid]?.client;
+    const client =
+      typeof formClient?.submitCustom === 'function'
+        ? formClient
+        : defaultClient;
+    return client.submitCustom(
       { [this._fieldKey]: fieldValues[this._fieldKey] },
       {
         repeatedFileKeys: isRepeatedFileField(source?.servar)

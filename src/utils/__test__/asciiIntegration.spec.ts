@@ -98,6 +98,23 @@ describe('ASCII value ingestion', () => {
     expect(fieldValues.city).toBe('İstanbul');
   });
 
+  it('sends logic field writes through the owning form client', () => {
+    const submitCustom = jest.fn();
+    internalState['ascii-instance'] = {
+      client: { formKey: 'ascii', submitCustom }
+    } as any;
+
+    new Field('city', 'ascii-instance').value = 'Toronto';
+
+    expect(submitCustom).toHaveBeenCalledWith(
+      { city: 'Toronto' },
+      {
+        repeatedFileKeys: []
+      }
+    );
+    expect(defaultClient.submitCustom).not.toHaveBeenCalled();
+  });
+
   it('sends ASCII values in step submission requests without altering field identifiers', async () => {
     initState.sdkKey = 'test';
     const client = new FeatheryClient('ascii');

@@ -1,5 +1,7 @@
 import FeatheryClient, { API_URL } from '../featheryClient';
 import { featheryWindow } from '../browser';
+import Field from '../entities/Field';
+import internalState from '../internalState';
 import { FetchError } from '@feathery/client-utils';
 import { FEATHERY_INTERACTION_EVENT } from '../interactionState';
 import {
@@ -667,5 +669,230 @@ describe('step save and completion ordering', () => {
 
     expect(uploads).toEqual(['older.png', 'newer.png']);
     expect(fileRetryStatus.card).toBe(true);
+  });
+
+  it('persists click-rule custom fields after the button step answers', async () => {
+    const { client: formClient } = createClientWithStorage();
+    const ruleClient: any = new FeatheryClient('form');
+    let finishStepAnswers!: () => void;
+    let signalStepAnswers!: () => void;
+    const stepStarted = new Promise<void>((resolve) => {
+      signalStepAnswers = resolve;
+    });
+    const sent: string[] = [];
+    jest.spyOn(ruleClient, '_fetch').mockImplementation(async (url: any) => {
+      sent.push(url.includes('/custom/submit/') ? 'custom fields' : 'step');
+      return {};
+    });
+    jest.spyOn(formClient, '_fetch').mockImplementation(async () => {
+      sent.push('step');
+      signalStepAnswers();
+      return new Promise((resolve) => {
+        finishStepAnswers = () => resolve({});
+      });
+    });
+
+    const stepSubmission = formClient.submitStep(
+      [{ key: 'name', text_field: 'before click action' }],
+      { key: 'first', buttons: [], subgrids: [] },
+      true
+    );
+    await stepStarted;
+
+    const ruleSubmission = ruleClient.submitCustom(
+      { name: 'after click action' },
+      { shouldFlush: true }
+    );
+    await waitUntil(() => sent.includes('custom fields'));
+    expect(sent).toEqual(['step']);
+
+    finishStepAnswers();
+    await Promise.all([stepSubmission, ruleSubmission]);
+    expect(sent).toEqual(['step', 'custom fields']);
+  });
+
+  it('waits for step submissions that start while a custom flush is waiting', async () => {
+    const { client: formClient } = createClientWithStorage();
+    const ruleClient: any = new FeatheryClient('form');
+    const stepResolvers: Array<(value: Record<string, unknown>) => void> = [];
+    const stepStarted: Array<() => void> = [];
+    const stepSignals = [0, 1].map(
+      () => new Promise<void>((resolve) => stepStarted.push(resolve))
+    );
+    const sent: string[] = [];
+    jest.spyOn(formClient, '_fetch').mockImplementation(async () => {
+      const index = stepResolvers.length;
+      sent.push(`step ${index + 1}`);
+      stepStarted[index]();
+      return new Promise((resolve) => stepResolvers.push(resolve));
+    });
+    jest.spyOn(ruleClient, '_fetch').mockImplementation(async () => {
+      sent.push('custom fields');
+      return {};
+    });
+
+    const firstStep = formClient.submitStep(
+      [{ key: 'name', text_field: 'first' }],
+      { key: 'first', buttons: [], subgrids: [] },
+      true
+    );
+    await stepSignals[0];
+    const customFlush = ruleClient.submitCustom(
+      { name: 'from click action' },
+      { shouldFlush: true }
+    );
+    const secondStep = formClient.submitStep(
+      [{ key: 'name', text_field: 'second' }],
+      { key: 'second', buttons: [], subgrids: [] },
+      true
+    );
+    await stepSignals[1];
+
+    stepResolvers[0]({});
+    await waitUntil(() => sent.includes('custom fields'));
+    expect(sent).toEqual(['step 1', 'step 2']);
+
+    stepResolvers[1]({});
+    await Promise.all([firstStep, secondStep, customFlush]);
+    expect(sent).toEqual(['step 1', 'step 2', 'custom fields']);
+  });
+
+  it.each(['JSON', 'file'])(
+    'keeps custom writes behind a pending file when another %s answer fails',
+    async (failedAnswer) => {
+      const { client } = createClientWithStorage();
+      const failure = new Error('Answer save failed');
+      let finishFile!: () => void;
+      const pendingFile = new Promise<void>((resolve) => {
+        finishFile = resolve;
+      });
+      jest.spyOn(client, '_submitJSONData').mockImplementation(async () => {
+        if (failedAnswer === 'JSON') throw failure;
+      });
+      jest
+        .spyOn(client, '_submitFileData')
+        .mockImplementation(async (field: any) => {
+          if (field.key === 'failed') throw failure;
+          return pendingFile;
+        });
+      const customSend = jest.spyOn(client, '_fetch').mockResolvedValue({});
+      const submission = client.submitStep(
+        [
+          ...(failedAnswer === 'file'
+            ? [{ key: 'failed', file_upload: new File(['old'], 'failed.pdf') }]
+            : []),
+          { key: 'document', file_upload: new File(['old'], 'old.pdf') }
+        ],
+        { key: 'first', buttons: [], subgrids: [] },
+        true
+      );
+      const rejectedSubmission = expect(submission).rejects.toBe(failure);
+      const customFlush = client.submitCustom(
+        { document: '' },
+        { shouldFlush: true }
+      );
+      await rejectedSubmission;
+      await waitUntil(() => customSend.mock.calls.length > 0);
+      const prematureSends = customSend.mock.calls.length;
+
+      finishFile();
+      await customFlush;
+      expect(prematureSends).toBe(0);
+      expect(customSend).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('keeps concurrent flushes pending through the delayed custom request', async () => {
+    const { client: formClient } = createClientWithStorage();
+    const ruleClient: any = new FeatheryClient('form');
+    let finishStepAnswers!: () => void;
+    let signalStepAnswers!: () => void;
+    const stepStarted = new Promise<void>((resolve) => {
+      signalStepAnswers = resolve;
+    });
+    let finishCustomRequest!: () => void;
+    let signalCustomRequest!: () => void;
+    const customStarted = new Promise<void>((resolve) => {
+      signalCustomRequest = resolve;
+    });
+    const stepSend = jest
+      .spyOn(formClient, '_fetch')
+      .mockImplementation(async () => {
+        signalStepAnswers();
+        return new Promise((resolve) => {
+          finishStepAnswers = () => resolve({});
+        });
+      });
+    const customSend = jest
+      .spyOn(ruleClient, '_fetch')
+      .mockImplementation(async () => {
+        signalCustomRequest();
+        return new Promise((resolve) => {
+          finishCustomRequest = () => resolve({});
+        });
+      });
+
+    const stepSubmission = formClient.submitStep(
+      [{ key: 'name', text_field: 'step value' }],
+      { key: 'first', buttons: [], subgrids: [] },
+      true
+    );
+    await stepStarted;
+    const firstFlush = ruleClient.submitCustom(
+      { first: 'one' },
+      { shouldFlush: true }
+    );
+    const secondFlush = ruleClient.submitCustom(
+      { second: 'two' },
+      { shouldFlush: true }
+    );
+    let secondFlushSettled = false;
+    secondFlush.then(() => {
+      secondFlushSettled = true;
+    });
+
+    finishStepAnswers();
+    await customStarted;
+    await Promise.resolve();
+    expect(secondFlushSettled).toBe(false);
+    expect(customSend).toHaveBeenCalledTimes(1);
+
+    finishCustomRequest();
+    await Promise.all([stepSubmission, firstFlush, secondFlush]);
+    expect(stepSend).toHaveBeenCalledTimes(1);
+    expect(customSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('replays a failed step answer before a logic field write through its form client', async () => {
+    const { client, store } = createClientWithStorage();
+    const sent: string[] = [];
+    const stepUrl = `${API_URL}panel/step/submit/v3/`;
+    store.seed(
+      queuedAnswer({
+        url: stepUrl,
+        stepKey: 'first',
+        retryAttempts: 0,
+        body: JSON.stringify({
+          step_key: 'first',
+          servars: [{ key: 'name', text_field: 'older value' }]
+        })
+      })
+    );
+    (global as any).fetch = jest.fn(async () => {
+      sent.push('queued step answer');
+      return fakeResponse(200);
+    });
+    jest.spyOn(client, '_fetch').mockImplementation(async () => {
+      sent.push('custom field value');
+      return {};
+    });
+    internalState['field-write-form'] = { client } as any;
+
+    new Field('name', 'field-write-form').value = 'newer value';
+    await client.flushCustomFields();
+
+    expect(sent).toEqual(['queued step answer', 'custom field value']);
+    expect(store.rows()).toEqual([]);
+    delete internalState['field-write-form'];
   });
 });

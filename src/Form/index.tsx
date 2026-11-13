@@ -158,7 +158,10 @@ import {
 import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
 import { replaceTextVariables } from '../elements/components/TextNodes';
-import { getFormContext } from '../utils/formContext';
+import {
+  getFormContext,
+  waitForPendingStepSubmission
+} from '../utils/formContext';
 import { FormWebMCPTools, hasWebMCPRuntime } from '../utils/formTools/webmcp';
 import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
@@ -1420,7 +1423,14 @@ function Form({
         if (canRunAction(logicRule, currentStepId, props, altMatchId)) {
           logicRan = true;
 
-          if (toAwait) await toAwait;
+          // Client-side rules that run before click actions don't wait on the
+          // step response; the client holds their field writes until the step
+          // answers land. Server-side rules read saved answers, so they wait.
+          if (
+            toAwait &&
+            (logicRule.server_side || logicRule.metadata?.after_click)
+          )
+            await toAwait;
 
           try {
             if (logicRule.server_side) {
@@ -1443,11 +1453,19 @@ function Form({
         }
       }
       // Change event can happen too frequently to flush every time
-      if (event !== 'change' && flush) await defaultClient.flushCustomFields();
+      if (event !== 'change' && flush)
+        await Promise.all([
+          client.flushCustomFields(),
+          defaultClient.flushCustomFields()
+        ]);
     }
 
     // Flush field updates to backend before form completes
-    if (event === 'form_complete') await defaultClient.flushCustomFields();
+    if (event === 'form_complete')
+      await Promise.all([
+        client.flushCustomFields(),
+        defaultClient.flushCustomFields()
+      ]);
 
     return logicRan;
   };
@@ -1773,6 +1791,7 @@ function Form({
           }
         },
         sendDocusignEnvelope: async (params: SendDocusignParams) => {
+          await waitForPendingStepSubmission(client);
           await Promise.all([
             client.flushCustomFields(),
             defaultClient.flushCustomFields()
@@ -1803,6 +1822,7 @@ function Form({
           envelopes,
           attachments
         }: FillQuikParams) => {
+          await waitForPendingStepSubmission(client);
           await Promise.all([
             client.flushCustomFields(),
             defaultClient.flushCustomFields()

@@ -81,6 +81,24 @@ const formHasDocumentElement = (steps: any): boolean =>
     )
   );
 
+/** Wait for step saves already started by this form, including a newer save
+ * queued while an earlier one was settling. */
+export const waitForPendingStepSubmission = async (client: any) => {
+  let submission = client.submitQueue;
+  while (submission) {
+    try {
+      await submission;
+    } catch (error) {
+      // A reconnect can acknowledge a failed save without replacing its promise.
+      // Only the original write's acknowledgement can recover that rejection.
+      if (!(await client.hasRecoveredSubmission?.(submission, error)))
+        throw error;
+    }
+    if (submission === client.submitQueue) return;
+    submission = client.submitQueue;
+  }
+};
+
 /**
  * Used by contextRef in <Form />, renderAt for vanillajs, and the lifecycle
  * methods
@@ -341,8 +359,14 @@ export const getFormContext = (formUuid: string) => {
       formState.client.searchLoanProCustomerByAuthorizedEmail(),
     createLoanProCustomer: (bodyParams: LoanProCustomerObject) =>
       formState.client.createLoanProCustomerWithAuthorizedEmail(bodyParams),
-    setCollaboratorAsCompleted: (templateId: string) =>
-      formState.client.setCollaboratorAsCompleted(templateId),
+    setCollaboratorAsCompleted: async (templateId: string) => {
+      await waitForPendingStepSubmission(formState.client);
+      await Promise.all([
+        formState.client.flushCustomFields(),
+        defaultClient.flushCustomFields()
+      ]);
+      return formState.client.setCollaboratorAsCompleted(templateId);
+    },
     setTaskStatus: (templateId: string, taskStatusId: string) =>
       formState.client.setTaskStatus(templateId, taskStatusId),
     dataHubAction: async ({
@@ -638,11 +662,13 @@ export const getFormContext = (formUuid: string) => {
       }
       // Document generation reads whatever the fuser has on file, so pending
       // field edits have to land before it runs or it fills/signs stale data.
-      const flushFields = () =>
-        Promise.all([
+      const flushFields = async () => {
+        await waitForPendingStepSubmission(formState.client);
+        await Promise.all([
           formState.client.flushCustomFields(),
           defaultClient.flushCustomFields()
         ]);
+      };
       // Source objects, DocuSign, signers, the editor, and the sign/save
       // envelope actions all need the same endpoint + editor flow the Generate
       // Documents action uses, so route through the <Form />-registered flow
