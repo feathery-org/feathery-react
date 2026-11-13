@@ -51,6 +51,8 @@
  * descriptor and form accessor (`mounts.ts`) without the pack naming any of them.
  */
 import type {
+  BindingError,
+  ListStyle,
   Fact,
   PendingCard,
   PropertySource,
@@ -168,12 +170,18 @@ export interface FeatureMark {
 
 export interface PropertySpec {
   name: string;
-  /** `derived` properties are reported and never writable. */
-  class: 'property' | 'derived';
+  /** `derived` properties are reported and never writable, `carried` ones travel with a copied format entry and are never set */
+  class: 'property' | 'derived' | 'carried';
   /** A short type description for refusals, such as `boolean` or `colour #RRGGBB`. */
   type: string;
   /** Null when `value` is valid; otherwise why not. `null` (clear) is checked by the core. */
   validate(value: unknown): string | null;
+}
+
+export interface ForeignFormat {
+  formatId: string;
+  keys: string[];
+  heldBy: string[];
 }
 
 export interface EffectiveProperty {
@@ -193,6 +201,10 @@ export interface Properties {
   schema(kind: string): readonly PropertySpec[] | null;
   /** Every property a format entry may hold. */
   formatSchema: readonly PropertySpec[];
+  foreignFormats?(
+    node: NfNode,
+    formats: Readonly<Record<string, FormatEntry>>
+  ): ForeignFormat[];
   /** Effective values with their source, in resolution order override, container, format, default. */
   effective(
     node: NfNode,
@@ -382,6 +394,7 @@ export interface SeamReport {
    * undo group undone, or the document replaced again) and the change lands without it.
    */
   failed?: boolean;
+  diagnostics?: Record<string, unknown>;
 }
 
 export interface Seam {
@@ -433,12 +446,8 @@ export interface PlanContext {
   derived?: readonly string[];
 }
 
-/** The change set a predicted document's own revisions are composed under */
-export const PREDICTED_TURN = 'predicted';
-
 export interface Reconcile {
   plan(ctx: PlanContext): CommitPlan;
-  predict?(before: DocumentView, intended: DocumentView): NormalForm | null;
   /**
    * Run the steps of a `grouped` plan with `editor` history as the editor's one undo group (a
    * change and the derived content the editor refreshes after it), so one undo takes back both.
@@ -526,6 +535,8 @@ export interface Pack {
   /** Each page the editor lays out (`EditorHost.pages`), in layout order */
   pages?(view: DocumentView, native: unknown): LaidOutPage[] | null;
   cards?(view: DocumentView, residue: Residue): PendingCard[];
+  bindingErrors?(view: DocumentView): BindingError[];
+  listStyles?(view: DocumentView): ListStyle[];
 }
 
 const REQUIRED_FUNCTIONS: Array<[string, (p: Pack) => unknown]> = [

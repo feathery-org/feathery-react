@@ -39,6 +39,7 @@ import {
   inUndoGroup,
   openUndoGroups
 } from '../undoGroups';
+import { printedPageNumber } from '../printedPageNumber';
 
 type Obj = Record<string, any>;
 type Editor = Obj;
@@ -349,7 +350,7 @@ function unmatched(of: string[], against: string[]): number {
 export type TocRefresh =
   | { status: 'refreshed'; entries: number; added: number; removed: number }
   | { status: 'skipped'; reason: string }
-  | { status: 'failed'; reason: string };
+  | { status: 'failed'; reason: string; stack?: string };
 
 const skipped = (reason: string): TocRefresh => ({ status: 'skipped', reason });
 
@@ -460,6 +461,14 @@ export function refreshTableOfContents(
   const pageNumber = module.insertTocPageNumber;
   const headingStyle = module.isHeadingStyle;
   const outlineLevelStyle = module.isOutlineLevelStyle;
+  const pageNumberOf = module.getPageNumber;
+  // Vendored override, 34.1.31: getPageNumber gives an entry the number its page prints, as Word numbers it, not the page's position
+  module.getPageNumber = function printed(widget: Obj) {
+    return (
+      printedPageNumber(widget.bodyWidget.page, selection) ??
+      pageNumberOf.call(module, widget)
+    );
+  };
   // a heading whose text is all pending deletion is gone once the change is accepted: no entry
   module.isHeadingStyle = function listed(paragraph: Obj) {
     return (
@@ -535,6 +544,7 @@ export function refreshTableOfContents(
     module.insertTocPageNumber = pageNumber;
     module.isHeadingStyle = headingStyle;
     module.isOutlineLevelStyle = outlineLevelStyle;
+    module.getPageNumber = pageNumberOf;
     // a rebuild that threw leaves its undo group open and the editor thinking it is still
     // rebuilding: close it into the change's group and let the editor go on
     closeUndoGroups(editor, depth);
@@ -552,7 +562,11 @@ export function refreshTableOfContents(
     const reason = failure instanceof Error ? failure.message : String(failure);
     // eslint-disable-next-line no-console
     console.warn('table of contents not refreshed: the rebuild failed', reason);
-    return { status: 'failed', reason };
+    const stack =
+      failure instanceof Error
+        ? failure.stack?.split('\n').slice(0, 13).join('\n')
+        : undefined;
+    return { status: 'failed', reason, ...(stack ? { stack } : {}) };
   }
   if (!rebuilt || rebuilt === field)
     return skipped('the editor did not rebuild it (its contents are locked)');

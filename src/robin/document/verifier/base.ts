@@ -24,7 +24,7 @@ import {
   shapeOf,
   withoutLists
 } from '../tree';
-import { emitNode, matchQuery, referencedFormats } from '../view';
+import { emitFormats, emitNode, matchQuery, referencedFormats } from '../view';
 import { SHAPE_PREFIX } from '../outline';
 import { problem } from './index';
 
@@ -196,16 +196,13 @@ export function checkBases(
   write.changes.forEach(check);
   if (!stale.size && !bulk.length && !formats.length) return null;
   // the formats the changed nodes now name, so a change made since the read shows without a re-read
-  const referenced: NonNullable<Conflict['referencedFormats']> = {};
-  for (const id of referencedFormats(
-    pack,
-    [...stale.values()].map((s) => s.live)
-  ))
-    if (view.nf.formats[id])
-      referenced[id] = {
-        base: baseOf(view.nf.formats[id]),
-        ...view.nf.formats[id]
-      };
+  const referenced = emitFormats(
+    view,
+    referencedFormats(
+      pack,
+      [...stale.values()].map((s) => s.live)
+    )
+  );
   return {
     stale: [...stale.values()],
     bulk,

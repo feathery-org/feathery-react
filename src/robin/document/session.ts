@@ -21,7 +21,6 @@ import {
   Verb,
   VerbResult,
   WriteInput,
-  addressedIds,
   makeRefusal,
   dispatchFailure,
   parseBridgePayload,
@@ -46,7 +45,7 @@ import { logDebug, logError, logWarn, truncatedDetail } from './log';
 import { equivalentNative } from './proof';
 import { reconcile } from './reconciler';
 import { Clock, defaultClock, TraceBuilder } from './trace';
-import { baseOf, shapeOf } from './tree';
+import { baseOf, shapeOf, withoutLists } from './tree';
 import type { NormalForm } from './tree';
 import { problem } from './verifier';
 import { conflictMessage } from './verifier/base';
@@ -57,7 +56,7 @@ import {
   prepareWrite,
   readVerb
 } from './verbs';
-import { makeView } from './view';
+import { emitFormats, makeView, referencedFormats } from './view';
 
 export interface SessionOptions {
   pack: Pack;
@@ -207,6 +206,8 @@ export class DocumentSession {
     const selection = this.selection(state);
     const pages = this.pages(state);
     const cards = this.pack.cards?.(state.view, state.residue) ?? [];
+    const bindingErrors = this.pack.bindingErrors?.(state.view) ?? [];
+    const listStyles = this.pack.listStyles?.(state.view) ?? [];
     return {
       protocolVersion: PROTOCOL_VERSION,
       editorId: this.editorId,
@@ -217,7 +218,9 @@ export class DocumentSession {
       outline: outline.ok ? outline.lines : '',
       ...(selection ? { selection } : {}),
       ...(pages ? { pageCount: pages.length } : {}),
-      ...(cards.length ? { cards } : {})
+      ...(cards.length ? { cards } : {}),
+      ...(bindingErrors.length ? { bindingErrors } : {}),
+      ...(listStyles.length ? { listStyles } : {})
     };
   }
 
@@ -372,6 +375,7 @@ export class DocumentSession {
       };
     }
 
+    const bases = new Map(before.view.nodes().map((n) => [n.id, baseOf(n)]));
     const restoreGuesses = this.ids.checkpointUncertain();
     const outcome = this.writing(() => {
       const out = reconcile({
@@ -503,7 +507,12 @@ export class DocumentSession {
       this.structural.add(changeSetId);
       this.beforeCards.set(changeSetId, { nf: before.view.nf, restoreGuesses });
     }
-    trace.committed('committed', outcome.seams, prepared.touched.length);
+    trace.committed(
+      'committed',
+      outcome.seams,
+      prepared.touched.length,
+      outcome.diagnostics
+    );
     trace.proof({
       outcome: 'passed',
       landed: true,
@@ -511,6 +520,7 @@ export class DocumentSession {
       normalizations: outcome.proof.normalizations,
       rollback: null
     });
+    const changed = this.changedSince(bases);
     const result: VerbResult = {
       ok: true,
       committed: true,
@@ -518,12 +528,14 @@ export class DocumentSession {
       cardId: outcome.plan.landed === 'card' ? changeSetId : null,
       landed: outcome.plan.landed,
       outlineHash: (this.current as DocumentState).outlineHash,
-      fingerprints: this.fingerprints(
-        write,
-        prepared.mapping,
-        prepared.finalizerScope.flatMap((f) => f.ids)
-      ),
+      fingerprints: this.fingerprintsOf([...prepared.touched, ...changed]),
+      referencedFormats: this.formatsAfter(write, prepared.touched, changed),
       ...common,
+      mapping: this.keptMapping(
+        prepared.mapping,
+        prepared.intended,
+        prepared.touched
+      ),
       // with what the live editor reported of the commit (a contents table rebuilt, or not)
       facts: [...prepared.facts, ...outcome.facts],
       warnings: [...prepared.warnings, ...outcome.warnings],
@@ -697,10 +709,7 @@ export class DocumentSession {
       );
     const { view } = this.state;
     const removed = [...bases.keys()].filter((id) => !view.get(id));
-    const touched = view
-      .nodes()
-      .filter((n) => bases.get(n.id) !== baseOf(n))
-      .map((n) => n.id);
+    const touched = this.changedSince(bases);
     return {
       ok: true,
       cards: [...new Set(cards)],
@@ -710,6 +719,14 @@ export class DocumentSession {
       removed,
       fingerprints: this.fingerprintsOf(touched)
     };
+  }
+
+  /** Nodes that are new or whose base differs from the bases taken before an edit */
+  private changedSince(bases: Map<string, string>): string[] {
+    return this.state.view
+      .nodes()
+      .filter((n) => bases.get(n.id) !== baseOf(n))
+      .map((n) => n.id);
   }
 
   /** Fresh fingerprints of nodes and their ancestors */
@@ -730,20 +747,56 @@ export class DocumentSession {
     return out;
   }
 
-  /** Fresh fingerprints of what a committed write named or created, what finalizers changed, and their ancestors */
-  private fingerprints(
-    write: WriteInput,
+  /** The formats a committed write targeted or left its changed nodes using, as they are now */
+  /** A write's mapping with each format it named by the id the editor kept for it */
+  private keptMapping(
     mapping: Record<string, string>,
-    finalized: string[]
-  ): Record<string, { base: string; shape: string }> {
-    const named = [
-      ...write.changes.flatMap(addressedIds),
-      ...Object.keys(mapping)
-    ];
-    return this.fingerprintsOf([
-      ...named.map((n) => mapping[n] ?? n),
-      ...finalized
-    ]);
+    intended: NormalForm,
+    touched: string[]
+  ): Record<string, string> {
+    const planned = makeView(intended, this.pack);
+    const { view } = this.current as DocumentState;
+    const kept = new Map<string, string>();
+    for (const id of touched) {
+      const was = planned.get(id);
+      const now = view.get(id);
+      for (const key of this.pack.formatRefKeys) {
+        const from = was?.[key];
+        const to = now?.[key];
+        if (typeof from === 'string' && typeof to === 'string' && from !== to)
+          kept.set(from, to);
+      }
+    }
+    return Object.fromEntries(
+      Object.entries(mapping).map(([tmp, id]) => [tmp, kept.get(id) ?? id])
+    );
+  }
+
+  private formatsAfter(
+    write: WriteInput,
+    touched: string[],
+    changed: string[]
+  ) {
+    const { view } = this.current as DocumentState;
+    const used = touched.flatMap((id) => {
+      const node = view.get(id);
+      return node
+        ? [...referencedFormats(this.pack, withoutLists(node, this.pack.tree))]
+        : [];
+    });
+    // A node the editor changed beside the write names its own formats, not its contents'
+    const rekeyed = changed.flatMap((id) =>
+      this.pack.formatRefKeys.flatMap((key) => {
+        const ref = view.get(id)?.[key];
+        return typeof ref === 'string' && ref in view.nf.formats ? [ref] : [];
+      })
+    );
+    const targeted = write.changes.flatMap((change) =>
+      change.kind === 'set' && 'formatId' in change.target
+        ? [change.target.formatId]
+        : []
+    );
+    return emitFormats(view, new Set([...used, ...rekeyed, ...targeted]));
   }
 
   /** A refresh after a resolution that failed: reported, never fatal to the resolution. */

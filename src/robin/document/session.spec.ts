@@ -1142,6 +1142,100 @@ describe('document session: the four verbs end to end', () => {
     );
   });
 
+  it('fingerprints cover the nodes an insert creates without temporary ids (Hilb 8b057437)', () => {
+    const { call } = mount();
+    const root = nodeOf(call('read', { ids: ['root'] }), 'root');
+    const result = call('write', {
+      intent: 'x',
+      scope: { ids: ['n1'] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: 'n1',
+          container: root.shape,
+          node: { items: [{ text: 'Auto', style: 'f2' }] }
+        }
+      ]
+    }) as {
+      ok: boolean;
+      facts: Array<{ kind: string; ids: string[] }>;
+      fingerprints?: Record<string, unknown>;
+    };
+    expect(result.ok).toBe(true);
+    const box = result.facts.find((f) => f.kind === 'inserted')
+      ?.ids[0] as string;
+    const item = (
+      nodeOf(call('read', { ids: [box] }), box).items as Array<{ id: string }>
+    )[0].id;
+    expect(Object.keys(result.fingerprints ?? {})).toEqual(
+      expect.arrayContaining([box, item])
+    );
+  });
+
+  it('a bulk set returns what the next write needs, so chaining on its result does not conflict (Hilb 2cb00732)', () => {
+    const { call } = mount();
+    const find = { kind: 'para', within: 'n2' };
+    const found = call('find', find) as unknown as {
+      shape: string;
+      hits: Array<{ id: string }>;
+    };
+    const ids = found.hits.map((h) => h.id);
+    const first = call('write', {
+      intent: 'x',
+      scope: { ids: [], bulk: [{ find, total: ids.length }] },
+      changes: [
+        {
+          kind: 'set',
+          target: { find, total: ids.length, shape: found.shape },
+          props: { size: 14 }
+        }
+      ]
+    }) as {
+      ok: boolean;
+      fingerprints?: Record<string, { base: string; shape: string }>;
+      referencedFormats?: Record<string, { base: string }>;
+    };
+    expect(first.ok).toBe(true);
+    const shapes = Object.fromEntries(
+      ids.map((id) => [id, first.fingerprints?.[id]?.shape])
+    );
+    expect(Object.values(shapes)).not.toContain(undefined);
+    const [formatId, entry] = Object.entries(first.referencedFormats ?? {})[0];
+
+    const byIds = call('write', {
+      intent: 'x',
+      scope: { ids },
+      changes: [
+        {
+          kind: 'set',
+          target: { ids, shape: shapes },
+          props: { align: 'center' }
+        }
+      ]
+    }) as {
+      ok: boolean;
+      fingerprints?: unknown;
+      referencedFormats?: Record<string, { base: string }>;
+    };
+    expect(byIds.ok).toBe(true);
+    const [nextId, next] = Object.entries(byIds.referencedFormats ?? {})[0];
+
+    const byFormat = call('write', {
+      intent: 'x',
+      scope: { ids: [], formats: [{ id: nextId, referrers: ids.length }] },
+      changes: [
+        {
+          kind: 'set',
+          target: { formatId: nextId, base: next.base, referrers: ids.length },
+          props: { size: 16 }
+        }
+      ]
+    }) as { ok: boolean };
+    expect(byFormat.ok).toBe(true);
+    expect(formatId).not.toBe(undefined);
+    expect(entry.base).toEqual(expect.any(String));
+  });
+
   it('fingerprints cover every ancestor and the nodes a finalizer changed (react#2001)', () => {
     const { call } = mount();
     const box = nodeOf(call('read', { ids: ['n2'] }), 'n2');

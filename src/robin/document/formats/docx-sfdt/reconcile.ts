@@ -28,7 +28,6 @@ import type {
   EditorHost,
   PlanContext
 } from '../../pack';
-import { PREDICTED_TURN } from '../../pack';
 import { NfNode, NormalForm, canonicalJson, clone } from '../../tree';
 import {
   FEATURE_KEYS,
@@ -449,9 +448,23 @@ function nativeProps(target: string, was: Obj, is: Obj): Obj | null {
       return null;
     }
     if (v === null || !NATIVE_SETTERS[target]?.includes(k)) return null;
+    if (
+      target === 'paragraph' &&
+      k.startsWith('lineSpacing') &&
+      !settableLineSpacing(is.lineSpacing ?? 1, is.lineSpacingType)
+    )
+      return null;
     out[k] = v;
   }
   return out;
+}
+
+// Vendored, 34.1.31: `SelectionParagraphFormat.validateLineSpacing`, whose setter resets any other value
+function settableLineSpacing(value: unknown, type: unknown): boolean {
+  const spacing = Number(value);
+  return type === 'Exactly' || type === 'AtLeast'
+    ? spacing > 0 && spacing <= 1584
+    : spacing >= 1 && spacing <= 132;
 }
 
 /** The paragraph the editor's selection goes to for a table, row or cell: its first one. */
@@ -508,6 +521,12 @@ function nativePlan(
       if (styleChanged) {
         const hi = hierOf(before, para.id);
         if (!hi) return null;
+        const props = nativeProps(
+          'character',
+          charFormat(before, old.style),
+          charFormat(intended, now.style)
+        );
+        if (!props) return null;
         const { start, text: runText } = runOffset(before, para.id, old.id);
         format.push({
           target: 'character',
@@ -517,10 +536,7 @@ function nativePlan(
           a: start,
           b: start + runText.length,
           expect: runText,
-          props: cfDelta(
-            charFormat(before, old.style),
-            charFormat(intended, now.style)
-          )
+          props
         });
       }
       if (ownContent(was, old, ['style']) !== ownContent(is, now, ['style']))
@@ -541,7 +557,13 @@ function nativePlan(
         canonicalJson(charFormat(before, old.style)) !==
         canonicalJson(charFormat(intended, now.style));
       if ((markChanged || paraChanged) && !hi) return null;
-      if (markChanged)
+      if (markChanged) {
+        const props = nativeProps(
+          'character',
+          charFormat(before, old.markStyle),
+          charFormat(intended, now.markStyle)
+        );
+        if (!props) return null;
         format.push({
           target: 'character',
           hi: hi as string,
@@ -550,11 +572,9 @@ function nativePlan(
           a: 0,
           b: 0,
           expect: ownText(before.get(old.id) as NfNode) ?? '',
-          props: cfDelta(
-            charFormat(before, old.markStyle),
-            charFormat(intended, now.markStyle)
-          )
+          props
         });
+      }
       if (paraChanged) {
         const props = nativeProps(
           'paragraph',
@@ -816,14 +836,6 @@ export function tocStep(
 /** Several native steps as the editor's one undo group (the change and the contents it refreshes). */
 export function transaction(host: EditorHost, run: () => void): void {
   inUndoGroup((host as DocxHost).editor, run);
-}
-
-export function predict(
-  before: DocumentView,
-  intended: DocumentView
-): NormalForm | null {
-  if (nativePlan(before, intended)) return null;
-  return composeTracked(before, intended.nf, PREDICTED_TURN).tracked;
 }
 
 export function plan(ctx: PlanContext): CommitPlan {

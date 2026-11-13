@@ -370,6 +370,27 @@ export function renameFormatRefs(
   }
 }
 
+/** Moves a format entry written where its id belongs into `formats` under a new tmp: id */
+export function liftInlineFormats(
+  value: unknown,
+  formatRefKeys: readonly string[],
+  formats: Record<string, unknown>
+): void {
+  if (Array.isArray(value)) {
+    value.forEach((v) => liftInlineFormats(v, formatRefKeys, formats));
+    return;
+  }
+  if (!isPlainObject(value)) return;
+  for (const [key, child] of Object.entries(value)) {
+    if (formatRefKeys.includes(key) && isPlainObject(child)) {
+      let tmp = 'tmp:inline';
+      for (let n = 2; tmp in formats; n++) tmp = `tmp:inline${n}`;
+      formats[tmp] = child;
+      value[key] = tmp;
+    } else liftInlineFormats(child, formatRefKeys, formats);
+  }
+}
+
 /** Every format id referenced anywhere in a value. */
 export function formatRefsIn(
   value: unknown,

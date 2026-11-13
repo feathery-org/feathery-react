@@ -11,7 +11,10 @@ import {
   AttachedBindings
 } from '../../bindings/attachBindings';
 import { SyncfusionEditorLike } from '../../bindings/editorAdapter';
-import { installExportContentControlRecovery } from '../../../../../utils/documentEditorPrimitives';
+import {
+  installExportContentControlRecovery,
+  installRevisionGroupIsolation
+} from '../../../../../utils/documentEditorPrimitives';
 
 declare const __SYNCFUSION_LICENSE_KEY__: string;
 if (__SYNCFUSION_LICENSE_KEY__) registerLicense(__SYNCFUSION_LICENSE_KEY__);
@@ -44,7 +47,7 @@ const live = (): DocumentEditor => {
 const api = {
   async open(
     sfdt: string,
-    options: { bindings?: boolean; recovery?: boolean } = {}
+    options: { bindings?: boolean; recovery?: boolean; isolation?: boolean } = {}
   ): Promise<void> {
     try {
       attached?.dispose();
@@ -72,6 +75,7 @@ const api = {
     });
     const ed = live();
     if (options.recovery) installExportContentControlRecovery(ed as any);
+    if (options.isolation) installRevisionGroupIsolation(ed as any);
     ed.open(sfdt);
     await frame();
     await frame();
@@ -174,6 +178,8 @@ const api = {
         return;
       case 'delete':
         return ed.editor.delete();
+      case 'enter':
+        return ed.editor.onEnter();
       case 'acceptAll':
         return ed.revisions.acceptAll();
       case 'undo':

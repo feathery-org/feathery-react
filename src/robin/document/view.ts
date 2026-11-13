@@ -69,8 +69,10 @@ export function emitNode(
     const own = clone(
       withoutLists(n, pack.tree, (list) => list.map(() => null))
     ) as Record<string, unknown>;
+    // A node's own formats come before its children so they read as the node's
+    for (const key of pack.formatRefKeys) if (key in own) out[key] = own[key];
     for (const [key, value] of Object.entries(own))
-      if (key !== 'id' && key !== 'kind') out[key] = value;
+      if (key !== 'id' && key !== 'kind' && !(key in out)) out[key] = value;
     for (const key of pack.tree.childLists(n)) {
       const list = listAt(n, key);
       const target = listAt(out, key);
@@ -94,6 +96,19 @@ export function emitNode(
 /** Format ids referenced by a node's own content and every node below it. */
 export function referencedFormats(pack: Pack, node: unknown): Set<string> {
   return formatRefsIn(node, pack.formatRefKeys);
+}
+
+/** The document's entries for these format ids, each with its fresh base */
+export function emitFormats(
+  view: DocumentView,
+  ids: Iterable<string>
+): Record<string, { base: string } & Record<string, unknown>> {
+  const out: Record<string, { base: string } & Record<string, unknown>> = {};
+  for (const id of ids) {
+    const entry = view.nf.formats[id];
+    if (entry) out[id] = { base: baseOf(entry), ...clone(entry) };
+  }
+  return out;
 }
 
 const clip = (text: string, start: number, end: number): string => {

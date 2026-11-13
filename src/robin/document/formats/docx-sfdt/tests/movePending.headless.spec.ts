@@ -43,4 +43,20 @@ describe('moving content that holds another card pending replace (Hilb post-v9 B
     expect(occurrencesIn(accepted, 'This clause was replaced.')).toBe(1);
     expect(occurrencesIn(accepted, `"${run.text}"`)).toBe(0);
   });
+
+  it('returns the fingerprints of what the move marked, so an edit inside the moved content lands on them (Hilb a2fda572)', async () => {
+    await lane.call('open', flagship);
+    const paragraphId = await idAt(['sections', 3, 'blocks', 16]);
+    const anchorId = await idAt(['sections', 3, 'blocks', 2]);
+    const sectionId = await idAt(['sections', 3]);
+    const nodes = await read([paragraphId, anchorId, sectionId]);
+    const { id, kind, style } = nodes[paragraphId].inlines.find((i: any) => i.kind === 'run');
+
+    const move = await dispatch('move', 'write', { intent: 'Move it.', scope: { ids: [paragraphId, anchorId, sectionId] }, changes: [{ kind: 'move', id: paragraphId, shape: nodes[paragraphId].shape, anchor: anchorId, position: 'after', container: nodes[sectionId].shape }] });
+    expect(move).toMatchObject({ ok: true, committed: true });
+
+    const base = move.fingerprints[id]?.base;
+    const edit = await dispatch('edit', 'write', { intent: 'Reword it.', scope: { ids: [id] }, changes: [{ kind: 'replace', id, base, node: { id, kind, style, text: 'This clause was reworded.' } }] });
+    expect(edit).toMatchObject({ ok: true, committed: true });
+  });
 });

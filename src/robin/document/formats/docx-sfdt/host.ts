@@ -6,6 +6,7 @@
 import type { SyncfusionEditorLike } from '../../../../elements/components/DocxEditor/bindings/editorAdapter';
 import type { EditorHost } from '../../pack';
 import { bindingCommandSurfaceFor } from '../../../../elements/components/DocxEditor/bindings/reconcileRegistry';
+import { printedPageNumber } from '../../../../elements/components/DocxEditor/printedPageNumber';
 import {
   closeUndoGroups,
   inUndoGroup,
@@ -142,20 +143,8 @@ export function createHost(editor: LiveEditor): DocxHost {
       const selection = editor.selection as Obj | undefined;
       if (editor.layoutType === 'Continuous' || !pages?.length || !selection)
         return null;
-      const printsNumber = (widget: Obj | undefined): boolean =>
-        !!widget &&
-        ((widget.fieldType === 0 &&
-          /^\s*PAGE\b/i.test(String(selection.getFieldCode(widget)))) ||
-          [
-            ...(widget.childWidgets ?? []),
-            ...(widget.children ?? []),
-            widget.textFrame
-          ].some(printsNumber));
       return pages.map((page) => {
-        const number =
-          printsNumber(page.headerWidget) || printsNumber(page.footerWidget)
-            ? (page.currentPageNum as number)
-            : null;
+        const number = printedPageNumber(page, selection);
         const laidOut: Obj[] = [];
         for (const body of (page.bodyWidgets ?? []) as Obj[])
           for (const block of body.childWidgets as Obj[])

@@ -44,6 +44,7 @@ export interface TocOptions {
   locked?: boolean;
   /** The second heading starts with a cross-reference bookmark before its own `_Toc` one. */
   refFirst?: boolean;
+  restartAt?: number;
 }
 
 const ITALIC = { italic: true };
@@ -62,6 +63,8 @@ export function withToc(shape: TocShape, options: TocOptions = {}): string {
   const { style, links } = SHAPES[shape];
   const code = options.code ?? SHAPES[shape].code;
   const doc = JSON.parse(flagship);
+  if (options.restartAt !== undefined)
+    Object.assign(doc.sections[options.restartAt].sectionFormat, { restartPageNumbering: true, pageStartingNumber: 1 });
   const headings: Array<{ name: string; text: string }> = [];
   let n = 0;
   for (const section of doc.sections)

@@ -184,61 +184,6 @@ describe('outline', () => {
   });
 });
 
-describe('write: whether the change would land (Hilb post-v9 B3)', () => {
-  const retitle = (s: ReturnType<typeof fresh>) =>
-    write({
-      intent: 'Retitle.',
-      scope: { ids: ['n1'] },
-      changes: [
-        {
-          kind: 'replace',
-          id: 'n1',
-          base: b(s, 'n1'),
-          node: { kind: 'para', text: 'New title' }
-        }
-      ]
-    } as WriteInput);
-  const predicting = (predict: (before: any, intended: any) => any) => {
-    const s = fresh();
-    return {
-      ...s,
-      pack: { ...s.pack, reconcile: { ...s.pack.reconcile, predict } }
-    };
-  };
-
-  it('refuses before anything is applied when the composed change would not land as intended', () => {
-    const s = predicting((before) => before.nf);
-    const r = prepareWrite(s, retitle(s));
-
-    expect(r.outcome === 'refused' && r.refusal.invariant).toBe('proof-failed');
-  });
-
-  it('verifies the change when it would land as intended', () => {
-    const s = predicting((_before, intended) => intended.nf);
-
-    expect(prepareWrite(s, retitle(s)).outcome).toBe('verified');
-  });
-
-  it("refuses before anything is applied when the composed change would take over a person's pending change", () => {
-    const s = predicting((_before, intended) => {
-      const nf = JSON.parse(JSON.stringify(intended.nf));
-      const find = (node: any): any =>
-        node?.id === 'n1'
-          ? node
-          : Object.values(node ?? {}).reduce(
-              (hit: any, v) =>
-                hit ?? (v && typeof v === 'object' ? find(v) : undefined),
-              undefined
-            );
-      find(nf.root).pending = { kind: 'insertion', by: 'Ann' };
-      return nf;
-    });
-    const r = prepareWrite(s, retitle(s));
-
-    expect(r.outcome === 'refused' && r.refusal.invariant).toBe('proof-failed');
-  });
-});
-
 describe('write: verified changes', () => {
   it('a stub written back stands for the node as read (matrix-2 T10: a section copied from a stubs read)', () => {
     const s = fresh();
@@ -448,6 +393,31 @@ describe('write: verified changes', () => {
     ).toEqual(['n1', 'n3', 'n4']);
   });
 
+  it('takes a format entry written in place of its id as a new entry (Hilb 0257a0e1)', () => {
+    const s = fresh();
+    const r = prepareWrite(
+      s,
+      write({
+        intent: 'Add a bold item.',
+        scope: { ids: ['n4'] },
+        changes: [
+          {
+            kind: 'insert_after',
+            anchor: 'n4',
+            container: sh(s, 'n2'),
+            node: { text: 'three', style: { bold: true } }
+          }
+        ]
+      } as never)
+    );
+    expect(r.outcome).toBe('verified');
+    if (r.outcome !== 'verified') return;
+    const formatId = r.mapping['tmp:inline'];
+    const items = (r.intended.root.blocks as NfNode[])[1].items as NfNode[];
+    expect(items[2].style).toBe(formatId);
+    expect(r.intended.formats[formatId]).toEqual({ bold: true });
+  });
+
   it('inserts with temporary ids, sets on a temporary id, recomputes formulas, and reports facts', () => {
     const s = fresh();
     const r = prepareWrite(
@@ -496,6 +466,7 @@ describe('write: verified changes', () => {
       'base-hashes',
       'format-entry-rejected',
       'unknown-format',
+      'format-kind-mismatch',
       'apply-failed',
       'id-shape-mismatch',
       'property-invalid',

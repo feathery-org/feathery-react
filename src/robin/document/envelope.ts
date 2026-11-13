@@ -48,6 +48,7 @@ export const CORE_INVARIANTS = [
   'scope',
   'property-invalid',
   'unknown-format',
+  'format-kind-mismatch',
   'format-entry-rejected',
   'proof-failed',
   'card-not-pending',
@@ -943,6 +944,7 @@ export const writeSuccessResultSchema = z.looseObject({
       z.looseObject({ base: z.string().min(1), shape: z.string().min(1) })
     )
     .optional(),
+  referencedFormats: z.record(formatIdSchema, emittedFormatSchema).optional(),
   finalizerScope: z.array(finalizerScopeSchema),
   facts: z.array(factSchema),
   warnings: z.array(warningSchema),
@@ -1208,6 +1210,22 @@ export const pendingCardSchema = z.looseObject({
 });
 export type PendingCard = z.output<typeof pendingCardSchema>;
 
+/** A binding error the document reports, which holds saving until it is fixed */
+export const bindingErrorSchema = z.looseObject({
+  code: z.string().min(1),
+  id: z.string().min(1).optional(),
+  message: z.string()
+});
+export type BindingError = z.output<typeof bindingErrorSchema>;
+
+/** A paragraph style that makes a paragraph an item of one of the document's lists */
+export const listStyleSchema = z.looseObject({
+  name: z.string().min(1),
+  listId: z.int(),
+  look: z.enum(['bullet', 'numbered'])
+});
+export type ListStyle = z.output<typeof listStyleSchema>;
+
 /** What the buttons in the editor's own toolbar do with the document */
 export const EDITOR_TOOLBAR_OUTCOMES = [
   'save',
@@ -1230,7 +1248,9 @@ export const descriptorSchema = z.looseObject({
   pageCount: z.int().min(1).optional(),
   autosaves: z.boolean().optional(),
   toolbar: z.array(z.enum(EDITOR_TOOLBAR_OUTCOMES)).optional(),
-  cards: z.array(pendingCardSchema).optional()
+  cards: z.array(pendingCardSchema).optional(),
+  bindingErrors: z.array(bindingErrorSchema).optional(),
+  listStyles: z.array(listStyleSchema).optional()
 });
 export type Descriptor = {
   protocolVersion: number;
@@ -1246,6 +1266,8 @@ export type Descriptor = {
   autosaves?: boolean;
   toolbar?: EditorToolbarOutcome[];
   cards?: PendingCard[];
+  bindingErrors?: BindingError[];
+  listStyles?: ListStyle[];
 };
 
 // ---------------------------------------------------------------------------------------------
