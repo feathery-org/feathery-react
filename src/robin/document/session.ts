@@ -397,6 +397,7 @@ export class DocumentSession {
           view: makeView(prepared.intended, this.pack),
           residue: prepared.intendedResidue
         },
+        copies: prepared.copies,
         adopt: (fresh) =>
           this.ids.adopt(fresh, this.pack.tree, this.pack.formatRefKeys, [
             prepared.intended,
@@ -564,12 +565,13 @@ export class DocumentSession {
   }
 
   /**
-   * Accept or reject cards through the engine: a reject of the last change set alone, with the
-   * document still as it left it, restores the snapshot byte for byte; otherwise the pack's group
-   * projection of the live document is opened for every card at once. `alongside` is the editor's
-   * own resolution of the batch's other cards, run in the same step. The resolution is one engine
-   * history entry, so one Ctrl+Z brings the cards back. False, and the document as it was, when it
-   * cannot be done.
+   * An editor that tracks suggestions itself settles the cards with its own history, one undo step
+   * per reject. Otherwise accept or reject cards through the engine: a reject of the last change
+   * set alone, with the document still as it left it, restores the snapshot byte for byte;
+   * otherwise the pack's group projection of the live document is opened for every card at once.
+   * `alongside` is the editor's own resolution of the batch's other cards, run in the same step.
+   * The resolution is one engine history entry, so one Ctrl+Z brings the cards back. False, and the
+   * document as it was, when it cannot be done.
    */
   resolveCards(
     changeSetIds: string[],
@@ -577,6 +579,13 @@ export class DocumentSession {
     alongside?: () => void,
     by: 'robin' | 'person' = 'person'
   ): boolean {
+    if (this.host.resolveCards) {
+      const resolved = this.host.resolveCards(changeSetIds, accept);
+      if (resolved) alongside?.();
+      this.refresh();
+      if (resolved) this.replaced(by);
+      return resolved;
+    }
     const resolveGroup = this.pack.projections.resolveGroup;
     if (!resolveGroup) return false;
     const state = this.state;

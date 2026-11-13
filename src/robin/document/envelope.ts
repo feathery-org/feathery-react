@@ -1226,6 +1226,10 @@ export const listStyleSchema = z.looseObject({
 });
 export type ListStyle = z.output<typeof listStyleSchema>;
 
+/** How a card is named to Robin: the start of its id, and which of its turn's cards it is */
+export const shortCardId = (id: string): string =>
+  `${id.slice(0, 8)}${/\.\d+$/.exec(id)?.[0] ?? ''}`;
+
 /** What the buttons in the editor's own toolbar do with the document */
 export const EDITOR_TOOLBAR_OUTCOMES = [
   'save',

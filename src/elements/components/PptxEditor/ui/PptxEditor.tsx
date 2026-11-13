@@ -51,10 +51,6 @@ import { savePresentation } from '../persistence';
 import { withShortcut } from './shortcuts';
 import { onFontMetricsSettled } from '../core/render/fonts';
 
-// Tracked edits and version history are built but not user-ready; keep the
-// right rail and panels hidden until their flows are approved.
-const SHOW_REVIEW_RAIL = false;
-
 // The host-facing PowerPoint editor: Feathery-styled toolbar, slide navigator
 // on the left, editable SVG stage in the center, extensible right rail/panel.
 // Mirrors DocxEditor's host contract (source/readOnly/openNonce/onSave/...).
@@ -596,7 +592,7 @@ function PptxEditorInner({
           />
         </div>
         {devJsonPanel && state.showJson && <JsonPanel />}
-        {SHOW_REVIEW_RAIL && (
+        {reviewChanges && (
           <>
             <PptxRightPanel
               open={activePanel !== null}

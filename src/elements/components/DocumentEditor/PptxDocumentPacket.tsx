@@ -18,6 +18,7 @@ import {
 import type { DocumentTab, EditorEnvelope } from './documentPacket';
 import { envelopeSourceUrl } from './documentPacket';
 import { envelopeDownloadName } from './downloadFileName';
+import type { PptxEditorStore } from '../PptxEditor';
 
 const PptxEditor = React.lazy(
   () => import(/* webpackChunkName: "PptxEditor" */ '../PptxEditor')
@@ -46,9 +47,11 @@ function PresentationSession({
   onError,
   onDirty,
   loader,
-  onReady
+  onReady,
+  robinEnabled
 }: {
   loader: PresentationLoader;
+  robinEnabled: boolean;
   onReady: (id: string) => void;
   envelope: EditorEnvelope;
   active: boolean;
@@ -79,6 +82,39 @@ function PresentationSession({
   const registerSave = useCallback((save: (() => Promise<unknown>) | null) => {
     saveRef.current = save;
   }, []);
+  const [store, setStore] = useState<PptxEditorStore | null>(null);
+  // Robin edits the deck on screen, so only the active tab is mounted for it
+  useEffect(() => {
+    if (!robinEnabled || !active || !store || !formId || !containerId)
+      return undefined;
+    let unmount: (() => void) | undefined;
+    let cancelled = false;
+    import(
+      /* webpackChunkName: "PptxEditor" */ '../../../robin/document/formats/pptx-ooxml/mount'
+    ).then(({ mountRobinPresentation }) => {
+      if (cancelled) return;
+      unmount = mountRobinPresentation({
+        formKey: formId,
+        slot: containerId,
+        store,
+        envelopeId: initial.id,
+        readOnly: readOnly || !!initial.signed
+      });
+    });
+    return () => {
+      cancelled = true;
+      unmount?.();
+    };
+  }, [
+    robinEnabled,
+    active,
+    store,
+    formId,
+    containerId,
+    initial.id,
+    initial.signed,
+    readOnly
+  ]);
   useEffect(() => {
     register(initial.id, {
       // A session still loading has no edits to flush.
@@ -129,13 +165,17 @@ function PresentationSession({
             source={source}
             visible={active}
             prepareSource={prepareSource}
-            onReady={() => onReady(tab.id)}
+            onReady={(ready) => {
+              setStore(ready);
+              onReady(tab.id);
+            }}
             fileName={`${
               initial.file
                 ? envelopeDownloadName(initial.file)
                 : tab.label.replace(/\.pptx$/i, '')
             }.pptx`}
             readOnly={readOnly || initial.signed}
+            reviewChanges={robinEnabled && !readOnly && !initial.signed}
             hideDownload={!offersDownload}
             onSave={save}
             onBeforeReplaceReady={registerSave}
@@ -180,8 +220,10 @@ export default function PptxDocumentPacket({
   registerBeforeReplace,
   onBusy,
   onError,
-  onReviewAction
+  onReviewAction,
+  robinEnabled = false
 }: {
+  robinEnabled?: boolean;
   tabs: DocumentTab[];
   activeId?: string;
   reloadKey: number;
@@ -504,6 +546,7 @@ export default function PptxDocumentPacket({
             containerId={containerId}
             formId={formId}
             readOnly={!!action?.editor_read_only}
+            robinEnabled={robinEnabled}
             offersDownload={offersDownload}
             onSaved={saved}
             onDirty={clearFeedbackOnEdit}
