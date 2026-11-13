@@ -341,6 +341,30 @@ describe('formHelperFunctions', () => {
   });
 
   describe('lookUpTrigger', () => {
+    it('includes the element key for named non-field elements', () => {
+      const step = {
+        buttons: [
+          { id: 'btn-1', key: 'Continue', properties: { text: 'Next' } },
+          { id: 'btn-2', key: '', properties: { text: 'Back' } }
+        ],
+        texts: [{ id: 'txt-1', key: 'Headline', properties: { text: 'Hi' } }],
+        servar_fields: [],
+        tabs: []
+      };
+      expect(lookUpTrigger(step, 'btn-1', 'button')).toEqual({
+        id: 'btn-1',
+        type: 'button',
+        text: 'Next',
+        key: 'Continue'
+      });
+      expect(lookUpTrigger(step, 'btn-2', 'button')).toEqual({
+        id: 'btn-2',
+        type: 'button',
+        text: 'Back'
+      });
+      expect(lookUpTrigger(step, 'txt-1', 'text').key).toBe('Headline');
+    });
+
     it('returns tab trigger with the clicked entry payload', () => {
       const step = { buttons: [], texts: [], servar_fields: [], tabs: [] };
       const trigger = lookUpTrigger(step, 'tab-el-1', 'tab', {
