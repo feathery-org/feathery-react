@@ -1068,9 +1068,13 @@ describe('IntegrationClient', () => {
         email_subject: 'Please sign this',
         email_blurb: 'Two signatures needed.',
         notification: { reminders: { enabled: true, delay: 2, frequency: 3 } },
+        sms_authentication: false,
+        source_element_id: 'button-1',
         custom_fields: { account_submission_id: 'account-123' }
       });
       let body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.sms_authentication).toBe(false);
+      expect(body.source_element_id).toBe('button-1');
       expect(body.email_subject).toBe('Please sign this');
       expect(body.email_blurb).toBe('Two signatures needed.');
       expect(body.notification).toEqual({
@@ -1091,6 +1095,8 @@ describe('IntegrationClient', () => {
       expect(body.email_subject).toBeUndefined();
       expect(body.email_blurb).toBeUndefined();
       expect(body.notification).toBeUndefined();
+      expect(body.sms_authentication).toBeUndefined();
+      expect(body.source_element_id).toBeUndefined();
       expect(body.custom_fields).toBeUndefined();
     });
 
@@ -1150,6 +1156,41 @@ describe('IntegrationClient', () => {
 
       delete fieldValues.signer_field;
       delete fieldValues.buyer_field;
+    });
+
+    it('surfaces a rejected SMS phone as the field message', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      const message =
+        "The mobile number for SMS verification isn't valid (123). Enter the full number with the country code, for example 15555550100 or +1 555 555 0100.";
+      global.fetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: jest.fn().mockResolvedValue({ signers: [{ phone: [message] }] })
+      });
+      const result = await integrationClient.generateEnvelopes({
+        documents: ['doc1'],
+        run_async: false,
+        sign_method: 'docusign',
+        envelope_signers: [
+          {
+            document_id: 'doc1',
+            role_id: 'role-1',
+            email: 'buyer@example.com',
+            phone: '123'
+          }
+        ]
+      });
+      expect(result.message).toBe(message);
+
+      // Editor finalize returns the same error as a top-level list.
+      global.fetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: jest.fn().mockResolvedValue([{ phone: [message] }])
+      });
+      await expect(integrationClient.finalizeEnvelope('env-1')).rejects.toThrow(
+        message
+      );
     });
 
     it('sends sign_method alongside the editor action when both are present', async () => {
@@ -1511,12 +1552,16 @@ describe('IntegrationClient', () => {
           email_subject: 'Signed, sealed',
           email_blurb: 'Last step.',
           notification: { expirations: { enabled: true, after: 30, warn: 5 } },
+          sms_authentication: true,
+          source_element_id: 'button-1',
           custom_fields: { account_submission_id: 'account-123' }
         },
         { envelopes: [{ envelopeId: 'env-1' }], envelopeAction: 'sign' }
       );
 
       const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.sms_authentication).toBe(true);
+      expect(body.source_element_id).toBe('button-1');
       expect(body.email_subject).toBe('Signed, sealed');
       expect(body.email_blurb).toBe('Last step.');
       expect(body.notification).toEqual({

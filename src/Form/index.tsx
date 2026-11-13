@@ -3183,7 +3183,11 @@ function Form({
       initializeEnvelopeGeneration(actions);
     }
     for (i = 0; i < actions.length; i++) {
-      const action = actions[i];
+      // The backend reads this element's signer phones for DocuSign SMS.
+      const action =
+        actions[i].type === ACTION_GENERATE_ENVELOPES && id
+          ? { ...actions[i], source_element_id: id }
+          : actions[i];
       const type = action.type;
 
       if (type === ACTION_ADD_REPEATED_ROW) {
