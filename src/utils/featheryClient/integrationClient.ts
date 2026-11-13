@@ -26,6 +26,7 @@ import {
   generateFormDocuments as apiGenerateFormDocuments,
   generateQuikEnvelopes as apiGenerateQuikEnvelopes,
   getApiUrl,
+  getDocusignEnvelope as apiGetDocusignEnvelope,
   getQuikAccountForms as apiGetQuikAccountForms,
   getQuikFormRoles as apiGetQuikFormRoles,
   getQuikForms as apiGetQuikForms,
@@ -34,7 +35,8 @@ import {
   IntegrationActionIds,
   IntegrationActionOptions,
   parseAPIError,
-  sendEmail as apiSendEmail
+  sendEmail as apiSendEmail,
+  uploadFileToEgnyte as apiUploadFileToEgnyte
 } from '@feathery/client-utils';
 import { handleFormAuthenticationError, handleFormConflict } from './utils';
 import {
@@ -1563,24 +1565,10 @@ export default class IntegrationClient {
     });
   }
 
-  getDocusignEnvelope({
-    envelopeId,
-    includeDocuments = true
-  }: GetDocusignEnvelopeParams) {
-    const { userId } = initInfo();
-    const params = encodeGetParams({
-      fuser_key: userId,
-      form_key: this.formKey,
-      docusign_envelope_id: envelopeId,
-      include_documents: includeDocuments
-    });
-    const url = `${API_URL}docusign/envelope/?${params}`;
-    return this._fetch(url, {}, false).then(async (response) => {
-      if (response) {
-        if (response.ok) return await response.json();
-        else throw Error(parseAPIError(await response.json()));
-      }
-    });
+  // Shared with server-side rules through client-utils
+  getDocusignEnvelope(params: GetDocusignEnvelopeParams) {
+    const { userId, sdkKey } = initInfo();
+    return apiGetDocusignEnvelope(sdkKey, params, this.formKey, userId);
   }
 
   getDocusignBrands() {
@@ -1624,33 +1612,10 @@ export default class IntegrationClient {
     });
   }
 
-  uploadFileToEgnyte({
-    file,
-    path,
-    name,
-    createFolder = true
-  }: UploadFileToEgnyteParams) {
-    const { userId } = initInfo();
-    const url = `${API_URL}egnyte/file/`;
-    const options = {
-      headers: { 'Content-Type': 'application/json' },
-      method: 'POST',
-      body: JSON.stringify({
-        fuser_key: userId,
-        form_key: this.formKey,
-        // Accepts a getDocusignEnvelope document unchanged
-        file: { name: file.name, data: file.data, type: file.type },
-        path,
-        name,
-        create_folder: createFolder
-      })
-    };
-    return this._fetch(url, options, false).then(async (response) => {
-      if (response) {
-        if (response.ok) return await response.json();
-        else throw Error(parseAPIError(await response.json()));
-      }
-    });
+  // Shared with server-side rules through client-utils
+  uploadFileToEgnyte(params: UploadFileToEgnyteParams) {
+    const { userId, sdkKey } = initInfo();
+    return apiUploadFileToEgnyte(sdkKey, params, this.formKey, userId);
   }
 
   createEgnyteFolder({ path }: CreateEgnyteFolderParams) {

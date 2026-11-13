@@ -2033,4 +2033,69 @@ describe('IntegrationClient', () => {
       expect(result).toEqual({ status: 'discarded' });
     });
   });
+
+  describe('getDocusignEnvelope', () => {
+    it('reads the envelope as the form user through client-utils', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      const envelope = { status: 'completed', documents: [] };
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(envelope)
+      });
+
+      const result = await integrationClient.getDocusignEnvelope({
+        envelopeId: 'env-123'
+      });
+
+      const params = new URL(requestUrl()).searchParams;
+      expect(requestUrl()).toContain(`${API_URL}docusign/envelope/`);
+      expect(Object.fromEntries(params)).toEqual({
+        fuser_key: 'test_user_id',
+        form_key: 'test_form_key',
+        docusign_envelope_id: 'env-123',
+        include_documents: 'true'
+      });
+      expect(result).toEqual(envelope);
+    });
+
+    it('throws the API message', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: jest.fn().mockResolvedValue({ error: 'No DocuSign connection' })
+      });
+
+      await expect(
+        integrationClient.getDocusignEnvelope({ envelopeId: 'env-123' })
+      ).rejects.toThrow('No DocuSign connection');
+    });
+  });
+
+  describe('uploadFileToEgnyte', () => {
+    it('posts the file as the form user without keepalive', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ path: 'Signed/Form.pdf' })
+      });
+
+      const result = await integrationClient.uploadFileToEgnyte({
+        file: { name: 'Form.pdf', data: 'JVBERi0=', type: 'content' },
+        path: 'Signed'
+      });
+
+      expect(requestUrl()).toBe(`${API_URL}egnyte/file/`);
+      expect(requestMethod()).toBe('POST');
+      expect(global.fetch.mock.calls[0][1].keepalive).toBe(false);
+      expect(requestBody()).toEqual({
+        fuser_key: 'test_user_id',
+        form_key: 'test_form_key',
+        file: { name: 'Form.pdf', data: 'JVBERi0=', type: 'content' },
+        path: 'Signed',
+        create_folder: true
+      });
+      expect(result).toEqual({ path: 'Signed/Form.pdf' });
+    });
+  });
 });
