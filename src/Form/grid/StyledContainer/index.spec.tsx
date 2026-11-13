@@ -79,6 +79,52 @@ describe('StyledContainer iframe embeds', () => {
     }
   );
 
+  it.each([
+    'javascript:alert(1)',
+    ' java\tscript:alert(1)',
+    'data:text/html,<p>Embedded</p>'
+  ])('refuses an editor embed URL that is not a web page: %s', (source) => {
+    const { container } = render(
+      <StyledContainer
+        node={{ ...baseNode, properties: { iframe_url: source } }}
+        breakpoint={480}
+        editMode
+      >
+        <span>Container contents</span>
+      </StyledContainer>
+    );
+
+    expect(container.querySelector('iframe')).toBeNull();
+    expect(container).toHaveTextContent('Container contents');
+  });
+
+  it.each(['https://example.com/form', '/embeds/pricing-table'])(
+    'keeps a web or relative editor embed URL: %s',
+    (source) => {
+      const { container } = render(
+        <StyledContainer
+          node={{ ...baseNode, properties: { iframe_url: source } }}
+          breakpoint={480}
+          editMode
+        />
+      );
+
+      expect(container.querySelector('iframe')).toHaveAttribute('src', source);
+    }
+  );
+
+  it('leaves a non-web embed URL to live forms', () => {
+    const source = 'data:text/html,<p>Embedded</p>';
+    const { container } = render(
+      <StyledContainer
+        node={{ ...baseNode, properties: { iframe_url: source } }}
+        breakpoint={480}
+      />
+    );
+
+    expect(container.querySelector('iframe')).toHaveAttribute('src', source);
+  });
+
   it('preserves unresolved live-form embeds', () => {
     const source = '{{extraction_review_url}}';
     const { container } = render(
