@@ -47,6 +47,37 @@ it('draws each tag at its scaled box in its signer color', () => {
   expect(date).toHaveTextContent('Date Signed');
 });
 
+it('draws a signer\u2019s fields like their sign tags, letting clicks through to editable ones', () => {
+  render(
+    <SigningTagLayer
+      signers={signers}
+      scale={1}
+      tags={[
+        tag({ type: 'text', width: 120, height: 18 }),
+        tag({ type: 'checkbox', width: 14, height: 14 }),
+        tag({ type: 'radio', width: 14, height: 14 }),
+        tag({ type: 'date', width: null, height: 14 })
+      ]}
+    />
+  );
+  const text = screen.getByLabelText('Text: William Hegler');
+  expect(text).toHaveTextContent('Text');
+  expect(text).toHaveStyle({
+    backgroundColor: `${signerColor(0).fill}99`,
+    pointerEvents: 'none'
+  });
+  expect(screen.getByLabelText('Checkbox: William Hegler')).toHaveTextContent(
+    ''
+  );
+  expect(screen.getByLabelText('Radio: William Hegler')).toHaveStyle({
+    borderRadius: '50%'
+  });
+  // A deferred date has no widget under it, so it stays hoverable.
+  expect(screen.getByLabelText('Date: William Hegler')).toHaveStyle({
+    pointerEvents: 'auto'
+  });
+});
+
 it('lists only the signers who have a tag, each stepping through their own', () => {
   const onJump = jest.fn();
   const { rerender } = render(

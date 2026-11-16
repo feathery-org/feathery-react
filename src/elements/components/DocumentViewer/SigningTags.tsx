@@ -1,11 +1,19 @@
 import React from 'react';
 import { color, fontSize, radius } from './tokens';
 
-export type SigningTagType = 'sign_here' | 'initial_here' | 'date_signed';
+export type SigningTagType =
+  | 'sign_here'
+  | 'initial_here'
+  | 'date_signed'
+  | 'date'
+  | 'text'
+  | 'checkbox'
+  | 'radio';
 
-/** Where a DocuSign recipient signs, initials or is dated on a page: a box in
- * pdf points from the page's top left, as the backend's signing preview emits
- * it. A date has no width of its own — it is as wide as its label. */
+/** Where a DocuSign recipient signs, initials, is dated or fills in a field on
+ * a page: a box in pdf points from the page's top left, as the backend's
+ * signing preview emits it. A date has no width of its own — it is as wide as
+ * its label. */
 export interface SigningTag {
   type: SigningTagType;
   // Position of the recipient in the payload's `signers`.
@@ -70,8 +78,20 @@ export function focusNextSignerTag(
 const TAG_LABEL: Record<SigningTagType, string> = {
   sign_here: 'Sign',
   initial_here: 'Initial',
-  date_signed: 'Date Signed'
+  date_signed: 'Date Signed',
+  date: 'Date',
+  text: 'Text',
+  checkbox: 'Checkbox',
+  radio: 'Radio'
 };
+
+// Tags on a line of text sit label-first in a row; a tick box or radio is too
+// small for a label, so it is a bare colored mark.
+const INLINE_TYPES: SigningTagType[] = ['date_signed', 'date', 'text'];
+const MARK_TYPES: SigningTagType[] = ['checkbox', 'radio'];
+// A field under these is a live widget the filler can still prefill, so its
+// tag lets clicks through rather than covering it.
+const FILLABLE_TYPES: SigningTagType[] = ['text', 'checkbox', 'radio'];
 
 const signerName = (signers: SigningRecipient[], signer: number) =>
   signers[signer]?.name || `Signer ${signer + 1}`;
@@ -113,7 +133,8 @@ export function SigningTagLayer({
       {tags.map((tag, i) => {
         const { fill, border } = signerColor(tag.signer);
         const height = tag.height * scale;
-        const isDate = tag.type === 'date_signed';
+        const isInline = INLINE_TYPES.includes(tag.type);
+        const isMark = MARK_TYPES.includes(tag.type);
         const label = `${TAG_LABEL[tag.type]}: ${signerName(
           signers,
           tag.signer
@@ -135,28 +156,32 @@ export function SigningTagLayer({
               height,
               boxSizing: 'border-box',
               display: 'flex',
-              flexDirection: isDate ? 'row' : 'column',
+              flexDirection: isInline ? 'row' : 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: isDate ? `0 ${height * 0.35}px` : 0,
+              padding: isInline ? `0 ${height * 0.35}px` : 0,
               backgroundColor: `${fill}${TAG_FILL_ALPHA}`,
               border: `1px solid ${border}`,
-              borderRadius: 3,
+              borderRadius: tag.type === 'radio' ? '50%' : 3,
               outline: 'none',
               '&:focus': { boxShadow: `0 0 0 3px ${border}` },
               color: color.text,
               fontFamily: 'Arial, Helvetica, sans-serif',
-              fontSize: isDate ? height * 0.68 : height * 0.22,
+              fontSize: isInline ? Math.min(height * 0.68, 13) : height * 0.22,
               lineHeight: 1,
               whiteSpace: 'nowrap',
               overflow: 'hidden',
-              pointerEvents: 'auto',
+              pointerEvents: FILLABLE_TYPES.includes(tag.type)
+                ? 'none'
+                : 'auto',
               cursor: 'default',
               userSelect: 'none'
             }}
           >
-            {TAG_LABEL[tag.type]}
-            {!isDate && <PenIcon size={height * 0.45} />}
+            {!isMark && TAG_LABEL[tag.type]}
+            {(tag.type === 'sign_here' || tag.type === 'initial_here') && (
+              <PenIcon size={height * 0.45} />
+            )}
           </div>
         );
       })}
