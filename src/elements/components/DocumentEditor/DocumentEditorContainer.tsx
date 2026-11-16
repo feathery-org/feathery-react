@@ -838,6 +838,7 @@ export default function DocumentEditorContainer({
         onBusy={setPacketBusy}
         onError={setOperationError}
         onReviewAction={fireReviewAction}
+        robinEnabled={!!assistantEnabled && robinHost}
       />,
       editorWrap
     );

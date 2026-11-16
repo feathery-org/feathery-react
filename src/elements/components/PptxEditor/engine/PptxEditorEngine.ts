@@ -187,6 +187,15 @@ export class PptxEditorEngine {
     { before: PptxHistorySnapshot; after: PptxHistorySnapshot }
   >();
 
+  // Suggestions each reject settled, so undoing the reject makes them pending again
+  private rejectedSuggestions = new Map<
+    string,
+    {
+      record: PptxChangeRecord;
+      snapshots: { before: PptxHistorySnapshot; after: PptxHistorySnapshot };
+    }
+  >();
+
   private openTransaction: OpenTransaction | null = null;
 
   constructor(deck: Deck | null = null) {
@@ -748,6 +757,13 @@ export class PptxEditorEngine {
       this.shelvedRecords.set(undone.transactionId, undone);
       this.changeLog = this.changeLog.filter((record) => record !== undone);
     }
+    const rejected = this.rejectedSuggestions.get(String(entry.id));
+    if (rejected) {
+      this.changeLog = this.changeLog.map((record) =>
+        record.id === rejected.record.id ? rejected.record : record
+      );
+      this.pendingSnapshots.set(rejected.record.id, rejected.snapshots);
+    }
     this.present = entry.before;
     this.revision += 1;
     this.historyRevision += 1;
@@ -767,6 +783,15 @@ export class PptxEditorEngine {
     if (shelved) {
       this.shelvedRecords.delete(String(entry.id));
       this.changeLog = [...this.changeLog, shelved];
+    }
+    const rejected = this.rejectedSuggestions.get(String(entry.id));
+    if (rejected) {
+      this.changeLog = this.changeLog.map((record) =>
+        record.id === rejected.record.id
+          ? { ...record, status: 'rejected' as const, beforeSlides: undefined }
+          : record
+      );
+      this.pendingSnapshots.delete(rejected.record.id);
     }
     this.present = entry.after;
     this.revision += 1;
@@ -909,6 +934,11 @@ export class PptxEditorEngine {
         authorLabel: 'Reject'
       }
     );
+    if (result.changed && !this.openTransaction)
+      this.rejectedSuggestions.set(String(this.sequence), {
+        record,
+        snapshots
+      });
     this.changeLog = this.changeLog.map((candidate) =>
       candidate.id === id
         ? { ...candidate, status: 'rejected' as const, beforeSlides: undefined }
@@ -990,6 +1020,7 @@ export class PptxEditorEngine {
     this.changeLog = [];
     this.shelvedRecords.clear();
     this.pendingSnapshots.clear();
+    this.rejectedSuggestions.clear();
     this.historyRevision += 1;
   }
 
@@ -1002,6 +1033,7 @@ export class PptxEditorEngine {
     this.changeLog = [];
     this.shelvedRecords.clear();
     this.pendingSnapshots.clear();
+    this.rejectedSuggestions.clear();
     this.deck = null;
     this.present = null;
     this.baseline = null;

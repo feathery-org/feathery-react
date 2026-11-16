@@ -243,6 +243,8 @@ export interface InvariantContext {
   changed: ReadonlySet<string>;
   removed: ReadonlySet<string>;
   created: ReadonlySet<string>;
+  /** Each created node the write copied, by its new id: the id of the node it copies. */
+  copies?: Readonly<Record<string, string>>;
 }
 
 export interface Invariant {
@@ -371,6 +373,8 @@ export interface EditorHost {
   selection?(): unknown;
   /** Where each page the editor lays out starts, opaque to the core, null when it has no pages */
   pages?(): unknown;
+  /** Accept or reject cards with the editor's own suggestion tracking, false and nothing changed when it cannot */
+  resolveCards?(changeSetIds: string[], accept: boolean): boolean;
 }
 
 export interface SeamContext {
@@ -436,6 +440,8 @@ export interface PlanContext {
   intended: DocumentView;
   beforeResidue: Residue;
   intendedResidue: Residue;
+  /** Each created node the write copied, by its new id: the id of the node it copies. */
+  copies?: Readonly<Record<string, string>>;
   beforeNative: string;
   /** What the card says: the engine's title and the write's intent, for the group tag. */
   card?: { title: string; intent: string };

@@ -8,8 +8,9 @@
 import type { DocumentView, FeatureMark } from '../../pack';
 import type { NfNode } from '../../tree';
 import { hasPendingInside, walk } from '../../tree';
+import { shortCardId } from '../../envelope';
 import { HEADER_FOOTER, INLINE_KINDS, KIND } from './adapter/keys';
-import { revisionsIn, shortCardId } from './adapter/revisions';
+import { revisionsIn } from './adapter/revisions';
 import { bindingMarks } from './features/formula';
 import { sectionMarkerMark } from './features/sectionMarker';
 import { SECTION_BREAKS } from './schema';
