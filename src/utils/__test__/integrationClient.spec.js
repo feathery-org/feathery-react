@@ -1196,13 +1196,9 @@ describe('IntegrationClient', () => {
       global.fetch.mockResolvedValue({
         ok: false,
         status: 400,
-        json: jest
-          .fn()
-          .mockResolvedValue({
-            email_subject: [
-              'Ensure this field has no more than 256 characters.'
-            ]
-          })
+        json: jest.fn().mockResolvedValue({
+          email_subject: ['Ensure this field has no more than 256 characters.']
+        })
       });
       const subjectResult = await integrationClient.generateEnvelopes({
         documents: ['doc1'],
