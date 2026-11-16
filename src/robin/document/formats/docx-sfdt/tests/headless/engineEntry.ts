@@ -20,7 +20,8 @@ import { SyncfusionEditorLike } from '../../../../../../elements/components/Docx
 import { printedPageNumber } from '../../../../../../elements/components/DocxEditor/printedPageNumber';
 import { comparable, differences, equivalentNative } from '../../../../proof';
 import { DocumentSession } from '../../../../session';
-import type { Verb } from '../../../../envelope';
+import { parseVerbInput, type Verb } from '../../../../envelope';
+import { prepareWrite } from '../../../../verbs';
 import { canonicalJson, NfNode, NormalForm } from '../../../../tree';
 import { createHost, docxPack, LiveEditor } from '../../index';
 import React from 'react';
@@ -363,6 +364,13 @@ const api = {
       // an injected failure is for this one dispatch only
       injectFailure = false;
     }
+  },
+
+  /** Whether the engine accepts a write, checked without applying it */
+  verifies(input: unknown): boolean {
+    if (!session) throw new Error('no session');
+    const parsed = parseVerbInput('write', input);
+    return parsed.ok && prepareWrite(session.state, parsed.value).outcome === 'verified';
   },
 
   /** One dispatch timed in the page, in milliseconds (per-verb cost, measured without the bridge). */

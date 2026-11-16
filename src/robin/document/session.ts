@@ -360,21 +360,6 @@ export class DocumentSession {
       finalizerScope: prepared.finalizerScope,
       facts: prepared.facts
     };
-    if (write.dryRun) {
-      trace.committed('skipped', [], 0);
-      return {
-        ok: true,
-        committed: false,
-        dryRun: true,
-        cardId: null,
-        landed: 'none',
-        outlineHash: before.outlineHash,
-        ...common,
-        warnings: prepared.warnings,
-        trace: trace.build()
-      };
-    }
-
     const bases = new Map(before.view.nodes().map((n) => [n.id, baseOf(n)]));
     const restoreGuesses = this.ids.checkpointUncertain();
     const outcome = this.writing(() => {
@@ -433,7 +418,6 @@ export class DocumentSession {
       return {
         ok: true,
         committed: !!rebuilt?.changed,
-        dryRun: false,
         cardId: null,
         landed: rebuilt?.changed ? 'immediate' : 'none',
         outlineHash: rebuilt ? this.state.outlineHash : before.outlineHash,
@@ -524,7 +508,6 @@ export class DocumentSession {
     const result: VerbResult = {
       ok: true,
       committed: true,
-      dryRun: false,
       cardId: outcome.plan.landed === 'card' ? changeSetId : null,
       landed: outcome.plan.landed,
       outlineHash: (this.current as DocumentState).outlineHash,
@@ -918,7 +901,7 @@ function logWriteOutcome(turnId: string, result: VerbResult, ms: number): void {
     });
     return;
   }
-  if (r.ok) return; // a dry run
+  if (r.ok) return; // A no-change answer
   const refusal = r.refusal as Record<string, any> | undefined;
   const proof = r.trace?.proof as Record<string, any> | undefined;
   const rollback = proof?.rollback as

@@ -489,7 +489,6 @@ describe('document session: the four verbs end to end', () => {
         expect.objectContaining({
           ok: true,
           committed: false,
-          dryRun: false,
           cardId: null,
           landed: 'none',
           warnings: [expect.objectContaining({ code: 'no-change' })]
@@ -545,10 +544,6 @@ describe('document session: the four verbs end to end', () => {
         }
       ]
     };
-    // a dry run is never journaled: the real write that follows it executes
-    expect(call('write', { ...retitle, dryRun: true })).toEqual(
-      expect.objectContaining({ committed: false, dryRun: true })
-    );
     const first = call('write', retitle);
     expect(first).toEqual(
       expect.objectContaining({ committed: true, cardId: 'turn-0' })
@@ -789,34 +784,6 @@ describe('document session: the four verbs end to end', () => {
           invariant: 'apply-failed',
           retry: 'modified_input'
         })
-      })
-    );
-    expect(host.serialize()).toBe(doc);
-  });
-
-  it('a dry run verifies and reports facts without touching the editor', () => {
-    const { host, call } = mount();
-    const n3 = nodeOf(call('read', { ids: ['n3'] }), 'n3');
-    const result = call('write', {
-      intent: 'Try a rename.',
-      scope: { ids: ['n3'] },
-      changes: [
-        {
-          kind: 'replace',
-          id: 'n3',
-          base: n3.base,
-          node: { text: 'Auto', style: n3.style }
-        }
-      ],
-      dryRun: true
-    });
-    expect(result).toEqual(
-      expect.objectContaining({
-        ok: true,
-        committed: false,
-        dryRun: true,
-        landed: 'none',
-        cardId: null
       })
     );
     expect(host.serialize()).toBe(doc);
@@ -1375,10 +1342,8 @@ describe('document session: telling the host whose change it is', () => {
     expect(events).toEqual(['replaced:person', 'replaced:person']);
   });
 
-  it('a refused or dry-run write is not marked and reports nothing', () => {
+  it('a refused write is not marked and reports nothing', () => {
     const { call, events } = watched();
-    const n2 = nodeOf(call('read', { ids: ['n2'] }), 'n2');
-    call('write', { ...addLine(n2.shape), dryRun: true });
     call('write', addLine('@00000000'));
     expect(events).toEqual([]);
   });
