@@ -759,6 +759,13 @@ export const getFormContext = (formUuid: string) => {
           )
         );
       }
+      if (smsAuthentication !== undefined) {
+        return Promise.reject(
+          new Error(
+            'generateDocuments: smsAuthentication requires a mounted <Form />.'
+          )
+        );
+      }
       return flushFields().then(() =>
         formState.client.generateDocuments({
           documentIds: documentIds as string[],

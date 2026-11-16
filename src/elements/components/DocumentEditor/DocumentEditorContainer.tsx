@@ -58,6 +58,7 @@ import { envelopeDownloadName } from './downloadFileName';
 function resolveTargetAction(containerId?: string): {
   action?: Record<string, any>;
   formKey?: string;
+  buttonId?: string;
 } {
   if (!containerId) return {};
   const schemas = (initState as any).formSchemas ?? {};
@@ -74,7 +75,7 @@ function resolveTargetAction(containerId?: string): {
             action?.type === ACTION_GENERATE_ENVELOPES &&
             editorContainerId(action ?? {}) === containerId
           ) {
-            return { action, formKey: key };
+            return { action, formKey: key, buttonId: button.id };
           }
         }
       }
@@ -155,10 +156,11 @@ export default function DocumentEditorContainer({
   previewType?: 'docx' | 'pptx' | 'generic';
   assistantEnabled?: boolean;
 }) {
-  const { action: targetAction, formKey } = useMemo(
-    () => resolveTargetAction(containerId),
-    [containerId]
-  );
+  const {
+    action: targetAction,
+    formKey,
+    buttonId
+  } = useMemo(() => resolveTargetAction(containerId), [containerId]);
   // Carries the form key because the DocuSign sign path posts form_key; the
   // other envelope calls only need initInfo().
   const client = useMemo(() => new FeatheryClient(formKey ?? ''), [formKey]);
@@ -549,11 +551,15 @@ export default function DocumentEditorContainer({
       if (isDocusignSignAction(targetAction ?? {}, 'sign')) {
         // DocuSign has no Feathery sign page: the backend send (or draft) is
         // itself the completion signal.
-        const result = await client.finalizeEnvelopeReview(targetAction ?? {}, {
-          envelopes: [{ envelopeId: envelope.id }],
-          envelopeAction: 'sign',
-          draft
-        });
+        // The button that generated into this container owns the signer phones.
+        const result = await client.finalizeEnvelopeReview(
+          { ...targetAction, source_element_id: buttonId },
+          {
+            envelopes: [{ envelopeId: envelope.id }],
+            envelopeAction: 'sign',
+            draft
+          }
+        );
         if (!result) throw Error('Failed to send the document to DocuSign');
         if (result.status === 'error') throw Error(result.message);
         if (!draft) showSent('docusign');
@@ -582,7 +588,15 @@ export default function DocumentEditorContainer({
       if (targetAction?.redirect) featheryWindow().location.href = url;
       else openTab(url);
     },
-    [client, envelope, targetAction, signerEntries, formId, containerId]
+    [
+      client,
+      envelope,
+      targetAction,
+      buttonId,
+      signerEntries,
+      formId,
+      containerId
+    ]
   );
 
   // After a reload the session's signing link is gone. Finalizing a sent PDF

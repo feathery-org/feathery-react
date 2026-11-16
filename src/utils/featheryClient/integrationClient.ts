@@ -1295,7 +1295,7 @@ export default class IntegrationClient {
     if (emailSubject) payload.email_subject = emailSubject;
     if (emailBlurb) payload.email_blurb = emailBlurb;
     if (notification) payload.notification = notification;
-    if (smsAuthentication !== undefined)
+    if (smsAuthentication != null)
       payload.sms_authentication = smsAuthentication;
     if (sourceElementId) payload.source_element_id = sourceElementId;
     if (ccRecipients !== undefined) payload.cc_recipients = ccRecipients;
@@ -1382,7 +1382,7 @@ export default class IntegrationClient {
     if (action.email_subject) payload.email_subject = action.email_subject;
     if (action.email_blurb) payload.email_blurb = action.email_blurb;
     if (action.notification) payload.notification = action.notification;
-    if (action.sms_authentication !== undefined)
+    if (action.sms_authentication != null)
       payload.sms_authentication = action.sms_authentication;
     if (action.source_element_id)
       payload.source_element_id = action.source_element_id;

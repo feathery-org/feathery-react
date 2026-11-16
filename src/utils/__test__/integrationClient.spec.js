@@ -1191,6 +1191,27 @@ describe('IntegrationClient', () => {
       await expect(integrationClient.finalizeEnvelope('env-1')).rejects.toThrow(
         message
       );
+
+      // Any other field error reads the same way instead of "[object Object]".
+      global.fetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: jest
+          .fn()
+          .mockResolvedValue({
+            email_subject: [
+              'Ensure this field has no more than 256 characters.'
+            ]
+          })
+      });
+      const subjectResult = await integrationClient.generateEnvelopes({
+        documents: ['doc1'],
+        run_async: false,
+        sign_method: 'docusign'
+      });
+      expect(subjectResult.message).toBe(
+        'Ensure this field has no more than 256 characters.'
+      );
     });
 
     it('sends sign_method alongside the editor action when both are present', async () => {
