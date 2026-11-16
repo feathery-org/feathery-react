@@ -428,7 +428,6 @@ describe('verifying a write the model got wrong', () => {
         intent: 'Give the row a new look.',
         scope: { ids: [row.id] },
         ...(formats ? { formats } : {}),
-        dryRun: true,
         changes: [{ kind: 'replace', id: row.id, base: baseOf(row), node: { id: row.id, kind: 'row', style, cells: cells.map((c) => ({ id: c.id, kind: c.kind })) } }]
       } as never);
 
