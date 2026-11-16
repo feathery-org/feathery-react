@@ -357,10 +357,10 @@ export function setShapeRichText(
         const rPr = child(runNode, 'a:rPr') || el('a:rPr', { lang: 'en-US' });
         if (!child(runNode, 'a:rPr')) childrenOf(runNode).unshift(rPr);
         applyRunStyle(rPr, {
-          bold: !!r.bold,
-          italic: !!r.italic,
-          underline: !!r.underline,
-          strike: !!r.strike,
+          bold: r.bold,
+          italic: r.italic,
+          underline: r.underline,
+          strike: r.strike,
           sizePt: r.sizePt,
           color: r.color,
           highlight: r.highlight ?? null,

@@ -158,6 +158,81 @@ describe('PowerPoint text', () => {
     expect(node.properties.underline).toEqual({ value: null, source: 'default' });
   });
 
+  it('keeps a heading its own formatting when its wording is rewritten', () => {
+    const deck = openDeck();
+    const heading = deck.find('Pain points')[0].id;
+    expectCard(
+      replaceParagraph(deck, heading, {
+        ...deck.read(heading),
+        runs: [{ text: 'Main obstacles' }]
+      })
+    );
+    const [run] = deck.read(heading).runs as Array<Record<string, unknown>>;
+    expect(run).toEqual(expect.objectContaining({ text: 'Main obstacles', bold: true }));
+  });
+
+  it('leaves new text in an empty title to the formatting its layout gives it', () => {
+    const deck = openDeck('sample.pptx');
+    const outline = (deck.call('outline', {}) as { lines: string }).lines;
+    const slide = outline.split('\n')[8].trim().split(' ')[0];
+    const title = (deck.read(slide).shapes as Array<Record<string, unknown>>).find(
+      (shape) => shape.placeholder === 'title'
+    ) as { paragraphs: Array<{ id: string }> };
+    const paragraph = title.paragraphs[0].id;
+    expectCard(
+      replaceParagraph(deck, paragraph, {
+        ...deck.read(paragraph),
+        runs: [{ text: 'Quarterly review' }]
+      })
+    );
+    const [run] = deck.read(paragraph).runs as Array<Record<string, unknown>>;
+    expect(run.text).toBe('Quarterly review');
+    expect(run.bold).toBeUndefined();
+  });
+
+  it('keeps what the person is still typing when Robin writes', () => {
+    const deck = openDeck();
+    const { shape } = subtitle(deck);
+    const slide = deck.find('Company Name')[0].within[1];
+    const typed = {
+      type: 'replace-rich-text' as const,
+      slideId: deck.read(slide).path as string,
+      shapeId: deck.read(shape).shapeId as string,
+      paragraphs: [
+        {
+          sourceParagraph: 0,
+          runs: [
+            {
+              text: 'Typed by hand',
+              source: { paragraph: 0, run: 0 },
+              styleChanged: false
+            }
+          ]
+        }
+      ]
+    };
+    deck.store.setCommitSvgTextEdit(() => {
+      deck.store.setCommitSvgTextEdit(null);
+      deck.store.executeCommand(typed, 'Edit text');
+    });
+    const footer = deck.find('‹#›')[0].id;
+    expectCard(
+      deck.write({
+        intent: 'Bold the footer.',
+        scope: { ids: [footer] },
+        changes: [
+          {
+            kind: 'set',
+            target: { ids: [footer], shape: { [footer]: deck.read(footer).shape } },
+            props: { bold: true }
+          }
+        ]
+      })
+    );
+    expect(deck.find('Typed by hand')).toHaveLength(1);
+    expect(deck.find('Company Name')).toHaveLength(0);
+  });
+
   it('edits its own earlier suggestion, and rejecting both newest first restores the deck', () => {
     const deck = openDeck();
     const original = JSON.parse(serializeDeck(deck.engine)).slides;
@@ -304,6 +379,21 @@ describe('PowerPoint slide number fields', () => {
     const runs = runsOf(deck.read(paragraph));
     expect(runs.map((run) => run.kind).slice(-2)).toEqual(['field', 'run']);
     expect(runs.filter((run) => run.kind === 'field')).toHaveLength(1);
+  });
+
+  it('adds plain text after a slide number that is the only text in its box', () => {
+    const deck = openDeck('powerpoint-text-defaults.pptx');
+    const { paragraph, node } = footer(deck);
+    expectCard(
+      replaceParagraph(deck, paragraph, {
+        ...node,
+        runs: [...runsOf(node), { text: ' Confidential' }]
+      })
+    );
+    expect(runsOf(deck.read(paragraph)).map((run) => run.kind)).toEqual([
+      'field',
+      'run'
+    ]);
   });
 
   it('refuses formatting the slide number itself before trying it', () => {

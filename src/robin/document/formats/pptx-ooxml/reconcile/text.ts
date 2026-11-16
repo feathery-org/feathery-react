@@ -3,13 +3,7 @@ import type {
   TextStyle
 } from '../../../../../elements/components/PptxEditor/core/model/edit';
 import { canonicalJson, type NfNode } from '../../../tree';
-import {
-  RUN_FORMAT,
-  UNSOURCED_RUN_FORMAT,
-  paragraphAt,
-  runAt,
-  textSources
-} from '../textSources';
+import { RUN_FORMAT, paragraphAt, runAt, textSources } from '../textSources';
 import type { DeckOperation, ShapeRef, SlideRef } from '../seams/deck';
 
 const paragraphsOf = (node: NfNode) => node.paragraphs as NfNode[];
@@ -96,10 +90,7 @@ export function textOperations(
       offset += String(run.text).length;
       if (run.kind !== 'run' || start === offset) return;
       const at = sources.runs[p][r];
-      const style = styleChange(
-        at ? runAt(before, at) : UNSOURCED_RUN_FORMAT,
-        run
-      );
+      const style = styleChange(at ? runAt(before, at) : {}, run);
       if (style)
         operations.push({
           command: {

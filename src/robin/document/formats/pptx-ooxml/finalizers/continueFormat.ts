@@ -4,7 +4,6 @@ import {
   PARAGRAPH_FORMAT,
   RUN_FORMAT,
   TEXT_BOX_RUN_FORMAT,
-  UNSOURCED_RUN_FORMAT,
   paragraphAt,
   runAt,
   textSources
@@ -64,8 +63,8 @@ export const continueFormatFinalizer: Finalizer = {
         (paragraph.runs as NfNode[]).forEach((run, r) => {
           if (known.has(origin(run.id)) || run.kind !== 'run') return;
           const at = sources.runs[p][r];
-          const from = at ? runAt(old, at) : UNSOURCED_RUN_FORMAT;
-          if (fillAbsent(run, from, RUN_FORMAT)) ids.push(run.id);
+          if (at && fillAbsent(run, runAt(old, at), RUN_FORMAT))
+            ids.push(run.id);
         });
       });
     });

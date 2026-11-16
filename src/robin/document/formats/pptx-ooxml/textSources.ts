@@ -11,13 +11,6 @@ export const RUN_FORMAT = [
 ] as const;
 export const PARAGRAPH_FORMAT = ['align', 'level'] as const;
 
-/** What a run with no run to copy is given: the editor writes these explicitly */
-export const UNSOURCED_RUN_FORMAT = {
-  bold: false,
-  italic: false,
-  strike: false
-};
-
 export interface Location {
   paragraph: number;
   run: number;
@@ -71,13 +64,12 @@ export function textSources(
       isField: run.kind === 'field'
     }))
   );
-  const fallback = (p: number): Location | undefined => {
-    const source = paragraphs[p];
-    const sourceRuns =
-      source === undefined ? [] : runsOf(beforeParagraphs[source]);
-    const r = sourceRuns.findIndex((run) => run.kind === 'run');
-    if (source !== undefined && r >= 0) return { paragraph: source, run: r };
-    return runAt.values().next().value;
+  const plainRunIn = (source: number | undefined): Location | undefined => {
+    if (source === undefined) return undefined;
+    const r = runsOf(beforeParagraphs[source]).findIndex(
+      (run) => run.kind === 'run'
+    );
+    return r >= 0 ? { paragraph: source, run: r } : undefined;
   };
   const runs = afterParagraphs.map((paragraph) =>
     runsOf(paragraph).map(() => undefined as Location | undefined)
@@ -89,10 +81,20 @@ export function textSources(
     }
     // New text never continues a field, it would become a field too
     const sourceAt = (j: number) => (flat[j].isField ? undefined : flat[j].own);
-    let found: Location | undefined;
-    for (let j = k - 1; j >= 0 && !found; j--) found = sourceAt(j);
-    for (let j = k + 1; j < flat.length && !found; j++) found = sourceAt(j);
-    runs[p][r] = found ?? fallback(p);
+    const nearest = (isCandidate: (j: number) => boolean) => {
+      for (let j = k - 1; j >= 0; j--)
+        if (isCandidate(j) && sourceAt(j)) return sourceAt(j);
+      for (let j = k + 1; j < flat.length; j++)
+        if (isCandidate(j) && sourceAt(j)) return sourceAt(j);
+      return undefined;
+    };
+    // Rewritten text keeps its own paragraph's look before borrowing a neighbour's
+    runs[p][r] =
+      nearest((j) => flat[j].p === p) ??
+      plainRunIn(ownParagraph[p]) ??
+      nearest(() => true) ??
+      plainRunIn(paragraphs[p]) ??
+      beforeParagraphs.map((_, i) => plainRunIn(i)).find(Boolean);
   });
   return { paragraphs, runs };
 }

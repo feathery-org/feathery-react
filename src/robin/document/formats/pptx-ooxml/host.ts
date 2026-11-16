@@ -13,7 +13,11 @@ export function createHost(
 ): PptxHost {
   return {
     store,
-    serialize: () => serializeDeck(store.engine),
+    serialize: () => {
+      // The person's in-progress text edit is part of the deck Robin reads
+      store.commitSvgTextEdit?.({ render: false });
+      return serializeDeck(store.engine);
+    },
     open: (native) => openDeck(store.engine, native),
     canUndo: () => store.engine.canUndo(),
     undo: () => store.undo(),
