@@ -111,6 +111,7 @@ export function parseDisplay(fieldType: FieldType, text: string): string {
 
 /** Canonical value -> display text. */
 export function renderDisplay(fieldType: FieldType, value: string): string {
+  if (value === '') return '';
   switch (fieldType.kind) {
     case 'text':
     case 'date':
