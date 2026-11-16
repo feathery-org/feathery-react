@@ -266,7 +266,9 @@ export function replacedBeside(
   if (
     !wholeContentDeleted(list[i], deletedRevisionIds) ||
     !next?.contentControlProperties ||
-    wholeContentDeleted(next, deletedRevisionIds)
+    // A replacement a later change replaced in turn is still the next link of the chain
+    (wholeContentDeleted(next, deletedRevisionIds) &&
+      !replacedBeside(list, i + 1, deletedRevisionIds, moves))
   )
     return false;
   const mine = movesUnder(list[i], moves);
@@ -606,8 +608,14 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
             ? occurrence.def.expression
             : undefined
       });
-    const first = signature(occurrences[0]);
-    for (const occurrence of occurrences.slice(1)) {
+    // A copy pending deletion is on its way out while a live copy defines the name
+    const live = occurrences.filter(
+      (occurrence) =>
+        !wholeContentDeleted(getAt(sfdt, occurrence.path), deletedRevisionIds)
+    );
+    const compared = live.length ? live : occurrences;
+    const first = signature(compared[0]);
+    for (const occurrence of compared.slice(1)) {
       if (signature(occurrence) !== first) {
         diag(
           index.diagnostics,

@@ -189,6 +189,99 @@ describe('a replaced formula rejected after a reload', () => {
   });
 });
 
+describe('a formula rewritten through its paragraph without its id', () => {
+  const rewrite = (turnId: string) => {
+    const m = mount();
+    const view = m.session.state.view;
+    const nameOf = (n: NfNode) => (n.binding as { name?: unknown } | undefined)?.name;
+    const control = view.nodes().find((n) => n.kind === 'control' && typeof (n.binding as { expr?: unknown } | undefined)?.expr === 'string' && view.placement(n.id)?.parent?.kind === 'paragraph' && view.nodes().filter((o) => o.kind === 'control' && nameOf(o) === nameOf(n)).length === 1) as NfNode;
+    const paragraph = view.placement(control.id)?.parent as NfNode;
+    const { name, expr } = control.binding as { name: string; expr: string };
+    const formulasNamed = () =>
+      m.session.state.view.nodes().filter((n) => (n.binding as { name?: string } | undefined)?.name === name).map((n) => [n.id, (n.binding as { expr: string }).expr]);
+    const original = formulasNamed();
+    const node = JSON.parse(JSON.stringify(paragraph, (k, v) => (['id', 'pending'].includes(k) ? undefined : v)));
+    const rewritten = arr<Record<string, any>>(node.inlines).find((i) => i.binding?.name === name) as Record<string, any>;
+    rewritten.binding = { ...rewritten.binding, expr: `mul(${expr},1)` };
+    const out = m.session.dispatch('write', { turnId, editorId: 'ed', target: { type: 'envelope', id: 'e' }, input: { intent: 'Write the formula out.', scope: { ids: [paragraph.id] }, changes: [{ kind: 'replace', id: paragraph.id, base: baseOf(paragraph), node }] } });
+    if (out.status !== 'ok' || !out.result.ok) throw new Error(JSON.stringify(out).slice(0, 800));
+    return { m, control, expr, original, formulasNamed };
+  };
+
+  it('lands with no binding errors while its card is pending', () => {
+    const { m } = rewrite('turn-w');
+    expect(docxPack.bindingErrors?.(m.session.state.view)).toEqual([]);
+  });
+
+  it('a second rewrite while the first card is pending lands with no binding errors', () => {
+    const { m, control, expr } = rewrite('turn-y');
+    const paragraph = m.session.state.view.placement(control.id)?.parent as NfNode;
+    const { name } = control.binding as { name: string };
+    const node = JSON.parse(JSON.stringify(paragraph, (k, v) => (['id', 'pending'].includes(k) ? undefined : v)));
+    node.inlines = arr<Record<string, any>>(node.inlines).filter((i, at, all) => i.binding?.name !== name || at === all.findIndex((j) => j.binding?.name === name));
+    arr<Record<string, any>>(node.inlines).find((i) => i.binding?.name === name)!.binding.expr = `mul(${expr},2)`;
+    const out = m.session.dispatch('write', { turnId: 'turn-z', editorId: 'ed', target: { type: 'envelope', id: 'e' }, input: { intent: 'Write the formula out again.', scope: { ids: [paragraph.id] }, changes: [{ kind: 'replace', id: paragraph.id, base: baseOf(paragraph), node }] } });
+    if (out.status !== 'ok' || !out.result.ok) throw new Error(JSON.stringify(out).slice(0, 800));
+    expect(docxPack.bindingErrors?.(m.session.state.view)).toEqual([]);
+  });
+
+  it('written back with both copies, it is refused as two definitions, not as removed values', () => {
+    const { m, control, expr } = rewrite('turn-u');
+    const paragraph = m.session.state.view.placement(control.id)?.parent as NfNode;
+    const { name } = control.binding as { name: string };
+    const node = JSON.parse(JSON.stringify(paragraph, (k, v) => (['id', 'pending'].includes(k) ? undefined : v)));
+    const copies = arr<Record<string, any>>(node.inlines).filter((i) => i.binding?.name === name);
+    expect(copies).toHaveLength(2);
+    copies[1].binding.expr = `mul(${expr},2)`;
+    const out = m.session.dispatch('write', { turnId: 'turn-v', editorId: 'ed', target: { type: 'envelope', id: 'e' }, input: { intent: 'Write the formula out again.', scope: { ids: [paragraph.id] }, changes: [{ kind: 'replace', id: paragraph.id, base: baseOf(paragraph), node }] } });
+    const refusal = (out as { result?: { refusal?: { invariant?: string; destroyed?: string } } }).result?.refusal;
+    expect(refusal?.invariant).not.toBe('orphaned-dependents');
+    expect(refusal?.destroyed).toContain('conflicting-definition');
+  });
+
+  it('rewritten through the table row holding it, a total in a cell, it lands with no binding errors', () => {
+    const m = mount();
+    const view = m.session.state.view;
+    const nameOf = (n: NfNode) => (n.binding as { name?: unknown } | undefined)?.name;
+    const control = view.nodes().find((n) => n.kind === 'control' && typeof (n.binding as { expr?: unknown } | undefined)?.expr === 'string' && view.nodes().filter((o) => o.kind === 'control' && nameOf(o) === nameOf(n)).length === 1 && view.placement(n.id)?.parent?.kind === 'paragraph') as NfNode;
+    const inRow = (n: NfNode) => {
+      for (let p = view.placement(n.id)?.parent; p; p = view.placement(p.id)?.parent) if (p.kind === 'row') return p;
+      return undefined;
+    };
+    const row = inRow(control) as NfNode;
+    const { name, expr } = control.binding as { name: string; expr: string };
+    const node = JSON.parse(JSON.stringify(row, (k, v) => (['id', 'pending'].includes(k) ? undefined : v)));
+    const rewrite = (n: any): void => {
+      if (n?.binding?.name === name) n.binding.expr = `mul(${expr},2)`;
+      for (const v of Object.values(n ?? {})) if (v && typeof v === 'object') rewrite(v);
+    };
+    rewrite(node);
+    const out = m.session.dispatch('write', { turnId: 'turn-c', editorId: 'ed', target: { type: 'envelope', id: 'e' }, input: { intent: 'Rewrite the row.', scope: { ids: [row.id] }, changes: [{ kind: 'replace', id: row.id, base: baseOf(row), node }] } });
+    if (out.status !== 'ok' || !out.result.ok) throw new Error(JSON.stringify(out).slice(0, 800));
+    expect(docxPack.bindingErrors?.(m.session.state.view)).toEqual([]);
+  });
+
+  it('its reject restores the original formula as the only field of that name', () => {
+    const { m, original, formulasNamed } = rewrite('turn-x');
+    expect(m.session.resolveCards(['turn-x'], false)).toBe(true);
+    expect(formulasNamed()).toEqual(original);
+  });
+});
+
+describe('a section rewritten without its ids', () => {
+  it('keeps its bound table whole, so the formulas over it still evaluate', () => {
+    const m = mount();
+    const view = m.session.state.view;
+    const table = view.nodes().find((n) => n.kind === 'control' && (n.binding as { table?: unknown } | undefined)?.table !== undefined) as NfNode;
+    let section: NfNode | undefined = table;
+    while (section && section.kind !== 'section') section = view.placement(section.id)?.parent ?? undefined;
+    const node = JSON.parse(JSON.stringify(section, (k, v) => (['id', 'pending'].includes(k) ? undefined : v)));
+    const out = m.session.dispatch('write', { turnId: 'turn-s', editorId: 'ed', target: { type: 'envelope', id: 'e' }, input: { intent: 'Rewrite the section.', scope: { ids: [section!.id] }, changes: [{ kind: 'replace', id: section!.id, base: baseOf(section!), node }] } });
+    if (out.status !== 'ok' || !out.result.ok) throw new Error(JSON.stringify(out).slice(0, 800));
+    expect(docxPack.bindingErrors?.(m.session.state.view).filter((e) => e.code === 'evaluation-failed')).toEqual([]);
+  });
+});
+
 describe('move pairs are the moves a change set recorded, never equal content (review regression)', () => {
   const para = (name: string, text = 'Same') => ({ inlines: [{ bookmarkType: 0, name }, { text }, { bookmarkType: 1, name }] });
   const mountDoc = (blocks: unknown[]) => {

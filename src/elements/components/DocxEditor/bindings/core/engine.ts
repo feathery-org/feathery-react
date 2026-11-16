@@ -130,11 +130,13 @@ export function hasBlockingErrors(diagnostics: Diagnostic[]): boolean {
  */
 function readValues(
   index: BindingIndex,
-  diagnostics: Diagnostic[]
+  diagnostics: Diagnostic[],
+  replaced: ReadonlySet<string> = new Set()
 ): { values: Map<string, string>; errors: Set<string> } {
   const values = new Map<string, string>();
   const errors = new Set<string>();
   for (const occurrence of index.occurrences) {
+    if (replaced.has(occurrence.key)) continue;
     // A blank number is a valid value, not an input error
     if (isNumericType(occurrence.def.fieldType) && !occurrence.text.trim()) {
       values.set(occurrence.key, '');
@@ -329,12 +331,30 @@ export function applyRules(
   if (next !== sfdt) index = scanBindings(next);
   diagnostics.push(...index.diagnostics);
 
-  const { values, errors } = readValues(index, diagnostics);
+  // A field copy Robin deleted is on its way out while a live copy speaks for the name
+  const robinDeletions = new Set(
+    [...deletedRevisions].filter((id) => groupedRevisions.has(id))
+  );
+  const copiesPendingDeletion = (from: BindingIndex) => {
+    const pending = new Set<string>();
+    for (const occurrences of from.fields.values()) {
+      if (!occurrences.some((occurrence) => !textDeleted(occurrence))) continue;
+      for (const occurrence of occurrences) {
+        if (!textDeleted(occurrence)) continue;
+        if (referencesRevisionId(getAt(next, occurrence.path), robinDeletions))
+          pending.add(occurrence.key);
+      }
+    }
+    return pending;
+  };
+  const replaced = copiesPendingDeletion(index);
+  const { values, errors } = readValues(index, diagnostics, replaced);
 
   /* ---- 1. document-field change detection and fan-out ---- */
   for (const [name, occurrences] of index.fields) {
     const parsed = occurrences.filter(
-      (occurrence) => !errors.has(occurrence.key)
+      (occurrence) =>
+        !errors.has(occurrence.key) && !replaced.has(occurrence.key)
     );
     if (!parsed.length) continue;
     // The edits this snapshot actually contains. Fanning one out is how a
@@ -495,8 +515,11 @@ export function applyRules(
       continue;
     }
     const id = nodeId(occurrence);
-    // A repeated doc-level formula is one node with many occurrences.
-    if (nodes.has(id)) continue;
+    // A repeated doc-level formula is one node with many occurrences, defined by a live one when
+    // another is pending deletion
+    const defined = nodes.get(id);
+    if (defined && !(textDeleted(defined.occ) && !textDeleted(occurrence)))
+      continue;
     nodes.set(id, { occ: occurrence, ast, deps: new Set() });
   }
 
@@ -774,7 +797,7 @@ export function applyRules(
 
   if (next !== sfdt) {
     index = scanBindings(next);
-    const reread = readValues(index, []);
+    const reread = readValues(index, [], copiesPendingDeletion(index));
     return {
       sfdt: next,
       index,
