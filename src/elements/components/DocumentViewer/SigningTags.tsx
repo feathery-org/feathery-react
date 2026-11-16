@@ -29,6 +29,7 @@ interface SignerColor {
 
 // One per recipient, in recipient order, cycling past the last. Light fills
 // with a darker edge of the same hue, the way DocuSign tints its own tags.
+// On the page the fill is see-through, so a tag never hides what it covers.
 const SIGNER_COLORS: SignerColor[] = [
   { fill: '#bfe6f7', border: '#1a9ed9' },
   { fill: '#b9edd3', border: '#17a567' },
@@ -40,6 +41,31 @@ const SIGNER_COLORS: SignerColor[] = [
 
 export const signerColor = (signer: number): SignerColor =>
   SIGNER_COLORS[signer % SIGNER_COLORS.length];
+
+const TAG_FILL_ALPHA = '99';
+const SIGNER_ATTR = 'data-signing-signer';
+
+/** Moves to a recipient's next tag under `container`, in reading order and
+ * wrapping at the end, and returns its position; -1 when they have none.
+ * `after` is the position returned last time. */
+export function focusNextSignerTag(
+  container: HTMLElement,
+  signer: number,
+  after: number,
+  smooth: boolean
+): number {
+  const tags = Array.from(
+    container.querySelectorAll<HTMLElement>(`[${SIGNER_ATTR}="${signer}"]`)
+  )
+    .map((el) => ({ el, rect: el.getBoundingClientRect() }))
+    .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
+  if (!tags.length) return -1;
+  const next = (after + 1) % tags.length;
+  const { el } = tags[next];
+  el.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'center' });
+  el.focus({ preventScroll: true });
+  return next;
+}
 
 const TAG_LABEL: Record<SigningTagType, string> = {
   sign_here: 'Sign',
@@ -98,7 +124,9 @@ export function SigningTagLayer({
             role='img'
             aria-label={label}
             title={label}
+            tabIndex={-1}
             data-signing-tag={tag.type}
+            data-signing-signer={tag.signer}
             css={{
               position: 'absolute',
               left: tag.x * scale,
@@ -111,9 +139,11 @@ export function SigningTagLayer({
               alignItems: 'center',
               justifyContent: 'center',
               padding: isDate ? `0 ${height * 0.35}px` : 0,
-              backgroundColor: fill,
+              backgroundColor: `${fill}${TAG_FILL_ALPHA}`,
               border: `1px solid ${border}`,
               borderRadius: 3,
+              outline: 'none',
+              '&:focus': { boxShadow: `0 0 0 3px ${border}` },
               color: color.text,
               fontFamily: 'Arial, Helvetica, sans-serif',
               fontSize: isDate ? height * 0.68 : height * 0.22,
@@ -137,14 +167,21 @@ export function SigningTagLayer({
 interface SignerLegendProps {
   signers: SigningRecipient[];
   tags: SigningTag[];
+  // Pressing a recipient steps to their next tag.
+  onJump: (signer: number) => void;
 }
 
-/** Which color is which recipient. Lists only recipients with a tag somewhere
- * in the packet, keeping each one's own color. */
-export function SignerLegend({ signers, tags }: SignerLegendProps) {
-  const tagged = Array.from(new Set(tags.map((tag) => tag.signer))).sort(
-    (a, b) => a - b
-  );
+/** Which color is which recipient, and a way through each one's tags. Lists
+ * only recipients with a tag somewhere in the packet, keeping each one's own
+ * color. */
+export function SignerLegend({ signers, tags, onJump }: SignerLegendProps) {
+  const counts: Record<number, number> = {};
+  tags.forEach((tag) => {
+    counts[tag.signer] = (counts[tag.signer] ?? 0) + 1;
+  });
+  const tagged = Object.keys(counts)
+    .map(Number)
+    .sort((a, b) => a - b);
   if (!tagged.length) return null;
   return (
     <ul
@@ -154,9 +191,9 @@ export function SignerLegend({ signers, tags }: SignerLegendProps) {
         display: 'flex',
         flexWrap: 'wrap',
         alignItems: 'center',
-        gap: '6px 16px',
+        gap: '4px 8px',
         margin: 0,
-        padding: '8px 24px',
+        padding: '6px 24px',
         listStyle: 'none',
         backgroundColor: color.surface,
         borderBottom: `1px solid ${color.border}`,
@@ -168,22 +205,42 @@ export function SignerLegend({ signers, tags }: SignerLegendProps) {
       {tagged.map((signer) => {
         const { fill, border } = signerColor(signer);
         return (
-          <li
-            key={signer}
-            css={{ display: 'flex', alignItems: 'center', gap: 6 }}
-          >
-            <span
-              aria-hidden='true'
+          <li key={signer}>
+            <button
+              type='button'
+              title={`Go to the next field for ${signerName(signers, signer)}`}
+              onClick={() => onJump(signer)}
               css={{
-                width: 12,
-                height: 12,
-                boxSizing: 'border-box',
-                borderRadius: radius.sm / 2,
-                backgroundColor: fill,
-                border: `1px solid ${border}`
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 8px',
+                border: '1px solid transparent',
+                borderRadius: radius.sm,
+                background: 'none',
+                color: 'inherit',
+                font: 'inherit',
+                cursor: 'pointer',
+                '&:hover': { backgroundColor: color.surfaceHover },
+                '&:focus-visible': { borderColor: border, outline: 'none' }
               }}
-            />
-            {signerName(signers, signer)}
+            >
+              <span
+                aria-hidden='true'
+                css={{
+                  width: 12,
+                  height: 12,
+                  boxSizing: 'border-box',
+                  borderRadius: radius.sm / 2,
+                  backgroundColor: fill,
+                  border: `1px solid ${border}`
+                }}
+              />
+              {signerName(signers, signer)}
+              <span css={{ color: color.textMuted, fontSize: fontSize.sm }}>
+                {counts[signer]}
+              </span>
+            </button>
           </li>
         );
       })}

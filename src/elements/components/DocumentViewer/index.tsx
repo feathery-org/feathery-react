@@ -7,7 +7,12 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import DocumentCanvas from './DocumentCanvas';
-import { SignerLegend, SigningRecipient, SigningTag } from './SigningTags';
+import {
+  focusNextSignerTag,
+  SignerLegend,
+  SigningRecipient,
+  SigningTag
+} from './SigningTags';
 import Toolbar, { ToolbarAction } from './Toolbar';
 import { useActivePage, pageKey } from './useActivePage';
 import { useIsNarrowViewport } from './useIsNarrowViewport';
@@ -430,6 +435,22 @@ export default function DocumentViewer({
     [payload.documents]
   );
 
+  // Where each recipient's last jump landed, so the next press moves on.
+  const signerJumps = useRef<Record<number, number>>({});
+  const onSignerJump = useCallback((signer: number) => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const reduceMotion = featheryWindow().matchMedia?.(
+      '(prefers-reduced-motion: reduce)'
+    ).matches;
+    signerJumps.current[signer] = focusNextSignerTag(
+      container,
+      signer,
+      signerJumps.current[signer] ?? -1,
+      !reduceMotion
+    );
+  }, []);
+
   const onDocLoad = useCallback((pdfUrl: string, pdfProxy: any) => {
     loadedDocs.current[pdfUrl] = pdfProxy;
     const storage = pdfProxy.annotationStorage;
@@ -618,7 +639,11 @@ export default function DocumentViewer({
             flexDirection: 'column'
           }}
         >
-          <SignerLegend signers={payload.signers ?? []} tags={signingTags} />
+          <SignerLegend
+            signers={payload.signers ?? []}
+            tags={signingTags}
+            onJump={onSignerJump}
+          />
           <div
             ref={scrollContainerRef}
             css={{ flex: 1, overflow: 'auto', padding: 24 }}
