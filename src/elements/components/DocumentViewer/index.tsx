@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 import DocumentCanvas from './DocumentCanvas';
+import { SignerLegend, SigningRecipient, SigningTag } from './SigningTags';
 import Toolbar, { ToolbarAction } from './Toolbar';
 import { useActivePage, pageKey } from './useActivePage';
 import { useIsNarrowViewport } from './useIsNarrowViewport';
@@ -91,6 +92,9 @@ export interface ViewerDocument {
   // The filler's own signing token, present only when they sign this one.
   signer_id?: string | null;
   name?: string;
+  // Where DocuSign's recipients sign this document, when the toolbar signs
+  // through DocuSign.
+  signing_tags?: SigningTag[];
 }
 
 // With `editor_close_on_action: false` a closing action leaves the screen open,
@@ -194,6 +198,8 @@ export const isToolbarActionDisabled = (
 
 export interface DocumentViewerPayload {
   documents: ViewerDocument[];
+  // The packet's DocuSign recipients, named by position in `signing_tags`.
+  signers?: SigningRecipient[];
   expires_at: string;
 }
 
@@ -419,6 +425,11 @@ export default function DocumentViewer({
   // edited again goes dirty again.
   const dirtyDocs = useRef<Set<string>>(new Set());
 
+  const signingTags = useMemo(
+    () => payload.documents.flatMap((doc) => doc.signing_tags ?? []),
+    [payload.documents]
+  );
+
   const onDocLoad = useCallback((pdfUrl: string, pdfProxy: any) => {
     loadedDocs.current[pdfUrl] = pdfProxy;
     const storage = pdfProxy.annotationStorage;
@@ -600,18 +611,29 @@ export default function DocumentViewer({
           isNarrow={isNarrow}
         />
         <div
-          ref={scrollContainerRef}
-          css={{ flex: 1, overflow: 'auto', padding: 24 }}
+          css={{
+            flex: 1,
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column'
+          }}
         >
-          <DocumentCanvas
-            documents={payload.documents}
-            pageWidth={pageWidth}
-            onDocLoad={onDocLoad}
-            onUserEdit={onUserEdit}
-            registerPageRef={registerPageRef}
-            inputLocked={isInputLocked}
-            readOnly={readOnly}
-          />
+          <SignerLegend signers={payload.signers ?? []} tags={signingTags} />
+          <div
+            ref={scrollContainerRef}
+            css={{ flex: 1, overflow: 'auto', padding: 24 }}
+          >
+            <DocumentCanvas
+              documents={payload.documents}
+              signers={payload.signers}
+              pageWidth={pageWidth}
+              onDocLoad={onDocLoad}
+              onUserEdit={onUserEdit}
+              registerPageRef={registerPageRef}
+              inputLocked={isInputLocked}
+              readOnly={readOnly}
+            />
+          </div>
         </div>
       </div>
     </div>,
