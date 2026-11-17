@@ -246,6 +246,52 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
     });
   });
 
+  describe('print', () => {
+    const renderWithToolbar = (editorToolbarActions: string[]) =>
+      render(
+        <DocumentViewer
+          payload={basePayload}
+          action={{
+            envelope_action: 'open_in_editor',
+            editor_toolbar_actions: editorToolbarActions
+          }}
+          setShow={jest.fn()}
+          onComplete={jest.fn()}
+          onFinalize={jest.fn()}
+        />
+      );
+
+    it('offers Print beside the finalize actions when configured', () => {
+      renderWithToolbar(['print', 'download']);
+      const labels = screen
+        .getAllByRole('button')
+        .map((b) => b.textContent)
+        .filter((t) => t === 'Print' || t === 'Download');
+      expect(labels).toEqual(['Print', 'Download']);
+    });
+
+    it('keeps Continue when Print is the only configured action', () => {
+      renderWithToolbar(['print']);
+      expect(screen.getByRole('button', { name: 'Print' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Continue' })
+      ).toBeInTheDocument();
+    });
+
+    it('disables Print until every document has loaded', () => {
+      // pdf.js never resolves in these tests, so no document loads.
+      renderWithToolbar(['print']);
+      expect(screen.getByRole('button', { name: 'Print' })).toBeDisabled();
+    });
+
+    it('omits Print unless configured', () => {
+      renderWithToolbar(['download']);
+      expect(
+        screen.queryByRole('button', { name: 'Print' })
+      ).not.toBeInTheDocument();
+    });
+  });
+
   // The editor must not close on a non-conclusive action, or pressing Download
   // would strand a configured Sign the filler never got to press.
   describe('exit behaviour', () => {
