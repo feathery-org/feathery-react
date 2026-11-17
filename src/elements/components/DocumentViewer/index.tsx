@@ -334,7 +334,7 @@ export default function DocumentViewer({
     scrollContainerRef,
     pageOrder
   );
-  const isNarrow = useIsNarrowViewport();
+  const isNarrow = useIsNarrowViewport(embedded ? containerRef : undefined);
   const pageEntriesRef = useRef(pageEntries);
   pageEntriesRef.current = pageEntries;
   const activeKeyRef = useRef(activeKey);
@@ -443,11 +443,12 @@ export default function DocumentViewer({
     [payload.documents]
   );
 
-  // Documents with field edits not yet saved to their envelope. Tracked via
-  // pdf.js's annotationStorage modified flag: set on the first widget change,
-  // cleared by saveDocument()/resetModified() — so a doc saved once and then
-  // edited again goes dirty again.
+  // Docs whose pdf.js storage changed since the last save (modified flag).
+  // pdf.js also writes storage while rendering, so this alone isn't an edit.
   const dirtyDocs = useRef<Set<string>>(new Set());
+  // Docs the filler edited since the last save. Only these are saved, and
+  // they alone drive the host's leave prompt.
+  const editedDocs = useRef<Set<string>>(new Set());
   // Read by the once-bound storage callbacks below.
   const onDirtyChangeRef = useRef(onDirtyChange);
   onDirtyChangeRef.current = onDirtyChange;
@@ -477,45 +478,41 @@ export default function DocumentViewer({
     loadedDocs.current[pdfUrl] = pdfProxy;
     const storage = pdfProxy.annotationStorage;
     if (storage) {
-      // Not reported as dirty here: pdf.js also writes storage while
-      // rendering. onUserEdit reports the filler's own edits.
       storage.onSetModified = () => dirtyDocs.current.add(pdfUrl);
-      storage.onResetModified = () => {
-        dirtyDocs.current.delete(pdfUrl);
-        onDirtyChangeRef.current?.(dirtyDocs.current.size > 0);
-      };
+      storage.onResetModified = () => dirtyDocs.current.delete(pdfUrl);
     }
     setPageCounts((prev) => ({ ...prev, [pdfUrl]: pdfProxy.numPages }));
   }, []);
 
-  // Write each dirty document's edited field values into its PDF
-  // (pdf.js saveDocument serializes annotationStorage into the AcroForm) and
-  // persist it to the envelope, so every finalize outcome — download, sign,
-  // save — acts on what the filler sees. saveDocument resets the storage's
-  // modified flag, which clears the doc from dirtyDocs via onResetModified.
+  // Write each edited document's field values into its PDF (pdf.js
+  // saveDocument serializes annotationStorage into the AcroForm) and persist
+  // it to the envelope, so every finalize outcome acts on what the filler sees.
   const saveEditedDocuments = async () => {
     if (!onSaveEnvelopeFile || readOnly) return;
     for (const doc of payload.documents) {
-      if (!doc.envelope_id || !dirtyDocs.current.has(doc.pdf_url)) continue;
+      if (!doc.envelope_id || !editedDocs.current.has(doc.pdf_url)) continue;
       const pdfProxy = loadedDocs.current[doc.pdf_url];
       if (!pdfProxy) continue;
-      try {
-        const bytes = await pdfProxy.saveDocument();
-        await onSaveEnvelopeFile(
-          doc.envelope_id,
-          new Blob([bytes], { type: 'application/pdf' })
-        );
-      } catch (e) {
-        // pdf.js resets the modified flag in saveDocument()'s finally — even
-        // when the save itself rejects — so by now onResetModified has already
-        // dropped the doc from dirtyDocs. Put it back, whichever step failed,
-        // so retrying the toolbar action re-saves it instead of skipping it
-        // and finalizing the unedited file.
-        dirtyDocs.current.add(doc.pdf_url);
-        onDirtyChangeRef.current?.(true);
-        throw e;
+      // An edit that never reached storage (typed then reverted) has nothing
+      // to save, but is settled all the same.
+      if (dirtyDocs.current.has(doc.pdf_url)) {
+        try {
+          const bytes = await pdfProxy.saveDocument();
+          await onSaveEnvelopeFile(
+            doc.envelope_id,
+            new Blob([bytes], { type: 'application/pdf' })
+          );
+        } catch (e) {
+          // saveDocument() resets the modified flag even when it rejects, so
+          // re-mark the doc for the retry to re-save it.
+          dirtyDocs.current.add(doc.pdf_url);
+          onDirtyChangeRef.current?.(true);
+          throw e;
+        }
       }
+      editedDocs.current.delete(doc.pdf_url);
     }
+    onDirtyChangeRef.current?.(editedDocs.current.size > 0);
   };
 
   // The host re-saves through this before replacing the documents, so its
@@ -532,7 +529,8 @@ export default function DocumentViewer({
     };
   }, [onBeforeReplaceReady]);
 
-  const onUserEdit = useCallback(() => {
+  const onUserEdit = useCallback((pdfUrl: string) => {
+    editedDocs.current.add(pdfUrl);
     setSession((s) => ({ ...s, editRevision: s.editRevision + 1 }));
     onDirtyChangeRef.current?.(true);
   }, []);
@@ -629,6 +627,9 @@ export default function DocumentViewer({
         disabled: isToolbarActionDisabled(session, toolbarAction),
         onClick: () => finalizeWith(toolbarAction, toolbarAction)
       }))
+    : embedded && readOnly
+    ? // Nothing to save and nothing to resume.
+      []
     : [
         {
           key: 'primary',
@@ -647,7 +648,11 @@ export default function DocumentViewer({
         busyKey={busyKey}
       />
       {expiredBanner && (
-        <AlertBanner message='This session has expired. Please close and reopen the viewer.' />
+        <AlertBanner
+          message={`This session has expired. Please ${
+            embedded ? 'reload the page' : 'close and reopen the viewer'
+          }.`}
+        />
       )}
       {error && <AlertBanner message={error} onDismiss={() => setError('')} />}
       <div css={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
@@ -700,7 +705,10 @@ export default function DocumentViewer({
 
   if (embedded) {
     return (
-      <div css={{ ...surfaceCss, width: '100%', height: '100%', minHeight: 0 }}>
+      <div
+        ref={containerRef}
+        css={{ ...surfaceCss, width: '100%', height: '100%', minHeight: 0 }}
+      >
         {content}
       </div>
     );

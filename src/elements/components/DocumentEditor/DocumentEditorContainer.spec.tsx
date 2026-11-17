@@ -221,7 +221,8 @@ jest.mock('../DocumentViewer', () => {
       {
         'data-testid': `pdf-viewer:${doc.pdf_url}`,
         'data-embedded': String(!!embedded),
-        'data-read-only': String(!!action.editor_read_only)
+        'data-read-only': String(!!action.editor_read_only),
+        'data-toolbar': (action.editor_toolbar_actions ?? []).join(',')
       },
       ['sign', 'download', 'save'].map((envelopeAction) =>
         React.createElement('button', {
@@ -254,7 +255,6 @@ const mockSubmitCustom = jest.fn().mockResolvedValue(undefined);
 const mockRestoreEnvelopeVersion = jest
   .fn()
   .mockResolvedValue({ id: 'e', file: 'restored.docx', editor_file: null });
-const mockSubmitCustom = jest.fn().mockResolvedValue({});
 jest.mock('../../../utils/featheryClient', () => ({
   __esModule: true,
   API_URL: 'https://api.test/',
@@ -1361,6 +1361,49 @@ describe('DocumentEditorContainer signing outcomes', () => {
       });
 
       expect(mockPdfBeforeReplace).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the edited document when its save fails before a regenerate', async () => {
+      seedPdf();
+      const { getByTestId, queryByTestId } = mount();
+      await waitFor(() =>
+        expect(getByTestId(`pdf-viewer:${PDF}`)).toBeTruthy()
+      );
+      mockPdfBeforeReplace.mockRejectedValueOnce(new Error('save failed'));
+
+      await act(async () => {
+        featheryWindow().dispatchEvent(
+          new CustomEvent('feathery-docx-editor-refresh', {
+            detail: {
+              containerId: CONTAINER,
+              documents: [`document-${CONTAINER}`],
+              envelopes: [
+                {
+                  id: 'replacement',
+                  document: `document-${CONTAINER}`,
+                  file: 'https://x/replacement.pdf',
+                  type: 'pdf'
+                }
+              ]
+            }
+          })
+        );
+      });
+
+      expect(getByTestId(`pdf-viewer:${PDF}`)).toBeTruthy();
+      expect(queryByTestId('pdf-viewer:https://x/replacement.pdf')).toBeNull();
+    });
+
+    it('offers Create Draft only for DocuSign', async () => {
+      seedPdf({ editor_toolbar_actions: ['draft', 'download'] });
+      const { getByTestId } = mount();
+
+      await waitFor(() =>
+        expect(getByTestId(`pdf-viewer:${PDF}`)).toHaveAttribute(
+          'data-toolbar',
+          'download'
+        )
+      );
     });
 
     it('shows read-only when finalized in an earlier session', async () => {

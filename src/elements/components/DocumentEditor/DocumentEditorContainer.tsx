@@ -327,6 +327,30 @@ export default function DocumentEditorContainer({
   const bindingValuesRef = useRef<Record<string, string | null>>({});
   const pendingWritebackRef = useRef<Record<string, any>>({});
 
+  // Writes a save's field values to the form, skipping ones it already holds.
+  const writeBackFields = useCallback(
+    async (values: Record<string, any>) => {
+      const newValues = { ...values };
+      for (const name of Object.keys(newValues)) {
+        // A blank field holds '' and a blank number binding null, the same value
+        if (
+          (fieldValues[name] ?? '') === (newValues[name] ?? '') &&
+          !(name in pendingWritebackRef.current)
+        )
+          delete newValues[name];
+      }
+      if (!Object.keys(newValues).length) return;
+      Object.assign(pendingWritebackRef.current, newValues);
+      setFieldValues(newValues, true, true);
+      await client.submitCustom(newValues);
+      for (const [name, value] of Object.entries(newValues)) {
+        if (pendingWritebackRef.current[name] === value)
+          delete pendingWritebackRef.current[name];
+      }
+    },
+    [client]
+  );
+
   const saveEnvelope = useCallback(
     async (blob: Blob, meta?: DocxSaveMeta) => {
       if (!envelope) return;
@@ -366,27 +390,11 @@ export default function DocumentEditorContainer({
       for (const [name, value] of Object.entries(savedBindings)) {
         if (name in fieldValues) newValues[name] = value;
       }
-      for (const name of Object.keys(newValues)) {
-        // A blank field holds '' and a blank number binding null, the same value
-        if (
-          (fieldValues[name] ?? '') === (newValues[name] ?? '') &&
-          !(name in pendingWritebackRef.current)
-        )
-          delete newValues[name];
-      }
-      if (Object.keys(newValues).length) {
-        Object.assign(pendingWritebackRef.current, newValues);
-        setFieldValues(newValues, true, true);
-        await client.submitCustom(newValues);
-        for (const [name, value] of Object.entries(newValues)) {
-          if (pendingWritebackRef.current[name] === value)
-            delete pendingWritebackRef.current[name];
-        }
-      }
+      await writeBackFields(newValues);
       setOperationError(null);
       return updated;
     },
-    [client, envelope, targetAction, savesToField]
+    [client, envelope, targetAction, savesToField, writeBackFields]
   );
 
   // The version-history I/O adapter DocxEditor injects into its session hook.
@@ -685,23 +693,19 @@ export default function DocumentEditorContainer({
     [envelope, formId, targetAction, containerId]
   );
 
-  // The PDF viewer's save refreshes the envelope's file URL, and its toolbar
-  // outcomes run straight after that save, before a re-render could hand them
-  // the new envelope.
+  // The PDF viewer's toolbar outcomes run straight after its save, before a
+  // re-render could hand them the saved file URL.
   const pdfFileRef = useRef<string | null>(null);
-  pdfFileRef.current = envelope?.file ?? null;
+  useEffect(() => {
+    pdfFileRef.current = envelope?.file ?? null;
+  }, [envelope?.file]);
   const savePdfEnvelopeFile = useCallback(
-    async (id: string, file: Blob) => {
-      const updated = await client.saveEnvelopeFile(id, file, 'document.pdf');
-      if (updated?.file) {
-        pdfFileRef.current = updated.file;
-        setEnvelope((current) =>
-          current?.id === id ? { ...current, file: updated.file } : current
-        );
-      }
+    async (_id: string, file: Blob) => {
+      const updated = await saveEnvelope(file);
+      if (updated?.file) pdfFileRef.current = updated.file;
       return updated;
     },
-    [client, setEnvelope]
+    [saveEnvelope]
   );
   // The PDF viewer's toolbar, run against this container's one envelope: the
   // same outcomes the docx toolbar offers. Its edits are already saved.
@@ -721,15 +725,26 @@ export default function DocumentEditorContainer({
         fireReviewAction('download', { files: [file] });
       } else if (envelopeAction === 'save' && file) {
         const fieldKey = targetAction?.save_document_field_key;
-        if (fieldKey) {
-          setFieldValues({ [fieldKey]: file }, true, true);
-          await client.submitCustom({ [fieldKey]: file });
-        }
+        if (!fieldKey) return;
+        await writeBackFields({ [fieldKey]: file });
         fireReviewAction('save', { files: [file] });
       }
     },
-    [client, runSigningAction, fireReviewAction, targetAction]
+    [runSigningAction, fireReviewAction, targetAction, writeBackFields]
   );
+  // Create Draft needs DocuSign (as in containerToolbarOutcomes). Once
+  // finalized this session the document is out: read-only, Sign kept to retry.
+  const pdfAction = useMemo(() => {
+    const base = targetAction ?? {};
+    const toolbar: string[] = base.editor_toolbar_actions ?? [];
+    return {
+      ...base,
+      editor_toolbar_actions: toolbar.filter(
+        (a) => a !== 'draft' || base.sign_method === 'docusign'
+      ),
+      ...(finalized ? { editor_read_only: true } : {})
+    };
+  }, [targetAction, finalized]);
   const pdfPayload = useMemo<DocumentViewerPayload | null>(
     () =>
       envelopeId && sourceUrl
@@ -933,10 +948,8 @@ export default function DocumentEditorContainer({
       editorWrap
     );
   }
-  // A PDF not yet sent, signed or finalized in an earlier session opens in the
-  // fillable PDF viewer, with the same toolbar outcomes as the docx editor. Its
-  // URL is the one loaded, not the one a save refreshes, so saving doesn't
-  // reload the document.
+  // An unsent, unsigned, unfinalized PDF opens in the fillable viewer. Its URL
+  // is the loaded one, so a save doesn't reload the document.
   if (
     envelope.type === 'pdf' &&
     !envelope.signed &&
@@ -950,13 +963,7 @@ export default function DocumentEditorContainer({
         // A regenerate reloads it; a save leaves it be.
         key={`${envelope.id}:${reloadKey}`}
         payload={pdfPayload}
-        // Finalized this session (e.g. a DocuSign draft): edits would change a
-        // document that's already out, but Sign stays to retry or send.
-        action={
-          finalized
-            ? { ...targetAction, editor_read_only: true }
-            : targetAction ?? {}
-        }
+        action={pdfAction}
         onFinalize={finalizePdfReview}
         onSaveEnvelopeFile={readOnly ? undefined : savePdfEnvelopeFile}
         onDirtyChange={readOnly ? undefined : onPdfDirtyChange}

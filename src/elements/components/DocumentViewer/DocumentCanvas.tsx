@@ -34,7 +34,7 @@ interface DocumentCanvasProps {
   // Fires when the filler edits a form widget. pdf.js writes widget values on
   // these DOM events (text and choice on `input`, checkbox and radio on
   // `change`), never on render.
-  onUserEdit?: () => void;
+  onUserEdit?: (pdfUrl: string) => void;
   registerPageRef: (
     pdfUrl: string,
     pageIndex: number,
@@ -182,11 +182,16 @@ export default function DocumentCanvas({
     if (!root || !onUserEdit) return undefined;
     // User-only because pdf.js 5.4.296 dispatches no input/change while
     // rendering (only `resetform`). Recheck on a pdf.js upgrade.
-    root.addEventListener('input', onUserEdit);
-    root.addEventListener('change', onUserEdit);
+    const onEdit = (e: Event) => {
+      const page = (e.target as Element | null)?.closest?.('[data-pdf-url]');
+      const pdfUrl = page?.getAttribute('data-pdf-url');
+      if (pdfUrl) onUserEdit(pdfUrl);
+    };
+    root.addEventListener('input', onEdit);
+    root.addEventListener('change', onEdit);
     return () => {
-      root.removeEventListener('input', onUserEdit);
-      root.removeEventListener('change', onUserEdit);
+      root.removeEventListener('input', onEdit);
+      root.removeEventListener('change', onEdit);
     };
   }, [onUserEdit]);
 
@@ -320,6 +325,7 @@ function DocumentPages({
         <div
           key={pageIndex}
           ref={(el) => registerPageRef(pdfUrl, pageIndex, el)}
+          data-pdf-url={pdfUrl}
         >
           <PdfPage
             pdfProxy={pdfProxy}

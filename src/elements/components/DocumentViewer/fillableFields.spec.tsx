@@ -140,6 +140,57 @@ const waitForIdleToolbar = async () => {
   );
 };
 
+const widgetOf = (pdfUrl: string) =>
+  featheryDoc().querySelector(`[data-pdf-url="${pdfUrl}"] input`);
+
+// The filler types into a document's widget, which writes its storage.
+const editDocument = async (pdfUrl: string) => {
+  await waitFor(() => expect(widgetOf(pdfUrl)).not.toBeNull());
+  fireEvent.input(widgetOf(pdfUrl) as Element);
+};
+
+it('does not save a document that only pdf.js wrote while rendering', async () => {
+  const proxyA = makePdfProxy();
+  const proxyB = makePdfProxy();
+  const onDirtyChange = jest.fn();
+  const { onFinalize, onSaveEnvelopeFile } = renderViewer(
+    { 'http://x/a.pdf': proxyA, 'http://x/b.pdf': proxyB },
+    { onDirtyChange }
+  );
+  await waitForLoad(proxyA, proxyB);
+
+  // A prefilled radio group's render writes storage with no edit.
+  proxyA.annotationStorage.onSetModified();
+  fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+  await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
+
+  expect(proxyA.saveDocument).not.toHaveBeenCalled();
+  expect(onSaveEnvelopeFile).not.toHaveBeenCalled();
+  expect(onDirtyChange).not.toHaveBeenCalledWith(true);
+});
+
+it('clears the dirty state for an edit that never reached storage', async () => {
+  const proxyA = makePdfProxy();
+  const proxyB = makePdfProxy();
+  const onDirtyChange = jest.fn();
+  const { onFinalize, onSaveEnvelopeFile } = renderViewer(
+    { 'http://x/a.pdf': proxyA, 'http://x/b.pdf': proxyB },
+    { onDirtyChange }
+  );
+  await waitForLoad(proxyA, proxyB);
+
+  // Typed then reverted: an input event, but storage ends unchanged.
+  await waitFor(() => expect(widgetOf('http://x/a.pdf')).not.toBeNull());
+  fireEvent.change(widgetOf('http://x/a.pdf') as Element);
+  expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+  await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
+
+  expect(onSaveEnvelopeFile).not.toHaveBeenCalled();
+  expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+});
+
 it('saves only the edited documents to their envelopes before finalizing', async () => {
   const proxyA = makePdfProxy();
   const proxyB = makePdfProxy();
@@ -150,7 +201,7 @@ it('saves only the edited documents to their envelopes before finalizing', async
   await waitForLoad(proxyA, proxyB);
 
   // The filler edits a widget in document A only.
-  proxyA.annotationStorage.onSetModified();
+  await editDocument('http://x/a.pdf');
 
   fireEvent.click(screen.getByRole('button', { name: 'Download' }));
   await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
@@ -192,7 +243,7 @@ it('does not re-save an already-saved document on a second toolbar action', asyn
   });
   await waitForLoad(proxyA, proxyB);
 
-  proxyA.annotationStorage.onSetModified();
+  await editDocument('http://x/a.pdf');
   fireEvent.click(screen.getByRole('button', { name: 'Download' }));
   await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
   expect(onSaveEnvelopeFile).toHaveBeenCalledTimes(1);
@@ -213,7 +264,7 @@ it('surfaces a save failure, skips finalize, and retries the save on the next at
   });
   await waitForLoad(proxyA, proxyB);
 
-  proxyA.annotationStorage.onSetModified();
+  await editDocument('http://x/a.pdf');
   onSaveEnvelopeFile.mockRejectedValueOnce(new Error('Document save failed'));
 
   fireEvent.click(screen.getByRole('button', { name: 'Download' }));
@@ -235,6 +286,33 @@ it('surfaces a save failure, skips finalize, and retries the save on the next at
   ).toBe(true);
 });
 
+it('hands the host a save that rejects and stays dirty when it fails', async () => {
+  const proxyA = makePdfProxy();
+  const proxyB = makePdfProxy();
+  let beforeReplace: () => Promise<unknown> = async () => undefined;
+  const onDirtyChange = jest.fn();
+  const { onSaveEnvelopeFile } = renderViewer(
+    { 'http://x/a.pdf': proxyA, 'http://x/b.pdf': proxyB },
+    {
+      onDirtyChange,
+      onBeforeReplaceReady: (save: any) => {
+        if (save) beforeReplace = save;
+      }
+    }
+  );
+  await waitForLoad(proxyA, proxyB);
+
+  await editDocument('http://x/a.pdf');
+  onSaveEnvelopeFile.mockRejectedValueOnce(new Error('Document save failed'));
+
+  await expect(beforeReplace()).rejects.toThrow('Document save failed');
+  expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+
+  await beforeReplace();
+  expect(onSaveEnvelopeFile).toHaveBeenCalledTimes(2);
+  expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+});
+
 it('re-saves on the next attempt when saveDocument() itself fails', async () => {
   const proxyA = makePdfProxy();
   const proxyB = makePdfProxy();
@@ -244,7 +322,7 @@ it('re-saves on the next attempt when saveDocument() itself fails', async () => 
   });
   await waitForLoad(proxyA, proxyB);
 
-  proxyA.annotationStorage.onSetModified();
+  await editDocument('http://x/a.pdf');
   proxyA.failNextSave(new Error('Worker crashed'));
 
   fireEvent.click(screen.getByRole('button', { name: 'Download' }));
@@ -280,7 +358,7 @@ it('freezes the form widgets while a save/finalize is in flight', async () => {
   await waitFor(() => expect(AnnotationLayer).toHaveBeenCalledTimes(2));
   widgetLayers().forEach((layer) => expect(layer).not.toHaveAttribute('inert'));
 
-  proxyA.annotationStorage.onSetModified();
+  await editDocument('http://x/a.pdf');
   fireEvent.click(screen.getByRole('button', { name: 'Download' }));
   await waitFor(() => expect(onSaveEnvelopeFile).toHaveBeenCalledTimes(1));
 
@@ -316,7 +394,7 @@ it('blocks Escape and Back while a save/finalize is in flight', async () => {
   );
   await waitForLoad(proxyA, proxyB);
 
-  proxyA.annotationStorage.onSetModified();
+  await editDocument('http://x/a.pdf');
   fireEvent.click(screen.getByRole('button', { name: 'Download' }));
   await waitFor(() => expect(onSaveEnvelopeFile).toHaveBeenCalledTimes(1));
 
@@ -344,7 +422,7 @@ it('finalizes without saving when onSaveEnvelopeFile is not provided', async () 
   );
   await waitForLoad(proxyA, proxyB);
 
-  proxyA.annotationStorage.onSetModified();
+  await editDocument('http://x/a.pdf');
   fireEvent.click(screen.getByRole('button', { name: 'Download' }));
   await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
   expect(proxyA.saveDocument).not.toHaveBeenCalled();
