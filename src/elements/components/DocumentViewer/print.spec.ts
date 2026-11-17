@@ -1,20 +1,19 @@
-import { printDocuments } from './print';
+import { printFileUrls } from './print';
+import { loadPdfjs } from './pdfjsLoader';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
 
-const ENABLE_STORAGE = 3;
+const ENABLE = 1;
 jest.mock('./pdfjsLoader', () => ({
-  loadPdfjs: jest.fn(() =>
-    Promise.resolve({ AnnotationMode: { ENABLE_STORAGE: 3 } })
-  )
+  loadPdfjs: jest.fn(),
+  PDFJS_STANDARD_FONT_DATA_URL: 'fonts/'
 }));
 
-const printStorage = { snapshot: true };
 const makeProxy = (numPages: number) => {
   const render = jest.fn(() => ({ promise: Promise.resolve() }));
   return {
     numPages,
-    annotationStorage: { print: printStorage },
     render,
+    destroy: jest.fn(),
     getPage: jest.fn(() =>
       Promise.resolve({
         getViewport: () => ({ width: 612, height: 792 }),
@@ -23,6 +22,14 @@ const makeProxy = (numPages: number) => {
     )
   };
 };
+
+const mockDocuments = (proxies: Record<string, ReturnType<typeof makeProxy>>) =>
+  (loadPdfjs as jest.Mock).mockResolvedValue({
+    AnnotationMode: { ENABLE },
+    getDocument: jest.fn(({ url }) => ({
+      promise: Promise.resolve(proxies[url])
+    }))
+  });
 
 const rootSelector = '.fthry-review-print-root';
 
@@ -43,15 +50,16 @@ afterEach(() => {
   jest.restoreAllMocks();
   featheryDoc()
     .querySelectorAll(rootSelector)
-    .forEach((el) => el.remove());
+    .forEach((el: Element) => el.remove());
 });
 
-describe('printDocuments', () => {
-  it('prints every page of every document in order', async () => {
+describe('printFileUrls', () => {
+  it('prints every page of every file in order', async () => {
     const a = makeProxy(2);
     const b = makeProxy(1);
+    mockDocuments({ 'a.pdf': a, 'b.pdf': b });
 
-    await printDocuments([a, b]);
+    await printFileUrls(['a.pdf', 'b.pdf']);
 
     expect(a.getPage.mock.calls).toEqual([[1], [2]]);
     expect(b.getPage.mock.calls).toEqual([[1]]);
@@ -59,24 +67,24 @@ describe('printDocuments', () => {
       3
     );
     expect(featheryWindow().print).toHaveBeenCalledTimes(1);
+    expect(a.destroy).toHaveBeenCalled();
+    expect(b.destroy).toHaveBeenCalled();
   });
 
-  it("renders fields from the filler's annotation storage", async () => {
+  it('renders pages for print with their field values', async () => {
     const proxy = makeProxy(1);
+    mockDocuments({ 'a.pdf': proxy });
 
-    await printDocuments([proxy]);
+    await printFileUrls(['a.pdf']);
 
     expect(proxy.render).toHaveBeenCalledWith(
-      expect.objectContaining({
-        intent: 'print',
-        annotationMode: ENABLE_STORAGE,
-        printAnnotationStorage: printStorage
-      })
+      expect.objectContaining({ intent: 'print', annotationMode: ENABLE })
     );
   });
 
   it('removes the print markup after the dialog closes', async () => {
-    await printDocuments([makeProxy(1)]);
+    mockDocuments({ 'a.pdf': makeProxy(1) });
+    await printFileUrls(['a.pdf']);
     expect(featheryDoc().querySelector(rootSelector)).not.toBeNull();
 
     featheryWindow().dispatchEvent(new Event('afterprint'));
@@ -90,10 +98,17 @@ describe('printDocuments', () => {
     proxy.render.mockReturnValue({
       promise: Promise.reject(new Error('boom'))
     });
+    mockDocuments({ 'a.pdf': proxy });
 
-    await expect(printDocuments([proxy])).rejects.toThrow('boom');
+    await expect(printFileUrls(['a.pdf'])).rejects.toThrow('boom');
 
     expect(featheryDoc().querySelector(rootSelector)).toBeNull();
+    expect(featheryWindow().print).not.toHaveBeenCalled();
+    expect(proxy.destroy).toHaveBeenCalled();
+  });
+
+  it('does nothing without files', async () => {
+    await printFileUrls([]);
     expect(featheryWindow().print).not.toHaveBeenCalled();
   });
 });

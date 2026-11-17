@@ -299,6 +299,14 @@ import {
   STEP_EVENT_SUBMIT
 } from '../utils/stepEvents';
 
+// Loaded on demand like the viewer itself, to keep it out of the main bundle.
+const printFinalizedFiles = async (files?: string[]) => {
+  const { printFileUrls } = await import(
+    '../elements/components/DocumentViewer/print'
+  );
+  await printFileUrls(files ?? []);
+};
+
 const DocumentViewer = React.lazy(
   () => import('../elements/components/DocumentViewer')
 );
@@ -1614,6 +1622,7 @@ function Form({
                   envelopes,
                   envelopeAction,
                   draft,
+                  print,
                   refreshDraft,
                   completes
                 }: any) => {
@@ -1627,13 +1636,16 @@ function Form({
                     return { status: 'error', message: 'Finalize failed' };
                   }
                   if (result.status === 'error') return result;
-                  await runEnvelopeAction(result, envelopeAction, draft);
+                  // Print finalizes as a download, then prints the files
+                  // instead of saving them.
+                  if (print) await printFinalizedFiles(result.files);
+                  else await runEnvelopeAction(result, envelopeAction, draft);
                   await runDocumentReviewLogic(
                     buildDocumentReviewTrigger({
                       action,
                       elementId: '',
                       envelopes,
-                      envelopeAction,
+                      envelopeAction: print ? 'print' : envelopeAction,
                       draft,
                       result
                     })
@@ -1644,7 +1656,11 @@ function Form({
                   if (completes)
                     finalized = {
                       ...result,
-                      reviewAction: draft ? 'draft' : envelopeAction
+                      reviewAction: draft
+                        ? 'draft'
+                        : print
+                        ? 'print'
+                        : envelopeAction
                     };
                   return result;
                 },
@@ -3803,11 +3819,13 @@ function Form({
                 envelopes,
                 envelopeAction,
                 draft,
+                print,
                 refreshDraft
               }: {
                 envelopes: { envelopeId: string }[];
                 envelopeAction: 'sign' | 'fill' | 'download' | 'save';
                 draft: boolean;
+                print: boolean;
                 refreshDraft: boolean;
               }) => {
                 const result = await client.finalizeEnvelopeReview(action, {
@@ -3827,13 +3845,16 @@ function Form({
                     message: 'Failed to finalize documents. Please try again.'
                   };
                 if (result.status === 'error') return result;
-                await runEnvelopeAction(result, envelopeAction, draft);
+                // Print finalizes as a download, then prints the files
+                // instead of saving them.
+                if (print) await printFinalizedFiles(result.files);
+                else await runEnvelopeAction(result, envelopeAction, draft);
                 await runDocumentReviewLogic(
                   buildDocumentReviewTrigger({
                     action,
                     elementId: element.id,
                     envelopes,
-                    envelopeAction,
+                    envelopeAction: print ? 'print' : envelopeAction,
                     draft,
                     result
                   })
