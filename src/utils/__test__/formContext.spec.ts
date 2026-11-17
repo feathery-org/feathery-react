@@ -103,19 +103,25 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(flow).not.toHaveBeenCalled();
   });
 
-  it('rejects headless CCs instead of silently dropping recipients', async () => {
-    const headlessUuid = 'formContext-headless-cc';
-    setFormInternalState(headlessUuid, { fields: {}, client } as any);
-    await expect(
-      getFormContext(headlessUuid).generateDocuments({
-        documentIds: ['tpl-1'],
-        signMethod: 'docusign',
-        ccRecipients: ['operations@example.com']
-      })
-    ).rejects.toThrow('ccRecipients require a mounted');
-    expect(client.flushCustomFields).not.toHaveBeenCalled();
-    expect(client.generateDocuments).not.toHaveBeenCalled();
-  });
+  it.each([
+    ['ccRecipients', { ccRecipients: ['operations@example.com'] }],
+    ['smsAuthentication', { smsAuthentication: true }]
+  ])(
+    'rejects headless %s instead of silently dropping it',
+    async (option, extra) => {
+      const headlessUuid = `formContext-headless-${option}`;
+      setFormInternalState(headlessUuid, { fields: {}, client } as any);
+      await expect(
+        getFormContext(headlessUuid).generateDocuments({
+          documentIds: ['tpl-1'],
+          signMethod: 'docusign',
+          ...extra
+        })
+      ).rejects.toThrow(`${option} require`);
+      expect(client.flushCustomFields).not.toHaveBeenCalled();
+      expect(client.generateDocuments).not.toHaveBeenCalled();
+    }
+  );
 
   it.each([undefined, 'sign'] as const)(
     'creates a DocuSign draft with envelopeAction %s and preserves signer roles',
@@ -199,14 +205,23 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
       documentIds: ['tpl-1'],
       signMethod: 'docusign',
       envelopeAction: 'open_in_editor',
-      draft: false
+      draft: false,
+      // false is a real override (no SMS), so it must not be dropped as unset
+      smsAuthentication: false
     });
     expect(flow).toHaveBeenCalledWith(
       expect.objectContaining({
         envelope_action: 'open_in_editor',
-        draft: false
+        draft: false,
+        sms_authentication: false
       })
     );
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: ['tpl-1'],
+        smsAuthentication: true
+      })
+    ).rejects.toThrow('smsAuthentication requires');
   });
 
   it('routes the editor + signer options through the form flow with a built action', async () => {
