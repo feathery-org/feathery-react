@@ -31,7 +31,7 @@ it('draws each tag at its scaled box in its signer color', () => {
       ]}
     />
   );
-  const initial = screen.getByLabelText('Initial: Larkin Hegler');
+  const initial = screen.getByTitle('Initial: Larkin Hegler');
   expect(initial).toHaveStyle({
     left: '150px',
     top: '300px',
@@ -41,7 +41,7 @@ it('draws each tag at its scaled box in its signer color', () => {
     backgroundColor: `${signerColor(1).fill}99`
   });
   // A date is as wide as its label.
-  const date = screen.getByLabelText('Date Signed: William Hegler');
+  const date = screen.getByTitle('Date Signed: William Hegler');
   expect(date).toHaveStyle({ left: '15px', top: '30px', height: '21px' });
   expect(date.style.width).toBe('');
   expect(date).toHaveTextContent('Date Signed');
@@ -60,20 +60,18 @@ it('draws a signer\u2019s fields like their sign tags, letting clicks through to
       ]}
     />
   );
-  const text = screen.getByLabelText('Text: William Hegler');
+  const text = screen.getByTitle('Text: William Hegler');
   expect(text).toHaveTextContent('Text');
   expect(text).toHaveStyle({
     backgroundColor: `${signerColor(0).fill}99`,
     pointerEvents: 'none'
   });
-  expect(screen.getByLabelText('Checkbox: William Hegler')).toHaveTextContent(
-    ''
-  );
-  expect(screen.getByLabelText('Radio: William Hegler')).toHaveStyle({
+  expect(screen.getByTitle('Checkbox: William Hegler')).toHaveTextContent('');
+  expect(screen.getByTitle('Radio: William Hegler')).toHaveStyle({
     borderRadius: '50%'
   });
   // A deferred date has no widget under it, so it stays hoverable.
-  expect(screen.getByLabelText('Date: William Hegler')).toHaveStyle({
+  expect(screen.getByTitle('Date: William Hegler')).toHaveStyle({
     pointerEvents: 'auto'
   });
 });
@@ -88,8 +86,7 @@ it('lists only the signers who have a tag, each stepping through their own', () 
     />
   );
   expect(screen.queryByText('William Hegler')).not.toBeInTheDocument();
-  const button = screen.getByRole('button', { name: /Larkin Hegler/ });
-  expect(button).toHaveTextContent('2');
+  const button = screen.getByRole('button', { name: 'Larkin Hegler 2 fields' });
   fireEvent.click(button);
   expect(onJump).toHaveBeenCalledWith(1);
 
@@ -97,26 +94,43 @@ it('lists only the signers who have a tag, each stepping through their own', () 
   expect(screen.queryByRole('list')).not.toBeInTheDocument();
 });
 
-it('steps through one signer\u2019s tags and wraps', () => {
+it('steps through one signer\u2019s tags in reading order and wraps', () => {
   Element.prototype.scrollIntoView = jest.fn();
   const { container } = render(
     <SigningTagLayer
       signers={signers}
       scale={1}
       tags={[
-        tag({ signer: 1 }),
+        tag({ signer: 1, type: 'sign_here', y: 500 }),
         tag({ signer: 0 }),
-        tag({ signer: 1, type: 'sign_here' })
+        tag({ signer: 1, x: 300, y: 200 }),
+        tag({ signer: 1, type: 'date_signed', x: 50, y: 200, width: null })
       ]}
     />
   );
-  const jump = (after: number) =>
+  // jsdom lays nothing out, so place each tag where its box says.
+  container
+    .querySelectorAll<HTMLElement>('[data-signing-tag]')
+    .forEach((el) => {
+      el.getBoundingClientRect = () =>
+        ({
+          top: parseFloat(getComputedStyle(el).top),
+          left: parseFloat(getComputedStyle(el).left)
+        } as DOMRect);
+    });
+  const date = screen.getByTitle('Date Signed: Larkin Hegler');
+  const initial = screen.getByTitle('Initial: Larkin Hegler');
+  const sign = screen.getByTitle('Sign: Larkin Hegler');
+  const jump = (after: HTMLElement | null) =>
     focusNextSignerTag(container, 1, after, false);
 
-  expect(jump(-1)).toBe(0);
-  expect(screen.getByLabelText('Initial: Larkin Hegler')).toHaveFocus();
-  expect(jump(0)).toBe(1);
-  expect(screen.getByLabelText('Sign: Larkin Hegler')).toHaveFocus();
-  expect(jump(1)).toBe(0);
-  expect(focusNextSignerTag(container, 5, -1, false)).toBe(-1);
+  // Top to bottom, then left to right on a line — not payload order.
+  expect(jump(null)).toBe(date);
+  expect(date).toHaveFocus();
+  expect(jump(date)).toBe(initial);
+  expect(jump(initial)).toBe(sign);
+  expect(jump(sign)).toBe(date);
+  // A tag that left the page starts over at the top.
+  expect(jump(container.ownerDocument.createElement('div'))).toBe(date);
+  expect(focusNextSignerTag(container, 5, null, false)).toBeNull();
 });

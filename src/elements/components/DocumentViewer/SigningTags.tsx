@@ -38,6 +38,7 @@ interface SignerColor {
 // One per recipient, in recipient order, cycling past the last. Light fills
 // with a darker edge of the same hue, the way DocuSign tints its own tags.
 // On the page the fill is see-through, so a tag never hides what it covers.
+// shortcut: a 7th recipient reuses the 1st's color; the hover title tells them apart.
 const SIGNER_COLORS: SignerColor[] = [
   { fill: '#bfe6f7', border: '#1a9ed9' },
   { fill: '#b9edd3', border: '#17a567' },
@@ -53,26 +54,27 @@ export const signerColor = (signer: number): SignerColor =>
 const TAG_FILL_ALPHA = '99';
 const SIGNER_ATTR = 'data-signing-signer';
 
-/** Moves to a recipient's next tag under `container`, in reading order and
- * wrapping at the end, and returns its position; -1 when they have none.
- * `after` is the position returned last time. */
+/** Moves to a recipient's next tag under `container` after `after` (the tag
+ * returned last time), in reading order and wrapping at the end, and returns
+ * it; null when they have none. Pages that render later join the order. */
 export function focusNextSignerTag(
   container: HTMLElement,
   signer: number,
-  after: number,
+  after: HTMLElement | null,
   smooth: boolean
-): number {
+): HTMLElement | null {
   const tags = Array.from(
     container.querySelectorAll<HTMLElement>(`[${SIGNER_ATTR}="${signer}"]`)
   )
     .map((el) => ({ el, rect: el.getBoundingClientRect() }))
-    .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
-  if (!tags.length) return -1;
-  const next = (after + 1) % tags.length;
-  const { el } = tags[next];
+    .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left)
+    .map(({ el }) => el);
+  if (!tags.length) return null;
+  // A tag that has since unmounted isn't found, which starts over at the top.
+  const el = tags[(tags.indexOf(after as HTMLElement) + 1) % tags.length];
   el.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'center' });
   el.focus({ preventScroll: true });
-  return next;
+  return el;
 }
 
 const TAG_LABEL: Record<SigningTagType, string> = {
@@ -92,6 +94,15 @@ const MARK_TYPES: SigningTagType[] = ['checkbox', 'radio'];
 // A field under these is a live widget the filler can still prefill, so its
 // tag lets clicks through rather than covering it.
 const FILLABLE_TYPES: SigningTagType[] = ['text', 'checkbox', 'radio'];
+
+const VISUALLY_HIDDEN = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap'
+} as const;
 
 const signerName = (signers: SigningRecipient[], signer: number) =>
   signers[signer]?.name || `Signer ${signer + 1}`;
@@ -130,7 +141,7 @@ export function SigningTagLayer({
 }: SigningTagLayerProps) {
   return (
     <div css={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-      {tags.map((tag, i) => {
+      {tags.map((tag) => {
         const { fill, border } = signerColor(tag.signer);
         const height = tag.height * scale;
         const isInline = INLINE_TYPES.includes(tag.type);
@@ -141,9 +152,9 @@ export function SigningTagLayer({
         )}`;
         return (
           <div
-            key={i}
+            key={`${tag.signer}-${tag.type}-${tag.x}-${tag.y}`}
             role='img'
-            aria-label={label}
+            // The title names the tag for screen readers and on hover.
             title={label}
             tabIndex={-1}
             data-signing-tag={tag.type}
@@ -264,6 +275,9 @@ export function SignerLegend({ signers, tags, onJump }: SignerLegendProps) {
               {signerName(signers, signer)}
               <span css={{ color: color.textMuted, fontSize: fontSize.sm }}>
                 {counts[signer]}
+                <span css={VISUALLY_HIDDEN}>
+                  {counts[signer] === 1 ? ' field' : ' fields'}
+                </span>
               </span>
             </button>
           </li>

@@ -436,7 +436,7 @@ export default function DocumentViewer({
   );
 
   // Where each recipient's last jump landed, so the next press moves on.
-  const signerJumps = useRef<Record<number, number>>({});
+  const signerJumps = useRef<Record<number, HTMLElement | null>>({});
   const onSignerJump = useCallback((signer: number) => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -446,7 +446,7 @@ export default function DocumentViewer({
     signerJumps.current[signer] = focusNextSignerTag(
       container,
       signer,
-      signerJumps.current[signer] ?? -1,
+      signerJumps.current[signer] ?? null,
       !reduceMotion
     );
   }, []);
