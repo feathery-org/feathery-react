@@ -1,4 +1,4 @@
-import { loadPdfjs } from './pdfjsLoader';
+import { loadPdfjs, PDFJS_STANDARD_FONT_DATA_URL } from './pdfjsLoader';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
 
 // PDF user space is 72 units per inch; 150 DPI keeps text crisp on paper
@@ -34,10 +34,8 @@ const canvasToBlob = (canvas: HTMLCanvasElement) =>
     )
   );
 
-/** Render one page to a PNG, painting form fields from the document's
- * annotation storage so the print shows the filler's edits, not the values the
- * PDF was generated with. Reading storage never touches its modified flag, so
- * printing leaves unsaved edits marked for saving. */
+/** Render one page to a PNG at print resolution, form field values
+ * included. */
 async function renderPageImage(pdfjs: any, pdfProxy: any, pageNumber: number) {
   const page = await pdfProxy.getPage(pageNumber);
   const viewport = page.getViewport({ scale: PRINT_SCALE });
@@ -50,8 +48,8 @@ async function renderPageImage(pdfjs: any, pdfProxy: any, pageNumber: number) {
     canvasContext,
     viewport,
     intent: 'print',
-    annotationMode: pdfjs.AnnotationMode.ENABLE_STORAGE,
-    printAnnotationStorage: pdfProxy.annotationStorage?.print
+    // The finalized files carry the filler's edits in their field values.
+    annotationMode: pdfjs.AnnotationMode.ENABLE
   }).promise;
   const blob = await canvasToBlob(canvas);
   // Release the backing store now rather than holding every page's bitmap
@@ -64,7 +62,7 @@ async function renderPageImage(pdfjs: any, pdfProxy: any, pageNumber: number) {
 /** Open the browser print dialog for every page of `pdfProxies`, in order.
  * Resolves once the dialog has been opened; the print markup is removed
  * after it closes. */
-export async function printDocuments(pdfProxies: any[]) {
+async function printDocuments(pdfProxies: any[]) {
   const pdfjs = await loadPdfjs();
   const urls: string[] = [];
   const images: HTMLImageElement[] = [];
@@ -106,4 +104,26 @@ export async function printDocuments(pdfProxies: any[]) {
 
   win.addEventListener('afterprint', cleanup, { once: true });
   win.print();
+}
+
+/** Print the PDFs at `urls` (a finalized review's files) in one dialog,
+ * in order. Resolves once the dialog has been opened. */
+export async function printFileUrls(urls: string[]) {
+  if (!urls.length) return;
+  const pdfjs = await loadPdfjs();
+  const pdfProxies = await Promise.all(
+    urls.map(
+      (url) =>
+        pdfjs.getDocument({
+          url,
+          standardFontDataUrl: PDFJS_STANDARD_FONT_DATA_URL
+        }).promise
+    )
+  );
+  try {
+    await printDocuments(pdfProxies);
+  } finally {
+    // Every page is already an image in the print markup.
+    pdfProxies.forEach((pdfProxy: any) => pdfProxy.destroy());
+  }
 }

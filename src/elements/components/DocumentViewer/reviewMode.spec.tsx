@@ -117,6 +117,7 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       ],
       envelopeAction: 'download',
       draft: false,
+      print: false,
       refreshDraft: false,
       completes: true
     });
@@ -174,6 +175,7 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       envelopes: [{ envelopeId: 'env-1' }],
       envelopeAction: 'sign',
       draft: false,
+      print: false,
       refreshDraft: false,
       completes: true
     });
@@ -207,6 +209,7 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       envelopes: [{ envelopeId: 'env-1' }],
       envelopeAction: 'sign',
       draft: true,
+      print: false,
       refreshDraft: false,
       completes: true
     });
@@ -241,13 +244,18 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       envelopes: [{ envelopeId: 'env-1' }],
       envelopeAction: 'sign',
       draft: true,
+      print: false,
       refreshDraft: false,
       completes: true
     });
   });
 
   describe('print', () => {
-    const renderWithToolbar = (editorToolbarActions: string[]) =>
+    const renderWithToolbar = (
+      editorToolbarActions: string[],
+      onComplete = jest.fn()
+    ) => {
+      const onFinalize = jest.fn().mockResolvedValue({ files: ['f.pdf'] });
       render(
         <DocumentViewer
           payload={basePayload}
@@ -256,13 +264,30 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
             editor_toolbar_actions: editorToolbarActions
           }}
           setShow={jest.fn()}
-          onComplete={jest.fn()}
-          onFinalize={jest.fn()}
+          onComplete={onComplete}
+          onFinalize={onFinalize}
         />
       );
+      return onFinalize;
+    };
 
-    it('offers Print beside the finalize actions when configured', () => {
-      renderWithToolbar(['print', 'download']);
+    it('finalizes as a download marked for printing', async () => {
+      const onFinalize = renderWithToolbar(['print']);
+      fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+
+      await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
+      expect(onFinalize).toHaveBeenCalledWith({
+        envelopes: [{ envelopeId: 'env-1' }],
+        envelopeAction: 'download',
+        draft: false,
+        print: true,
+        refreshDraft: false,
+        completes: true
+      });
+    });
+
+    it('renders Print left of Download', () => {
+      renderWithToolbar(['download', 'print']);
       const labels = screen
         .getAllByRole('button')
         .map((b) => b.textContent)
@@ -270,25 +295,19 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       expect(labels).toEqual(['Print', 'Download']);
     });
 
-    it('keeps Continue when Print is the only configured action', () => {
-      renderWithToolbar(['print']);
-      expect(screen.getByRole('button', { name: 'Print' })).toBeInTheDocument();
-      expect(
-        screen.getByRole('button', { name: 'Continue' })
-      ).toBeInTheDocument();
+    it('closes on Print when it is the only action', async () => {
+      const onComplete = jest.fn();
+      renderWithToolbar(['print'], onComplete);
+      fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+      await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
     });
 
-    it('disables Print until every document has loaded', () => {
-      // pdf.js never resolves in these tests, so no document loads.
-      renderWithToolbar(['print']);
-      expect(screen.getByRole('button', { name: 'Print' })).toBeDisabled();
-    });
-
-    it('omits Print unless configured', () => {
-      renderWithToolbar(['download']);
-      expect(
-        screen.queryByRole('button', { name: 'Print' })
-      ).not.toBeInTheDocument();
+    it('keeps the editor open on Print when Sign is also offered', async () => {
+      const onComplete = jest.fn();
+      const onFinalize = renderWithToolbar(['print', 'sign'], onComplete);
+      fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+      await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
+      expect(onComplete).not.toHaveBeenCalled();
     });
   });
 
@@ -406,6 +425,7 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
         envelopes: [{ envelopeId: 'env-1' }],
         envelopeAction: 'sign',
         draft: false,
+        print: false,
         refreshDraft: false,
         completes: true
       });

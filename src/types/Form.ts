@@ -66,12 +66,14 @@ export interface ContextOnAction extends FormContext {
 }
 
 // Toolbar buttons on the Generate Documents review screen. `draft` is
-// DocuSign's Create Draft (a sign that is saved, not sent); `fill` is the lone
-// Continue an unconfigured toolbar shows.
+// DocuSign's Create Draft (a sign that is saved, not sent); `print` is a
+// download sent to the print dialog; `fill` is the lone Continue an
+// unconfigured toolbar shows.
 export type DocumentReviewAction =
   | 'sign'
   | 'draft'
   | 'download'
+  | 'print'
   | 'save'
   | 'fill';
 

@@ -24,14 +24,14 @@ import {
   runningInClient
 } from '../../../utils/browser';
 import { stepPageKey, trapTabKey, isEditableTarget } from './keyboard';
-import { printDocuments } from './print';
 
 export type ReviewEnvelopeAction = 'sign' | 'fill' | 'download' | 'save';
-export type EditorToolbarAction = ReviewEnvelopeAction | 'draft';
+export type EditorToolbarAction = ReviewEnvelopeAction | 'draft' | 'print';
 
 // Toolbar buttons render in this order, so the rightmost (primary) action is
 // the most conclusive one the filler configured.
 const TOOLBAR_ACTION_ORDER: EditorToolbarAction[] = [
+  'print',
   'download',
   'save',
   'draft',
@@ -42,7 +42,8 @@ const TOOLBAR_ACTION_LABELS: Record<EditorToolbarAction, string> = {
   fill: 'Continue',
   download: 'Download',
   save: 'Save',
-  draft: 'Create Draft'
+  draft: 'Create Draft',
+  print: 'Print'
 };
 
 // Actions that close the editor when pressed. Everything else runs its outcome
@@ -73,6 +74,8 @@ export const closesEditor = (
 };
 // A draft button finalizes as a sign with draft=true — DocuSign is the only
 // backend with a draft state, so there is no separate envelope action for it.
+// Print finalizes as a download with print=true: the same files, sent to the
+// browser's print dialog instead of saved.
 const TOOLBAR_ACTION_ENVELOPE_ACTION: Record<
   EditorToolbarAction,
   ReviewEnvelopeAction
@@ -81,13 +84,9 @@ const TOOLBAR_ACTION_ENVELOPE_ACTION: Record<
   fill: 'fill',
   download: 'download',
   save: 'save',
-  draft: 'sign'
+  draft: 'sign',
+  print: 'download'
 };
-
-// Print runs in the browser and never finalizes, so it sits outside the
-// finalize actions above: it never closes the editor and never counts as the
-// conclusive action. A toolbar offering only Print still gets Continue.
-const PRINT_TOOLBAR_ACTION = 'print';
 
 const MAX_PAGE_WIDTH = 900;
 const CONTAINER_PADDING = 48;
@@ -230,6 +229,8 @@ interface DocumentViewerProps {
     envelopeAction: ReviewEnvelopeAction;
     // DocuSign sign only: save the envelope as a draft instead of sending it.
     draft: boolean;
+    // Download only: print the finalized files instead of saving them.
+    print: boolean;
     // Replace the documents on the DocuSign draft this session already
     // created, because the filler edited them since.
     refreshDraft: boolean;
@@ -532,29 +533,6 @@ export default function DocumentViewer({
     configuredToolbarActions.includes(a)
   );
 
-  const offersPrint = (action.editor_toolbar_actions ?? []).includes(
-    PRINT_TOOLBAR_ACTION
-  );
-  // pdf.js proxies arrive per document; printing before they all have would
-  // silently drop the missing ones.
-  const allDocsLoaded = payload.documents.every(
-    (doc) => pageCounts[doc.pdf_url] !== undefined
-  );
-
-  const print = async () => {
-    setBusyKey(PRINT_TOOLBAR_ACTION);
-    setError('');
-    try {
-      await printDocuments(
-        payload.documents.map((doc) => loadedDocs.current[doc.pdf_url])
-      );
-    } catch (e) {
-      setError(`Unable to print: ${errorMessage(e)}`);
-    } finally {
-      setBusyKey(null);
-    }
-  };
-
   const finalizeWith = async (
     toolbarAction: EditorToolbarAction,
     busyActionKey: string
@@ -582,6 +560,7 @@ export default function DocumentViewer({
         envelopes: reviewedEnvelopes,
         envelopeAction: TOOLBAR_ACTION_ENVELOPE_ACTION[toolbarAction],
         draft: toolbarAction === 'draft',
+        print: toolbarAction === 'print',
         refreshDraft,
         completes: outcome !== 'stay'
       });
@@ -604,20 +583,8 @@ export default function DocumentViewer({
     }
   };
 
-  const printAction: ToolbarAction[] = offersPrint
-    ? [
-        {
-          key: PRINT_TOOLBAR_ACTION,
-          label: 'Print',
-          variant: 'secondary',
-          disabled: !allDocsLoaded,
-          onClick: print
-        }
-      ]
-    : [];
-
   // Rendered left→right, so the last entry is the primary (rightmost) button.
-  const finalizeActions: ToolbarAction[] = orderedToolbarActions.length
+  const toolbarActions: ToolbarAction[] = orderedToolbarActions.length
     ? orderedToolbarActions.map((toolbarAction, i) => ({
         key: toolbarAction,
         label: TOOLBAR_ACTION_LABELS[toolbarAction],
@@ -634,7 +601,6 @@ export default function DocumentViewer({
           onClick: () => finalizeWith('fill', 'primary')
         }
       ];
-  const toolbarActions = [...printAction, ...finalizeActions];
 
   if (!portalElRef.current) return null;
   return createPortal(
