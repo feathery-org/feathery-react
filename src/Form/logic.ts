@@ -188,6 +188,73 @@ function printJsValue(v: any): string {
   return String(v);
 }
 
+// Whether evaluating this node awaits at the module's top level. An await
+// inside a nested function runs only when that function is called.
+function awaitsAtTopLevel(node: any): boolean {
+  let awaits = false;
+  const skipNestedFunction = () => {};
+
+  walk.recursive(node, null, {
+    AwaitExpression() {
+      awaits = true;
+    },
+    ForOfStatement(forOf: any, state: any, visit: any) {
+      if (forOf.await) awaits = true;
+      visit(forOf.left, state);
+      visit(forOf.right, state);
+      visit(forOf.body, state);
+    },
+    FunctionDeclaration: skipNestedFunction,
+    FunctionExpression: skipNestedFunction,
+    ArrowFunctionExpression: skipNestedFunction
+  });
+
+  return awaits;
+}
+
+function addPatternNames(pattern: any, names: Set<string>) {
+  if (!pattern) return;
+  if (pattern.type === 'Identifier') names.add(pattern.name);
+  if (pattern.type === 'AssignmentPattern')
+    addPatternNames(pattern.left, names);
+  if (pattern.type === 'RestElement') addPatternNames(pattern.argument, names);
+  if (pattern.type === 'ArrayPattern') {
+    pattern.elements.forEach((element: any) => addPatternNames(element, names));
+  }
+  if (pattern.type === 'ObjectPattern') {
+    for (const property of pattern.properties) {
+      addPatternNames(
+        property.type === 'RestElement' ? property.argument : property.value,
+        names
+      );
+    }
+  }
+}
+
+// Names a function declares itself: its parameters and its body's top-level
+// declarations, which a prelude must not declare again
+function namesBoundBy(fnNode: any): Set<string> {
+  const names = new Set<string>();
+  fnNode.params.forEach((param: any) => addPatternNames(param, names));
+  if (fnNode.body.type !== 'BlockStatement') return names;
+
+  for (const statement of fnNode.body.body) {
+    if (statement.type === 'VariableDeclaration') {
+      for (const declarator of statement.declarations) {
+        addPatternNames(declarator.id, names);
+      }
+    }
+    if (
+      (statement.type === 'FunctionDeclaration' ||
+        statement.type === 'ClassDeclaration') &&
+      statement.id
+    ) {
+      names.add(statement.id.name);
+    }
+  }
+  return names;
+}
+
 function extractJsElements(code: string): {
   exportVariables: ExtractedExportVarInfo[];
   exportFunctions: ExtractedExportFuncInfo[];
@@ -197,6 +264,9 @@ function extractJsElements(code: string): {
     string,
     { signature: string; body: string; isAsync?: boolean }
   >();
+  // Every top-level declaration in source order, with the names it reads
+  const referencedNamesByDeclaration = new Map<string, Set<string>>();
+  const awaitingVariables = new Set<string>();
   const exportFunctions: ExtractedExportFuncInfo[] = [];
   const exportVariables: ExtractedExportVarInfo[] = [];
 
@@ -232,196 +302,212 @@ function extractJsElements(code: string): {
     };
   };
 
-  for (const node of parsedNodes.body) {
-    // 1) Collect non-export variable declarations (and lift function expressions)
-    if (node.type === 'VariableDeclaration') {
-      const kind = node.kind; // const | let | var
+  const isFunctionNode = (node: any) =>
+    node?.type === 'ArrowFunctionExpression' ||
+    node?.type === 'FunctionExpression';
 
-      for (const decl of node.declarations) {
+  // 1) Collect every top-level declaration, exported or not, so a helper can
+  // depend on one declared anywhere in the module
+  for (const node of parsedNodes.body as any[]) {
+    const declarationNode =
+      node.type === 'ExportNamedDeclaration' ? node.declaration : node;
+
+    if (declarationNode?.type === 'VariableDeclaration') {
+      const kind = declarationNode.kind; // const | let | var
+
+      for (const decl of declarationNode.declarations) {
         if (decl.id.type !== 'Identifier') continue;
 
         const name = decl.id.name;
         const valueCode = code.slice(decl.start, decl.end);
-
-        // Keep full declaration text for potential dependency prelude
         variableMap.set(name, {
           declaration: `${kind} ${valueCode};`,
           value: valueCode
         });
 
-        // Lift function expressions and arrow functions (including expression-bodied)
-        if (
-          decl.init &&
-          (decl.init.type === 'ArrowFunctionExpression' ||
-            decl.init.type === 'FunctionExpression')
-        ) {
-          const { signature, body, isAsync } = buildFnParts(decl.init);
-          functionMap.set(name, { signature, body, isAsync });
-        }
-      }
-    }
-
-    // 2) Collect non-export function declarations
-    if (node.type === 'FunctionDeclaration' && node.id) {
-      const name = node.id.name;
-      const params = node.params.map((p: any) => paramText(p));
-      const bodyStart = node.body.start + 1;
-      const bodyEnd = node.body.end - 1;
-      const body = code.slice(bodyStart, bodyEnd).trim();
-      const isAsync = node.async;
-
-      functionMap.set(name, {
-        signature: `(${params.join(', ')})`,
-        body,
-        isAsync
-      });
-    }
-
-    // 3) Exported function declarations
-    if (
-      node.type === 'ExportNamedDeclaration' &&
-      node.declaration?.type === 'FunctionDeclaration'
-    ) {
-      const funcNode = node.declaration;
-      const isAsync = funcNode.async;
-      const name = funcNode.id.name;
-      const params = funcNode.params.map((p: any) => paramText(p));
-      const bodyStart = funcNode.body.start + 1;
-      const bodyEnd = funcNode.body.end - 1;
-      const body = code.slice(bodyStart, bodyEnd).trim();
-
-      // Register exported function first
-      functionMap.set(name, {
-        signature: `(${params.join(', ')})`,
-        body,
-        isAsync
-      });
-
-      // Build minimal dependency prelude
-      const used = extractReferencedIdentifiers(funcNode.body);
-      const prelude: string[] = [];
-      const seen = new Set<string>();
-
-      for (const id of used) {
-        if (id === name || seen.has(id)) continue;
-
-        const fn = functionMap.get(id);
-        if (fn) {
-          prelude.push(
-            `${fn.isAsync ? 'async ' : ''}function ${id}${fn.signature} {\n${
-              fn.body
-            }\n}`
+        if (isFunctionNode(decl.init)) {
+          functionMap.set(name, buildFnParts(decl.init));
+          referencedNamesByDeclaration.set(
+            name,
+            extractReferencedIdentifiers(decl.init.body)
           );
-          seen.add(id);
-          continue;
-        }
-
-        const v = variableMap.get(id);
-        if (v) {
-          prelude.push(v.declaration);
-          seen.add(id);
+        } else {
+          referencedNamesByDeclaration.set(
+            name,
+            decl.init ? extractReferencedIdentifiers(decl.init) : new Set()
+          );
+          if (decl.init && awaitsAtTopLevel(decl.init)) {
+            awaitingVariables.add(name);
+          }
         }
       }
-
-      exportFunctions.push({
-        name,
-        signature: `(${params.join(', ')})`,
-        body: prelude.concat([body]).join('\n'),
-        isAsync
-      });
     }
 
-    // 4) Exported variable declarations
-    if (
-      node.type === 'ExportNamedDeclaration' &&
-      node.declaration?.type === 'VariableDeclaration'
-    ) {
-      const kind = node.declaration.kind;
+    if (declarationNode?.type === 'FunctionDeclaration' && declarationNode.id) {
+      const name = declarationNode.id.name;
+      const params = declarationNode.params.map((p: any) => paramText(p));
+      const bodyStart = declarationNode.body.start + 1;
+      const bodyEnd = declarationNode.body.end - 1;
 
-      for (const decl of node.declaration.declarations) {
+      functionMap.set(name, {
+        signature: `(${params.join(', ')})`,
+        body: code.slice(bodyStart, bodyEnd).trim(),
+        isAsync: declarationNode.async
+      });
+      referencedNamesByDeclaration.set(
+        name,
+        extractReferencedIdentifiers(declarationNode.body)
+      );
+    }
+  }
+
+  const reachableNames = (rootNames: Iterable<string>): Set<string> => {
+    const reached = new Set<string>();
+    const pending = [...rootNames];
+    let name: string | undefined;
+    while ((name = pending.pop()) !== undefined) {
+      if (reached.has(name) || !referencedNamesByDeclaration.has(name)) {
+        continue;
+      }
+      reached.add(name);
+      pending.push(...(referencedNamesByDeclaration.get(name) ?? []));
+    }
+    return reached;
+  };
+
+  // The declarations `rootNames` reach, re-declared in source order. A variable
+  // is left out when its initializer would call back into `ownName`, which
+  // recurses, or would await where the prelude cannot.
+  const preludeFor = (
+    rootNames: Set<string>,
+    ownName: string,
+    canAwait: boolean
+  ): { prelude: string[]; awaits: boolean } => {
+    const isLeftOut = (name: string) => {
+      if (functionMap.has(name)) return false;
+      const initializerReaches = reachableNames(
+        referencedNamesByDeclaration.get(name) ?? []
+      );
+      if (initializerReaches.has(ownName)) return true;
+      return (
+        !canAwait &&
+        [name, ...initializerReaches].some((reached) =>
+          awaitingVariables.has(reached)
+        )
+      );
+    };
+
+    const included = new Set<string>();
+    const pending = [...rootNames];
+    let name: string | undefined;
+    while ((name = pending.pop()) !== undefined) {
+      if (
+        name === ownName ||
+        included.has(name) ||
+        !referencedNamesByDeclaration.has(name) ||
+        isLeftOut(name)
+      ) {
+        continue;
+      }
+      included.add(name);
+      pending.push(...(referencedNamesByDeclaration.get(name) ?? []));
+    }
+
+    const declarationNames = [...referencedNamesByDeclaration.keys()].filter(
+      (declarationName) => included.has(declarationName)
+    );
+    return {
+      prelude: declarationNames.map((declarationName) => {
+        const fn = functionMap.get(declarationName);
+        if (fn) {
+          return `${fn.isAsync ? 'async ' : ''}function ${declarationName}${
+            fn.signature
+          } {\n${fn.body}\n}`;
+        }
+        return variableMap.get(declarationName)?.declaration ?? '';
+      }),
+      awaits: declarationNames.some((declarationName) =>
+        awaitingVariables.has(declarationName)
+      )
+    };
+  };
+
+  const exportedFunction = (name: string, fnNode: any) => {
+    const ownNames = namesBoundBy(fnNode);
+    const rootNames = new Set(
+      [...extractReferencedIdentifiers(fnNode.body)].filter(
+        (referencedName) => !ownNames.has(referencedName)
+      )
+    );
+    const fn = functionMap.get(name);
+    if (!fn) return;
+    const { signature, body, isAsync } = fn;
+    const { prelude } = preludeFor(rootNames, name, Boolean(isAsync));
+
+    exportFunctions.push({
+      name,
+      signature,
+      body: prelude.concat([body]).join('\n'),
+      isAsync
+    });
+  };
+
+  // An initializer that is not a static value runs in the rule, with what it reads
+  const exportedVariableExpression = (name: string, init: any) => {
+    const { prelude, awaits } = preludeFor(
+      extractReferencedIdentifiers(init),
+      name,
+      true
+    );
+    const isAsync = awaits || awaitsAtTopLevel(init);
+    const evaluation = `(${isAsync ? 'async ' : ''}() => {\n${prelude.join(
+      '\n'
+    )}\nreturn (${code.slice(init.start, init.end)});\n})()`;
+    return isAsync ? `await ${evaluation}` : evaluation;
+  };
+
+  // 2) Exports
+  for (const node of parsedNodes.body as any[]) {
+    if (node.type !== 'ExportNamedDeclaration') continue;
+    const declarationNode = node.declaration;
+
+    if (declarationNode?.type === 'FunctionDeclaration') {
+      exportedFunction(declarationNode.id.name, declarationNode);
+    }
+
+    if (declarationNode?.type === 'VariableDeclaration') {
+      for (const decl of declarationNode.declarations) {
         if (decl.id.type !== 'Identifier') continue;
 
         const name = decl.id.name;
-        const valueCode = code.slice(decl.start, decl.end);
-
-        // Keep full declaration for possible prelude usage
-        variableMap.set(name, {
-          declaration: `${kind} ${valueCode};`,
-          value: valueCode
-        });
 
         // If export is a function expression or arrow function, treat it as an exported function
-        if (
-          decl.init &&
-          (decl.init.type === 'ArrowFunctionExpression' ||
-            decl.init.type === 'FunctionExpression')
-        ) {
-          const { signature, body, isAsync } = buildFnParts(decl.init);
-
-          // Register in functionMap so other exports can depend on it
-          functionMap.set(name, { signature, body, isAsync });
-
-          const used = extractReferencedIdentifiers(decl.init.body);
-          const prelude: string[] = [];
-          const seen = new Set<string>();
-
-          for (const id of used) {
-            if (id === name || seen.has(id)) continue;
-
-            const fn = functionMap.get(id);
-            if (fn) {
-              prelude.push(
-                `${fn.isAsync ? 'async ' : ''}function ${id}${
-                  fn.signature
-                } {\n${fn.body}\n}`
-              );
-              seen.add(id);
-              continue;
-            }
-
-            const v = variableMap.get(id);
-            if (v) {
-              prelude.push(v.declaration);
-              seen.add(id);
-            }
-          }
-
-          exportFunctions.push({
-            name,
-            signature,
-            body: prelude.concat([body]).join('\n'),
-            isAsync
-          });
+        if (isFunctionNode(decl.init)) {
+          exportedFunction(name, decl.init);
           continue;
         }
 
-        // Otherwise handle exported variables as before
-        if (decl.init) {
-          if (decl.init.type === 'Literal') {
-            exportVariables.push({
-              name,
-              value: (decl.init as any).value
-            });
-          } else if (
-            decl.init.type === 'ArrayExpression' ||
-            decl.init.type === 'ObjectExpression' ||
-            decl.init.type === 'UnaryExpression' ||
-            decl.init.type === 'TemplateLiteral'
-          ) {
-            const r = astToJsValue(decl.init);
-            if (r.ok) {
-              exportVariables.push({ name, value: r.value });
-            } else {
-              const initCode = code.slice(decl.init.start, decl.init.end);
-              exportVariables.push({ name, value: initCode });
-            }
-          } else {
-            const initCode = code.slice(decl.init.start, decl.init.end);
-            exportVariables.push({ name, value: initCode });
-          }
-        } else {
+        if (!decl.init) {
           exportVariables.push({ name, value: 'undefined' });
+          continue;
         }
+
+        if (decl.init.type === 'Literal') {
+          exportVariables.push({ name, value: (decl.init as any).value });
+          continue;
+        }
+
+        const staticValue = astToJsValue(decl.init);
+        if (staticValue.ok) {
+          exportVariables.push({ name, value: staticValue.value });
+          continue;
+        }
+
+        exportVariables.push({
+          name,
+          value: code.slice(decl.init.start, decl.init.end),
+          expression: exportedVariableExpression(name, decl.init)
+        });
       }
     }
   }
@@ -486,7 +572,7 @@ function replaceImportsWithDefinitions(
         if (matchedVar) {
           // If value is a plain JS value (string/number/boolean/null/array/object),
           // print JS code accordingly. For plain strings we output single-quoted literals.
-          const rhs = printJsValue(matchedVar.value);
+          const rhs = matchedVar.expression ?? printJsValue(matchedVar.value);
           definitions.push(`const ${localName} = ${rhs};`);
 
           continue;

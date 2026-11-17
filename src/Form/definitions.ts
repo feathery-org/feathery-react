@@ -10,6 +10,8 @@ export interface SharedCodeInfo {
 export interface ExtractedExportVarInfo {
   name: string;
   value: any;
+  // Code that evaluates an initializer that is not a static value
+  expression?: string;
 }
 
 export interface ExtractedExportFuncInfo {
