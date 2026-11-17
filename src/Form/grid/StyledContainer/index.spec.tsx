@@ -79,6 +79,52 @@ describe('StyledContainer iframe embeds', () => {
     }
   );
 
+  it.each([
+    'javascript:alert(1)',
+    ' java\tscript:alert(1)',
+    'data:text/html,<p>Embedded</p>'
+  ])('refuses an editor embed URL that is not a web page: %s', (source) => {
+    const { container } = render(
+      <StyledContainer
+        node={{ ...baseNode, properties: { iframe_url: source } }}
+        breakpoint={480}
+        editMode
+      >
+        <span>Container contents</span>
+      </StyledContainer>
+    );
+
+    expect(container.querySelector('iframe')).toBeNull();
+    expect(container).toHaveTextContent('Container contents');
+  });
+
+  it.each(['https://example.com/form', '/embeds/pricing-table'])(
+    'keeps a web or relative editor embed URL: %s',
+    (source) => {
+      const { container } = render(
+        <StyledContainer
+          node={{ ...baseNode, properties: { iframe_url: source } }}
+          breakpoint={480}
+          editMode
+        />
+      );
+
+      expect(container.querySelector('iframe')).toHaveAttribute('src', source);
+    }
+  );
+
+  it('leaves a non-web embed URL to live forms', () => {
+    const source = 'data:text/html,<p>Embedded</p>';
+    const { container } = render(
+      <StyledContainer
+        node={{ ...baseNode, properties: { iframe_url: source } }}
+        breakpoint={480}
+      />
+    );
+
+    expect(container.querySelector('iframe')).toHaveAttribute('src', source);
+  });
+
   it('preserves unresolved live-form embeds', () => {
     const source = '{{extraction_review_url}}';
     const { container } = render(
@@ -479,5 +525,92 @@ describe('StyledContainer node type classes', () => {
       mobile_styles: { width_unit: 'fill' }
     };
     expect(containerClasses(node, 'mobile')).toContain('fill-container');
+  });
+});
+
+describe('StyledContainer custom HTML', () => {
+  const UNSAFE_HTML = '<img src="x" onerror="alert(1)"><p>Welcome</p>';
+  const SANITIZED_HTML = '<p>Welcome</p>';
+  const htmlNode = {
+    ...baseNode,
+    properties: { custom_html: UNSAFE_HTML }
+  };
+
+  // Editor mode writes custom HTML into a shadow root, which
+  // container.querySelector cannot see into.
+  const editorHtml = (container: HTMLElement) => {
+    const host = Array.from(container.querySelectorAll('div')).find(
+      (div) => div.shadowRoot
+    );
+    return host?.shadowRoot?.querySelector('div')?.innerHTML;
+  };
+
+  afterEach(() => {
+    delete fieldValues.visitor_note;
+  });
+
+  it("renders only the sanitizer's output in editor mode", () => {
+    const sanitizeHtml = jest.fn(() => SANITIZED_HTML);
+    const { container } = render(
+      <StyledContainer
+        node={htmlNode}
+        breakpoint={480}
+        editMode
+        sanitizeHtml={sanitizeHtml}
+      />
+    );
+
+    expect(sanitizeHtml).toHaveBeenCalledWith(UNSAFE_HTML);
+    expect(editorHtml(container)).toBe(SANITIZED_HTML);
+  });
+
+  it('sanitizes editor HTML after field values are substituted', () => {
+    fieldValues.visitor_note = '<img src="x" onerror="alert(1)">';
+    const sanitizeHtml = jest.fn(() => SANITIZED_HTML);
+    render(
+      <StyledContainer
+        node={{
+          ...baseNode,
+          properties: { custom_html: '<p>{{visitor_note}}</p>' }
+        }}
+        breakpoint={480}
+        editMode
+        sanitizeHtml={sanitizeHtml}
+      />
+    );
+
+    expect(sanitizeHtml).toHaveBeenCalledWith(
+      '<p><img src="x" onerror="alert(1)"></p>'
+    );
+  });
+
+  it('renders no custom HTML in editor mode without a sanitizer', () => {
+    const { container } = render(
+      <StyledContainer node={htmlNode} breakpoint={480} editMode>
+        <span>Container contents</span>
+      </StyledContainer>
+    );
+
+    expect(editorHtml(container)).toBeUndefined();
+    expect(container.querySelector('img')).toBeNull();
+    expect(container).toHaveTextContent('Container contents');
+  });
+
+  it('renders custom HTML as written on a live form and ignores the sanitizer', () => {
+    const sanitizeHtml = jest.fn(() => SANITIZED_HTML);
+    const { container } = render(
+      <StyledContainer
+        node={htmlNode}
+        breakpoint={480}
+        sanitizeHtml={sanitizeHtml}
+      />
+    );
+
+    expect(sanitizeHtml).not.toHaveBeenCalled();
+    expect(container.querySelector('img')).toHaveAttribute(
+      'onerror',
+      'alert(1)'
+    );
+    expect(container.querySelector('p')).toHaveTextContent('Welcome');
   });
 });
