@@ -18,6 +18,7 @@ import {
   runningInClient
 } from '../../../utils/browser';
 import { stepPageKey, trapTabKey, isEditableTarget } from './keyboard';
+import { printDocuments } from './print';
 
 export type ReviewEnvelopeAction = 'sign' | 'fill' | 'download' | 'save';
 export type EditorToolbarAction = ReviewEnvelopeAction | 'draft';
@@ -76,6 +77,11 @@ const TOOLBAR_ACTION_ENVELOPE_ACTION: Record<
   save: 'save',
   draft: 'sign'
 };
+
+// Print runs in the browser and never finalizes, so it sits outside the
+// finalize actions above: it never closes the editor and never counts as the
+// conclusive action. A toolbar offering only Print still gets Continue.
+const PRINT_TOOLBAR_ACTION = 'print';
 
 const MAX_PAGE_WIDTH = 900;
 const CONTAINER_PADDING = 48;
@@ -494,6 +500,29 @@ export default function DocumentViewer({
     configuredToolbarActions.includes(a)
   );
 
+  const offersPrint = (action.editor_toolbar_actions ?? []).includes(
+    PRINT_TOOLBAR_ACTION
+  );
+  // pdf.js proxies arrive per document; printing before they all have would
+  // silently drop the missing ones.
+  const allDocsLoaded = payload.documents.every(
+    (doc) => pageCounts[doc.pdf_url] !== undefined
+  );
+
+  const print = async () => {
+    setBusyKey(PRINT_TOOLBAR_ACTION);
+    setError('');
+    try {
+      await printDocuments(
+        payload.documents.map((doc) => loadedDocs.current[doc.pdf_url])
+      );
+    } catch (e) {
+      setError(`Unable to print: ${errorMessage(e)}`);
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
   const finalizeWith = async (
     toolbarAction: EditorToolbarAction,
     busyActionKey: string
@@ -543,8 +572,20 @@ export default function DocumentViewer({
     }
   };
 
+  const printAction: ToolbarAction[] = offersPrint
+    ? [
+        {
+          key: PRINT_TOOLBAR_ACTION,
+          label: 'Print',
+          variant: 'secondary',
+          disabled: !allDocsLoaded,
+          onClick: print
+        }
+      ]
+    : [];
+
   // Rendered left→right, so the last entry is the primary (rightmost) button.
-  const toolbarActions: ToolbarAction[] = orderedToolbarActions.length
+  const finalizeActions: ToolbarAction[] = orderedToolbarActions.length
     ? orderedToolbarActions.map((toolbarAction, i) => ({
         key: toolbarAction,
         label: TOOLBAR_ACTION_LABELS[toolbarAction],
@@ -561,6 +602,7 @@ export default function DocumentViewer({
           onClick: () => finalizeWith('fill', 'primary')
         }
       ];
+  const toolbarActions = [...printAction, ...finalizeActions];
 
   if (!portalElRef.current) return null;
   return createPortal(
