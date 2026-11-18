@@ -94,7 +94,7 @@ export function setOverride(node: NfNode, name: string, value: unknown): void {
     throw new Error(`A ${node.kind} has no property ${name}`);
   if (node.kind === 'paragraph' && isRunProperty(name)) {
     for (const run of node.runs as NfNode[])
-      if (run.kind === 'run') setOverride(run, name, value);
+      if (run.kind === 'run' && run.text !== '') setOverride(run, name, value);
     return;
   }
   if (value === null) delete node[name];

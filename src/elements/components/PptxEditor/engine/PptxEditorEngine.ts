@@ -801,6 +801,14 @@ export class PptxEditorEngine {
     return result;
   }
 
+  /** Drop what undo set aside, so nothing undone can come back */
+  discardRedo(): void {
+    this.redoStack = [];
+    for (const shelved of this.shelvedRecords.values())
+      this.pendingSnapshots.delete(shelved.id);
+    this.shelvedRecords.clear();
+  }
+
   canUndo(): boolean {
     return this.undoStack.length > 0;
   }
@@ -1089,11 +1097,7 @@ export class PptxEditorEngine {
       ...this.undoStack,
       { id: entryId, label, before, after }
     ].slice(-HISTORY_LIMIT);
-    this.redoStack = [];
-    // Redo is gone, so records shelved by undo can never come back.
-    for (const shelved of this.shelvedRecords.values())
-      this.pendingSnapshots.delete(shelved.id);
-    this.shelvedRecords.clear();
+    this.discardRedo();
     const changeRecord = deriveChangeRecord({
       transactionId: entryId,
       label,

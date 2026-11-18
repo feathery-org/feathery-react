@@ -154,12 +154,15 @@ export function el(
 }
 
 // Characters XML 1.0 forbids, which would make the saved file unreadable
-// eslint-disable-next-line no-control-regex
-export const NOT_XML = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/;
+export const NOT_XML = new RegExp(
+  // eslint-disable-next-line no-control-regex
+  '[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\uD800-\\uDFFF\\uFFFE\\uFFFF]',
+  'u'
+);
 
 /** Build a text node. */
 export function text(value: string): ONode {
-  return { '#text': value.replace(new RegExp(NOT_XML, 'g'), '') };
+  return { '#text': value.replace(new RegExp(NOT_XML, 'gu'), '') };
 }
 
 /** Find the top-level element node in a parsed document (skips <?xml?>). */

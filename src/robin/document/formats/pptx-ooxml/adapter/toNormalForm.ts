@@ -45,10 +45,17 @@ function readSlide(
 ): NfNode {
   const spTree = spTreeOf(tree);
   read.inherited = inherited;
+  const seen = new Map<string, number>();
   const shapes = spTree
     ? childrenOf(spTree)
         .filter(isShapeNode)
-        .map((node) => readShape(node, `${id}#${shapeIdOf(node)}`, read, true))
+        .map((node) => {
+          const shapeId = shapeIdOf(node);
+          const repeat = seen.get(shapeId) ?? 0;
+          seen.set(shapeId, repeat + 1);
+          const key = `${id}#${shapeId}${repeat ? `^${repeat}` : ''}`;
+          return readShape(node, key, read, true);
+        })
     : [];
   read.inherited = undefined;
   const residue = clone(tree);
@@ -134,7 +141,9 @@ function markPending(
       const matched = new Set<NfNode>();
       for (const node of childrenOf(spTreeOf(tree) ?? {}).filter(isShapeNode)) {
         const shapeId = shapeIdOf(node);
-        const current = after.shapes.find((shape) => shape.shapeId === shapeId);
+        const current = after.shapes.find(
+          (shape) => shape.shapeId === shapeId && !matched.has(shape)
+        );
         if (current) matched.add(current);
         if (
           current &&

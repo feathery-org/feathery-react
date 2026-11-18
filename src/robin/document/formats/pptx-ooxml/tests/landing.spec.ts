@@ -418,6 +418,52 @@ const cases: Array<[string, boolean, string, (deck: Deck) => WriteResult]> = [
       })
   ],
   [
+    'a size for every paragraph of a box, through find',
+    true,
+    'marketing-parity.pptx',
+    (d) => {
+      const find = {
+        kind: 'paragraph',
+        within: d.find('Company Name')[0].within[0]
+      };
+      const found = d.call('find', find) as { total: number; shape: string };
+      return d.write({
+        intent: 'Bigger.',
+        scope: { ids: [], bulk: [{ find, total: found.total }] },
+        changes: [
+          {
+            kind: 'set',
+            target: { find, total: found.total, shape: found.shape },
+            props: { size: 20 }
+          }
+        ]
+      });
+    }
+  ],
+  [
+    'bold on a run left empty',
+    false,
+    'marketing-parity.pptx',
+    (d) => {
+      const run = subtitleRun(d);
+      replace(d, run, (n) => {
+        n.text = '';
+      });
+      return replace(d, run, (n) => {
+        n.bold = true;
+      });
+    }
+  ],
+  [
+    'text with half a surrogate pair',
+    false,
+    'marketing-parity.pptx',
+    (d) =>
+      replace(d, subtitleRun(d), (n) => {
+        n.text = 'bad\uD800end';
+      })
+  ],
+  [
     'a slide written from scratch',
     false,
     'marketing-parity.pptx',

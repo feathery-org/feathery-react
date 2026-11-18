@@ -298,6 +298,9 @@ describe('PowerPoint structure', () => {
       'turn-0001',
       'turn-0002'
     ]);
+    deck.store.redo();
+    expect(serializeDeck(deck.engine)).toEqual(edited);
+    expect(deck.pending()).toHaveLength(2);
   });
 
   it('removes and moves slides', () => {
@@ -459,6 +462,75 @@ describe('PowerPoint structure', () => {
             id: cellParagraph,
             base: node.base,
             node: { ...node, runs: [{ text: 'changed' }] }
+          }
+        ]
+      })
+    );
+  });
+});
+
+describe('PowerPoint shapes sharing an id on one slide', () => {
+  const openSharing = () => {
+    const files = unzipSync(fixture('marketing-parity.pptx'));
+    const path = 'ppt/slides/slide1.xml';
+    files[path] = strToU8(
+      strFromU8(files[path]).replace(
+        '<p:cNvPr id="474" name="Google Shape;474;p57"',
+        '<p:cNvPr id="473" name="Google Shape;474;p57"'
+      )
+    );
+    return openDeck('marketing-parity.pptx', zipSync(files));
+  };
+  const shapeOf = (deck: ReturnType<typeof openDeck>, text: string) =>
+    deck.find(text)[0].within[0];
+
+  it('reads each shape as it is', () => {
+    const deck = openSharing();
+    const q1 = shapeOf(deck, 'Q1');
+    const month = shapeOf(deck, 'Month');
+    expect(q1).not.toEqual(month);
+    expect(JSON.stringify(deck.read(q1).paragraphs)).toContain('Q1');
+    expect(JSON.stringify(deck.read(month).paragraphs)).toContain('Month');
+  });
+
+  it('refuses editing or removing either one, and still edits the rest', () => {
+    const deck = openSharing();
+    const month = shapeOf(deck, 'Month');
+    const run = (deck.read(month).paragraphs as any)[0].runs[0];
+    expectLimits(
+      deck.write({
+        intent: 'Rename the month.',
+        scope: { ids: [run.id] },
+        changes: [
+          {
+            kind: 'replace',
+            id: run.id,
+            base: deck.read(run.id).base as string,
+            node: { ...run, text: 'June' }
+          }
+        ]
+      })
+    );
+    const q1 = shapeOf(deck, 'Q1');
+    expectLimits(
+      deck.write({
+        intent: 'Drop the quarter.',
+        scope: { ids: [q1] },
+        changes: [{ kind: 'delete', id: q1, base: deck.read(q1).base }]
+      })
+    );
+    const year = (deck.read(shapeOf(deck, 'Year')).paragraphs as any)[0]
+      .runs[0];
+    expectCard(
+      deck.write({
+        intent: 'Set the year.',
+        scope: { ids: [year.id] },
+        changes: [
+          {
+            kind: 'replace',
+            id: year.id,
+            base: deck.read(year.id).base as string,
+            node: { ...year, text: '2027' }
           }
         ]
       })

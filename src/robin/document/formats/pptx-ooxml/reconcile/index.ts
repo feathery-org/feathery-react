@@ -161,6 +161,17 @@ export function planDeck(
           );
           continue;
         }
+        if (
+          node.kind === 'run' &&
+          node.text === '' &&
+          RUN_FORMAT.some(
+            (key) => node[key] !== undefined && node[key] !== origin?.[key]
+          )
+        )
+          refuse(
+            node.id,
+            'is a run with no text, which keeps no formatting: format it in the write that gives it text'
+          );
         if (node.kind === 'break' && node.text !== '\n')
           refuse(node.id, 'is a break, written as { "text": "\\n" }');
         const lists = origin && listChange(origin, node);
@@ -334,7 +345,20 @@ export function planDeck(
       return old ? [{ old, shape }] : [];
     });
     const kept = new Set(pairs.map(({ old }) => old));
-    const removed = oldShapes.filter((shape) => !kept.has(shape));
+    // The editor finds a shape by its shapeId, so it cannot tell apart two that share one
+    const shapeIds = oldShapes.map((shape) => shape.shapeId);
+    const isShared = (shape: NfNode) =>
+      shapeIds.indexOf(shape.shapeId) !== shapeIds.lastIndexOf(shape.shapeId);
+    const refuseShared = (id: string) =>
+      refuse(
+        id,
+        'shares its shapeId with another shape on the slide, so the editor cannot tell them apart: tell the person to edit it by hand'
+      );
+    const removed = oldShapes.filter((shape) => {
+      if (kept.has(shape)) return false;
+      if (isShared(shape)) refuseShared(shape.id);
+      return true;
+    });
     if (removed.length)
       operations.push({
         command: {
@@ -354,6 +378,10 @@ export function planDeck(
       );
 
     const geometry = pairs.flatMap(({ old, shape }) => {
+      if (isShared(old) && !sameContent(old, shape)) {
+        refuseShared(shape.id);
+        return [];
+      }
       const frame = shapeChanges(slide, old, shape, false);
       return frame ? [{ shapeId: String(shape.shapeId), geometry: frame }] : [];
     });

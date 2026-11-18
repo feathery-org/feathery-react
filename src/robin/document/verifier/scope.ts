@@ -186,7 +186,7 @@ export function scopeProblems(inputs: ScopeInputs): RefusalProblem[] {
     if (declared.has(id)) return true;
     let p = before.placement(id)?.parent ?? null;
     while (p) {
-      if (declared.has(p.id)) return true;
+      if (declared.has(p.id) || bulkCovered.has(p.id)) return true;
       p = before.placement(p.id)?.parent ?? null;
     }
     return false;

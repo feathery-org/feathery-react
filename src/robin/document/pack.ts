@@ -368,6 +368,7 @@ export interface EditorHost {
   undo(): void;
   canRedo(): boolean;
   redo(): void;
+  discardRedo?(): void;
   readOnly(): boolean;
   /** The person's selection as the editor reports it, opaque to the core; null when there is none. */
   selection?(): unknown;
