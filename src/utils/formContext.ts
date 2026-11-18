@@ -481,10 +481,8 @@ export const getFormContext = (formUuid: string) => {
       repeatable?: boolean;
       download?: boolean;
       merge?: boolean;
-      // Packets: each inner list merges those generated copies into one PDF,
-      // in order. A member is a document reference (one copy) or a template
-      // id (all of that template's copies). On a DocuSign sign the whole
-      // packet becomes one signable document; otherwise one download file.
+      // Packets: each inner list of document references / template ids merges
+      // into one PDF (one DocuSign document, or one download file).
       mergeGroups?: string[][];
       mergedFileName?: string;
       zipName?: string;
@@ -626,6 +624,15 @@ export const getFormContext = (formUuid: string) => {
           )
         );
       }
+      if (mergeGroups?.length && (merge || envelopeAction === 'open_in_editor')) {
+        // Fail fast; the backend rejects both combinations anyway.
+        return Promise.reject(
+          new Error(
+            'generateDocuments: mergeGroups cannot combine with merge or ' +
+              "envelopeAction 'open_in_editor'"
+          )
+        );
+      }
       const unknownUploadKeys: string[] = [];
       let missingUploadField = false;
       documentIds = documentIds.map((doc) => {
@@ -675,15 +682,19 @@ export const getFormContext = (formUuid: string) => {
             type: 'open_fuser_envelopes',
             documents: documentIds,
             // The flow has no separate download flag; it's an envelope action,
-            // unless the call already asks to sign.
+            // unless the call already asks to sign. A packet call with no
+            // signing inputs means fill, not the flow's default sign.
             envelope_action:
               envelopeAction ??
-              (download &&
-              !signMethod &&
+              (!signMethod &&
               !signers?.length &&
               !toolbarActions?.length &&
               !redirect
-                ? 'download'
+                ? download
+                  ? 'download'
+                  : mergeGroups?.length
+                  ? 'fill'
+                  : undefined
                 : undefined),
             sign_method: signMethod,
             ...(draft !== undefined ? { draft } : {}),
