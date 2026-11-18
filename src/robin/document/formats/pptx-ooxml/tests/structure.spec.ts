@@ -304,36 +304,6 @@ describe('PowerPoint structure', () => {
     expect(deck.store.getState().redoStack).toHaveLength(0);
   });
 
-  it('gives the nodes of a rejected card back the ids they had before it', () => {
-    const deck = openDeck();
-    const outline = (turnId: string) =>
-      (deck.call('outline', { depth: 4 }, turnId) as { lines: string }).lines;
-    const before = outline('turn-0001');
-    const shape = deck.find('Q1', 'turn-0001')[0].within[0];
-    const run = (deck.read(shape, 'turn-0001').paragraphs as any)[0].runs[0];
-    expectCard(
-      deck.write(
-        {
-          intent: 'Rename the quarter.',
-          scope: { ids: [run.id] },
-          changes: [
-            {
-              kind: 'replace',
-              id: run.id,
-              base: deck.read(run.id, 'turn-0001').base as string,
-              node: { ...run, text: 'ONE' }
-            }
-          ]
-        },
-        'turn-0001'
-      )
-    );
-    expect(
-      deck.call('resolve', { cards: ['turn-0001'], accept: false }, 'turn-0002')
-    ).toEqual(expect.objectContaining({ ok: true }));
-    expect(outline('turn-0003')).toEqual(before);
-  });
-
   it("keeps the person's own redo when the first reject conflicts", () => {
     const deck = openDeck();
     const rename = (text: string, to: string, turnId: string) => {

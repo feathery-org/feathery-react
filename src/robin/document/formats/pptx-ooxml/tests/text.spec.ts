@@ -325,6 +325,36 @@ describe('PowerPoint text', () => {
     );
   });
 
+  it('a bulk set covers only the values it sets on what it spreads to', () => {
+    const deck = openDeck();
+    const { run, shape } = subtitle(deck);
+    const find = { kind: 'paragraph', within: shape };
+    const found = deck.call('find', find) as { total: number; shape: string };
+    const result = deck.write({
+      intent: 'Bigger, one run much bigger.',
+      scope: { ids: [], bulk: [{ find, total: found.total }] },
+      changes: [
+        {
+          kind: 'set',
+          target: { find, total: found.total, shape: found.shape },
+          props: { size: 20 }
+        },
+        {
+          kind: 'replace',
+          id: run,
+          base: deck.read(run).base,
+          node: { ...deck.read(run), size: 99 }
+        }
+      ]
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: false,
+        refusal: expect.objectContaining({ invariant: 'scope' })
+      })
+    );
+  });
+
   it('refuses text holding a control character a deck cannot hold', () => {
     const deck = openDeck();
     const { run } = subtitle(deck);

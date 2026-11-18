@@ -149,8 +149,8 @@ export function scopeProblems(inputs: ScopeInputs): RefusalProblem[] {
     )
   );
   const bulkCovered = new Set<string>();
-  // Properties a bulk set spreads onto what is inside the nodes it matched
-  const spreadProps = new Map<string, string[]>();
+  // Values a bulk set spreads onto what is inside the nodes it matched
+  const spreadProps = new Map<string, Record<string, unknown>>();
   write.changes.forEach((change, index) => {
     if (change.kind !== 'set') return;
     const t = change.target;
@@ -175,10 +175,10 @@ export function scopeProblems(inputs: ScopeInputs): RefusalProblem[] {
           if (hit)
             walk(hit, pack.tree, ({ node }) => {
               if (node !== hit)
-                spreadProps.set(node.id, [
-                  ...(spreadProps.get(node.id) ?? []),
-                  ...Object.keys(change.props)
-                ]);
+                spreadProps.set(node.id, {
+                  ...spreadProps.get(node.id),
+                  ...change.props
+                });
             });
         }
     }
@@ -208,16 +208,24 @@ export function scopeProblems(inputs: ScopeInputs): RefusalProblem[] {
     return false;
   };
   const onlySpread = (id: string): boolean => {
-    const names = spreadProps.get(id);
+    const props = spreadProps.get(id);
     const was = before.get(id);
     const now = after.get(id);
-    if (!names || !was || !now || diff.moved.has(id)) return false;
+    if (!props || !was || !now || diff.moved.has(id)) return false;
     const without = (node: NfNode) => {
       const rest: NfNode = { ...node };
-      for (const name of names) delete rest[name];
+      for (const name of Object.keys(props)) delete rest[name];
       return ownContentText(rest, pack.tree);
     };
-    return without(was) === without(now);
+    const valueOf = (value: unknown) => canonicalJson(value ?? null);
+    return (
+      without(was) === without(now) &&
+      Object.entries(props).every(
+        ([name, value]) =>
+          valueOf(now[name]) === valueOf(value) ||
+          valueOf(now[name]) === valueOf(was[name])
+      )
+    );
   };
   const memo = new Map<string, boolean>();
   const covered = (id: string): boolean => {
