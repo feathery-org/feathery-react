@@ -36,6 +36,12 @@ const isLinkGatedRequest = (url: any): url is string => {
 // brought them in gave them a collaborator id, never a token of their own.
 const COLLABORATOR_HEADER = 'X-Feathery-Collaborator';
 
+// The Salesforce session an embedding page handed `init`, which a Salesforce
+// session form checks in place of a Feathery login. The backend verifies the
+// session with the org's instance, so the two travel together.
+const SESSION_HEADER = 'X-Feathery-Session';
+const SALESFORCE_INSTANCE_HEADER = 'X-Feathery-Salesforce-Instance';
+
 /**
  * The credentials a request to `url` should carry so the backend can resolve a
  * link-bound submission, or undefined when the url is not one it gates. The
@@ -43,6 +49,9 @@ const COLLABORATOR_HEADER = 'X-Feathery-Collaborator';
  * without a collaborator is the ordinary case, a collaborator without a link is
  * everyone invited after the first, and both together is a link that opened a
  * collaborative submission.
+ *
+ * A Salesforce session rides along by the same rule: every backend request of a
+ * Salesforce session form has to prove who the filler is.
  *
  * This is the whole contract client-utils' header provider needs, so it is
  * registered there as one call; `withLinkRequestHeaders` is the SDK-side caller
@@ -62,6 +71,11 @@ export const linkHeadersForUrl = (
   };
   if (initState.collaboratorId)
     headers[COLLABORATOR_HEADER] = initState.collaboratorId;
+  const salesforceSession = initState.salesforceSession;
+  if (salesforceSession?.sessionId && salesforceSession.instanceUrl) {
+    headers[SESSION_HEADER] = salesforceSession.sessionId;
+    headers[SALESFORCE_INSTANCE_HEADER] = salesforceSession.instanceUrl;
+  }
 
   return Object.keys(headers).length ? headers : undefined;
 };
