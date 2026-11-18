@@ -40,7 +40,7 @@ import urllib.request
 import uuid
 import xml.etree.ElementTree as ET
 
-TOOL_VERSION = "1.2.1"
+TOOL_VERSION = "1.3.0"
 
 REGION = "us-west-1"
 ACCOUNT_ID = "737208625848"
@@ -543,6 +543,32 @@ def _stray_node_manifest(package):
     return path != "/package.json" and not NODE_PACKAGE_ROOT.search(path)
 
 
+def _inherit_owner_versions(packages, relationships):
+    """Version files an OS package installed (for example jars an RPM owns)."""
+    by_id = dict((p["SPDXID"], p) for p in packages)
+    for relationship in relationships:
+        if relationship.get("relationshipType") != "OTHER" or not str(
+            relationship.get("comment", "")
+        ).startswith("ownership-by-file-overlap"):
+            continue
+        owner = by_id.get(relationship.get("spdxElementId"))
+        owned = by_id.get(relationship.get("relatedSpdxElement"))
+        if not owner or not owned:
+            continue
+        if owned.get("versionInfo") not in UNKNOWN_VERSIONS:
+            continue
+        if owner.get("versionInfo") in UNKNOWN_VERSIONS:
+            continue
+        owned["versionInfo"] = owner["versionInfo"]
+        note = (
+            "Version taken from the owning package "
+            f"{owner.get('name')}@{owner['versionInfo']}."
+        )
+        owned["comment"] = (
+            f"{owned['comment']} {note}" if owned.get("comment") else note
+        )
+
+
 def finalize(
     doc, component, version, first_party, source_description, artifact_sha256=None
 ):
@@ -597,10 +623,15 @@ def finalize(
             package.get("name", "").startswith(p) for p in first_party
         ):
             package["supplier"] = SUPPLIER
+            # Our own unversioned code (for example a vendored local package)
+            # ships as part of this release.
+            if package.get("versionInfo") in UNKNOWN_VERSIONS:
+                package["versionInfo"] = version
         elif not package.get("supplier"):
             # Unknown is stated explicitly, never guessed (CISA 2026 minimum elements).
             package["supplier"] = "NOASSERTION"
         kept.append(package)
+    _inherit_owner_versions(kept, doc.get("relationships", []))
     removed = set(p["SPDXID"] for p in doc.get("packages", [])) - set(
         p["SPDXID"] for p in kept
     )
@@ -614,7 +645,7 @@ def finalize(
     return doc
 
 
-def validate(doc, component, version, min_packages, required):
+def validate(doc, component, version, min_packages, required, allow_unversioned=()):
     """Deterministic gate: a document that fails here is never signed."""
     problems = []
 
@@ -666,7 +697,11 @@ def validate(doc, component, version, min_packages, required):
     for package in packages:
         label = f"{package.get('name')} ({package.get('SPDXID')})"
         need(bool(package.get("name")), f"{label}: name")
-        need(package.get("versionInfo") not in UNKNOWN_VERSIONS, f"{label}: version")
+        need(
+            package.get("versionInfo") not in UNKNOWN_VERSIONS
+            or package.get("name") in allow_unversioned,
+            f"{label}: version",
+        )
         need(bool(package.get("supplier")), f"{label}: supplier (or NOASSERTION)")
         need(bool(package.get("downloadLocation")), f"{label}: downloadLocation")
         need(bool(_purl(package)), f"{label}: purl")
@@ -860,8 +895,15 @@ def command_sign(args):
         source_description,
         artifact_sha256,
     )
+    allowed = args.allow_unversioned or []
+    for package in doc.get("packages", []):
+        if (
+            package.get("name") in allowed
+            and package.get("versionInfo") in UNKNOWN_VERSIONS
+        ):
+            package["versionInfo"] = "NOASSERTION"
     count = validate(
-        doc, args.component, version, args.min_packages, args.require or []
+        doc, args.component, version, args.min_packages, args.require or [], allowed
     )
     data = serialize(doc)
 
@@ -897,6 +939,7 @@ def command_sign(args):
             "public_key_sha256": fingerprint,
         },
         "tools": {"syft": SYFT_VERSION, "feathery_sbom": TOOL_VERSION},
+        "allowed_unversioned": sorted(allowed),
         "signed_at": iso(utcnow()),
     }
     with open(os.path.join(args.out, BUILD_FILE), "w", encoding="utf-8") as handle:
@@ -1116,6 +1159,11 @@ def parser():
         help="component that must be present, NAME or NAME@VERSION_REGEX",
     )
     sign.add_argument("--min-packages", type=int, default=1)
+    sign.add_argument(
+        "--allow-unversioned",
+        action="append",
+        help="component known to ship without a version; recorded in build.json",
+    )
     sign.add_argument(
         "--artifact-file", help="the shipped artifact file; its sha256 is recorded"
     )
