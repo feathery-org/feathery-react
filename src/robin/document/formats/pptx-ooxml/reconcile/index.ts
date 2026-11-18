@@ -9,7 +9,7 @@ import {
 import type { Pending } from '../adapter/toNormalForm';
 import type { DeckOperation, ShapeRef, SlideRef } from '../seams/deck';
 import { PARAGRAPH_FORMAT, RUN_FORMAT } from '../textSources';
-import { isShapeKind, pptxTree } from '../tree';
+import { isShapeKind, leafRuns, pptxTree } from '../tree';
 import { textOperations } from './text';
 
 /** A difference the editor cannot build, with what to do instead */
@@ -140,16 +140,34 @@ export function planDeck(
     const own = new Set<string>();
     for (const paragraph of old ? listOf(old, 'paragraphs') : []) {
       own.add(paragraph.id);
-      for (const run of listOf(paragraph, 'runs')) own.add(run.id);
+      for (const run of [...listOf(paragraph, 'runs'), ...leafRuns(paragraph)])
+        own.add(run.id);
     }
     for (const paragraph of listOf(shape, 'paragraphs'))
-      for (const node of [paragraph, ...listOf(paragraph, 'runs')]) {
+      for (const node of [
+        paragraph,
+        ...listOf(paragraph, 'runs').filter((run) => run.kind === 'link'),
+        ...leafRuns(paragraph)
+      ]) {
         const origin = before.get(originOf(node.id));
         if (origin && !own.has(origin.id)) {
           refuse(
             node.id,
             'moves to another container, which the editor cannot do'
           );
+          continue;
+        }
+        if (node.kind === 'link') {
+          if (!origin)
+            refuse(
+              node.id,
+              'is a new link, which the editor cannot add yet: tell the person to add it by hand'
+            );
+          else if (origin.target !== node.target)
+            refuse(
+              node.id,
+              'changes where a link goes, which the editor cannot do yet: tell the person to change it by hand'
+            );
           continue;
         }
         if (node.kind === 'field' && (!origin || !sameContent(origin, node))) {

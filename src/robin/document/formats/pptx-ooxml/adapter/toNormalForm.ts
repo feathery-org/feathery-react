@@ -64,9 +64,11 @@ function readSlide(
     slotted['p:spTree'] = childrenOf(slotted).map((kid) =>
       isShapeNode(kid) ? SLOT : kid
     );
-  read.residue[id] = (inherited
-    ? { slide: residue, inherited }
-    : { slide: residue }) as unknown as ONode;
+  read.residue[id] = {
+    slide: residue,
+    ...(inherited ? { inherited } : {}),
+    ...(read.links ? { links: read.links } : {})
+  } as unknown as ONode;
   return { id, kind: 'slide', path, shapes };
 }
 
@@ -105,7 +107,8 @@ interface SlideState {
 function markPending(
   slides: NfNode[],
   pending: PendingSuggestion[],
-  read: ReadNodes
+  read: ReadNodes,
+  links: Record<string, Record<string, string> | undefined>
 ): void {
   let state: SlideState[] = slides.map((slide) => ({
     path: String(slide.path),
@@ -124,6 +127,7 @@ function markPending(
 
     for (const [path, xml] of Object.entries(beforeSlides)) {
       const tree = parseXml(xml);
+      read.links = links[path];
       const after = state.find((slide) => slide.path === path);
       if (!after || (stays && !stays.has(path))) {
         if (after) mark(after.node, 'insertion', by);
@@ -190,10 +194,15 @@ export function toNormalForm(native: string): {
 } {
   const deck = readNative(native);
   const read: ReadNodes = { residue: {}, sources: new Map() };
-  const slides = deck.slides.map(({ path, xml, inherited }) =>
-    readSlide(path, parseXml(xml), path, read, inherited)
+  const links = Object.fromEntries(
+    deck.slides.map((slide) => [slide.path, slide.links])
   );
-  markPending(slides, deck.pending, read);
+  const slides = deck.slides.map(({ path, xml, inherited }) => {
+    read.links = links[path];
+    return readSlide(path, parseXml(xml), path, read, inherited);
+  });
+  markPending(slides, deck.pending, read, links);
+  read.links = undefined;
   const residue: Residue = {
     ...read.residue,
     [DECK_ID]: { pending: deck.pending }

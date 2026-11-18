@@ -1,6 +1,7 @@
 import { NOT_XML } from '../../../../elements/components/PptxEditor/core/opc/xml';
 import type { DocumentView, EffectiveProperty, PropertySpec } from '../../pack';
 import type { NfNode } from '../../tree';
+import { leafRuns } from './tree';
 
 const spec = (
   name: string,
@@ -93,7 +94,7 @@ export function setOverride(node: NfNode, name: string, value: unknown): void {
   if (!schemaFor(node.kind)?.some((property) => property.name === name))
     throw new Error(`A ${node.kind} has no property ${name}`);
   if (node.kind === 'paragraph' && isRunProperty(name)) {
-    for (const run of node.runs as NfNode[])
+    for (const run of leafRuns(node))
       if (run.kind === 'run' && run.text !== '') setOverride(run, name, value);
     return;
   }
@@ -117,31 +118,33 @@ export function setOnSpan(
     return `only run properties apply to a span (not ${other.join(
       ', '
     )}); set those on the paragraph`;
-  const out: NfNode[] = [];
   let at = 0;
-  for (const run of node.runs as NfNode[]) {
-    const start = at;
-    const end = at + textLength(run);
-    at = end;
-    const from = Math.max(span.start, start) - start;
-    const to = Math.min(span.end, end) - start;
-    if (run.kind !== 'run' || to <= from) {
-      out.push(run);
-      continue;
-    }
-    const text = String(run.text);
-    const piece = (value: string) =>
-      ({ ...run, id: undefined, text: value } as unknown as NfNode);
-    if (from > 0) out.push({ ...run, text: text.slice(0, from) });
-    const covered =
-      from > 0
-        ? piece(text.slice(from, to))
-        : { ...run, text: text.slice(from, to) };
-    for (const [name, value] of Object.entries(props))
-      setOverride(covered, name, value);
-    out.push(covered);
-    if (to < text.length) out.push(piece(text.slice(to)));
-  }
-  node.runs = out;
+  // A run split inside a link keeps every piece in it
+  const split = (runs: NfNode[]): NfNode[] =>
+    runs.flatMap((run) => {
+      if (run.kind === 'link')
+        return [{ ...run, runs: split(run.runs as NfNode[]) }];
+      const start = at;
+      const end = at + textLength(run);
+      at = end;
+      const from = Math.max(span.start, start) - start;
+      const to = Math.min(span.end, end) - start;
+      if (run.kind !== 'run' || to <= from) return [run];
+      const text = String(run.text);
+      const piece = (value: string) =>
+        ({ ...run, id: undefined, text: value } as unknown as NfNode);
+      const out: NfNode[] = [];
+      if (from > 0) out.push({ ...run, text: text.slice(0, from) });
+      const covered =
+        from > 0
+          ? piece(text.slice(from, to))
+          : { ...run, text: text.slice(from, to) };
+      for (const [name, value] of Object.entries(props))
+        setOverride(covered, name, value);
+      out.push(covered);
+      if (to < text.length) out.push(piece(text.slice(to)));
+      return out;
+    });
+  node.runs = split(node.runs as NfNode[]);
   return null;
 }

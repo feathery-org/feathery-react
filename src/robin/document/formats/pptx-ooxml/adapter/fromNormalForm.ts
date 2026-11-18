@@ -1,10 +1,16 @@
 import type { Residue } from '../../../pack';
-import { clone, type NfNode, type NormalForm } from '../../../tree';
+import {
+  canonicalJson,
+  clone,
+  type NfNode,
+  type NormalForm
+} from '../../../tree';
 import {
   buildXml,
   child,
   childrenOf,
   descendant,
+  el,
   tagOf,
   text,
   type ONode,
@@ -15,7 +21,7 @@ import {
   type InheritedFormat,
   type PendingSuggestion
 } from '../native';
-import { isSlot, runText } from './nodes';
+import { isSlot, linkOf, runText } from './nodes';
 import { DECK_ID, spTreeOf, type Pending } from './toNormalForm';
 
 const isLive = (node: NfNode) =>
@@ -48,8 +54,35 @@ function fill(holder: ONode | undefined, kids: ONode[]): void {
   holder[tag] = out;
 }
 
-function writeRun(run: NfNode, residue: Residue): ONode {
+const LINK_TAGS = ['a:hlinkClick', 'a:hlinkMouseOver'];
+
+/** A run's own link set to the link it sits in, or none */
+function linkRun(node: ONode, hlink: ONode | undefined): void {
+  if (canonicalJson(linkOf(node)) === canonicalJson(hlink)) return;
+  let rPr = child(node, 'a:rPr');
+  if (!rPr) {
+    rPr = el('a:rPr');
+    childrenOf(node).unshift(rPr);
+  }
+  const kids = childrenOf(rPr).filter(
+    (kid) => !LINK_TAGS.includes(tagOf(kid) ?? '')
+  );
+  if (hlink) {
+    const after = kids.findIndex((kid) =>
+      ['a:rtl', 'a:extLst'].includes(tagOf(kid) ?? '')
+    );
+    kids.splice(after < 0 ? kids.length : after, 0, clone(hlink));
+  }
+  rPr[tagOf(rPr) as string] = kids;
+}
+
+function writeRun(
+  run: NfNode,
+  residue: Residue,
+  hlink: ONode | undefined
+): ONode {
   const node = residueOf(residue, run);
+  if (tagOf(node) !== 'a:br') linkRun(node, hlink);
   const value = String(run.text);
   if (tagOf(node) === 'a:br' || runText(node) === value) return node;
   const t = child(node, 'a:t');
@@ -62,7 +95,13 @@ function writeParagraphs(paragraphs: NfNode[], residue: Residue): ONode[] {
     const node = residueOf(residue, paragraph);
     fill(
       node,
-      (paragraph.runs as NfNode[]).map((run) => writeRun(run, residue))
+      (paragraph.runs as NfNode[]).flatMap((run) =>
+        run.kind === 'link'
+          ? (run.runs as NfNode[]).map((inner) =>
+              writeRun(inner, residue, residueOf(residue, run))
+            )
+          : [writeRun(run, residue, undefined)]
+      )
     );
     return node;
   });
@@ -106,9 +145,14 @@ function writeShape(shape: NfNode, residue: Residue): ONode {
 
 export function fromNormalForm(nf: NormalForm, residue: Residue): string {
   const slides = (nf.root.slides as NfNode[]).filter(isLive).map((slide) => {
-    const { slide: tree, inherited } = residue[slide.id] as {
+    const {
+      slide: tree,
+      inherited,
+      links
+    } = residue[slide.id] as {
       slide: OTree;
       inherited?: InheritedFormat;
+      links?: Record<string, string>;
     };
     const copy = clone(tree);
     fill(
@@ -120,7 +164,8 @@ export function fromNormalForm(nf: NormalForm, residue: Residue): string {
     return {
       path: String(slide.path),
       xml: buildXml(copy),
-      ...(inherited ? { inherited } : {})
+      ...(inherited ? { inherited } : {}),
+      ...(links ? { links } : {})
     };
   });
   const { pending } = residue[DECK_ID] as { pending: PendingSuggestion[] };

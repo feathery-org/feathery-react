@@ -1,12 +1,17 @@
 import type { NfNode } from '../../tree';
 import type { Pending } from './adapter/toNormalForm';
+import { leafRuns } from './tree';
 
 const quoted = (value: string, limit = 60) =>
   JSON.stringify(value.length > limit ? `${value.slice(0, limit)}…` : value);
 
 function textOf(node: NfNode): string {
-  if (Array.isArray(node.runs))
+  if (node.kind === 'link')
     return (node.runs as NfNode[]).map((run) => String(run.text)).join('');
+  if (Array.isArray(node.runs))
+    return leafRuns(node)
+      .map((run) => String(run.text))
+      .join('');
   if (Array.isArray(node.paragraphs))
     return (node.paragraphs as NfNode[]).map(textOf).join(' / ');
   return '';
@@ -36,6 +41,7 @@ export function detail(node: NfNode): string {
     if (title) parts.push(quoted(title));
     parts.push(`${(node.shapes as NfNode[]).length} shapes`);
   } else if (Array.isArray(node.runs)) {
+    if (node.kind === 'link') parts.push(`to ${node.target}`);
     parts.push(quoted(textOf(node)));
   } else if (node.kind !== 'deck' && node.kind !== 'row') {
     if (node.name) parts.push(quoted(String(node.name), 40));

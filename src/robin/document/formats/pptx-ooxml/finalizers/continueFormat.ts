@@ -8,7 +8,7 @@ import {
   runAt,
   textSources
 } from '../textSources';
-import { pptxTree } from '../tree';
+import { leafRuns, pptxTree } from '../tree';
 
 function fillAbsent(
   node: NfNode,
@@ -36,7 +36,7 @@ export const continueFormatFinalizer: Finalizer = {
       if (!old) {
         // A new text box starts as one run of the editor's own text
         for (const paragraph of node.paragraphs as NfNode[])
-          for (const run of paragraph.runs as NfNode[])
+          for (const run of leafRuns(paragraph))
             if (
               run.kind === 'run' &&
               fillAbsent(run, TEXT_BOX_RUN_FORMAT, RUN_FORMAT)
@@ -48,7 +48,8 @@ export const continueFormatFinalizer: Finalizer = {
       const known = new Set(
         (old.paragraphs as NfNode[]).flatMap((paragraph) => [
           paragraph.id,
-          ...(paragraph.runs as NfNode[]).map((run) => run.id)
+          ...(paragraph.runs as NfNode[]).map((run) => run.id),
+          ...leafRuns(paragraph).map((run) => run.id)
         ])
       );
       const sources = textSources(old, node, origin);
@@ -60,7 +61,7 @@ export const continueFormatFinalizer: Finalizer = {
           fillAbsent(paragraph, paragraphAt(old, source), PARAGRAPH_FORMAT)
         )
           ids.push(paragraph.id);
-        (paragraph.runs as NfNode[]).forEach((run, r) => {
+        leafRuns(paragraph).forEach((run, r) => {
           if (known.has(origin(run.id)) || run.kind !== 'run') return;
           const at = sources.runs[p][r];
           if (at && fillAbsent(run, runAt(old, at), RUN_FORMAT))

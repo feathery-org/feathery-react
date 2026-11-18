@@ -256,7 +256,7 @@ export interface RichRun {
   font?: string;
   source?: { paragraph: number; run: number };
   styleChanged?: boolean;
-  continues?: boolean;
+  link?: { paragraph: number; run: number } | null;
 }
 export interface RichPara {
   align?: 'l' | 'ctr' | 'r' | 'just';
@@ -354,16 +354,6 @@ export function setShapeRichText(
         continue;
       }
       const runNode = source ? deepClone(source.node) : el('a:r');
-      // New text takes the formatting of the text it continues, never its link
-      const linked = r.continues && child(runNode, 'a:rPr');
-      if (linked) {
-        const kids = childrenOf(linked);
-        const kept = kids.filter(
-          (kid) =>
-            !['a:hlinkClick', 'a:hlinkMouseOver'].includes(tagOf(kid) || '')
-        );
-        kids.splice(0, kids.length, ...kept);
-      }
       if (!source || r.styleChanged !== false) {
         const rPr = child(runNode, 'a:rPr') || el('a:rPr', { lang: 'en-US' });
         if (!child(runNode, 'a:rPr')) childrenOf(runNode).unshift(rPr);
@@ -379,6 +369,11 @@ export function setShapeRichText(
           font: r.font
         });
       }
+      if (r.link !== undefined)
+        setRunLink(
+          runNode,
+          r.link ? origRuns[r.link.paragraph]?.[r.link.run]?.node : undefined
+        );
       const t = child(runNode, 'a:t') || el('a:t');
       if (!child(runNode, 'a:t')) childrenOf(runNode).push(t);
       childrenOf(t).splice(0, childrenOf(t).length, textNode(r.text));
@@ -540,6 +535,25 @@ function ensureRPr(runNode: ONode): ONode {
     childrenOf(runNode).unshift(rPr);
   }
   return rPr;
+}
+
+const LINK_TAGS = ['a:hlinkClick', 'a:hlinkMouseOver'];
+const linksOf = (runNode: ONode | undefined) =>
+  childrenOf(child(runNode ?? {}, 'a:rPr') ?? {}).filter((kid) =>
+    LINK_TAGS.includes(tagOf(kid) || '')
+  );
+
+/** Give a run the link of another run, or no link when there is none to copy */
+function setRunLink(runNode: ONode, from: ONode | undefined): void {
+  const links = linksOf(from);
+  if (JSON.stringify(linksOf(runNode)) === JSON.stringify(links)) return;
+  const kids = childrenOf(ensureRPr(runNode));
+  const kept = kids.filter((kid) => !LINK_TAGS.includes(tagOf(kid) || ''));
+  const at = kept.findIndex((kid) =>
+    ['a:rtl', 'a:extLst'].includes(tagOf(kid) || '')
+  );
+  kept.splice(at < 0 ? kept.length : at, 0, ...links.map(deepClone));
+  kids.splice(0, kids.length, ...kept);
 }
 
 function applyRunStyle(rPr: ONode, s: TextStyle): void {

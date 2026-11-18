@@ -274,26 +274,39 @@ describe('PowerPoint text', () => {
     expect(deck.pending()).toHaveLength(0);
   });
 
-  describe('a linked run', () => {
+  describe('links', () => {
     const slidePath = 'ppt/slides/slide1.xml';
+    const A = 'https://a.example.com';
+    const B = 'https://b.example.com';
+    const run = (text: string, link?: string) =>
+      `<a:r><a:rPr lang="en"${
+        link ? `><a:hlinkClick r:id="${link}"/></a:rPr>` : '/>'
+      }<a:t>${text}</a:t></a:r>`;
+    // "Visit " plain, "Docs" linked to A, "Help" linked to B
     const linkedDeck = () => {
       const files = unzipSync(fixture('marketing-parity.pptx'));
       const rels = 'ppt/slides/_rels/slide1.xml.rels';
+      const relationship = (id: string, target: string) =>
+        `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${target}" TargetMode="External"/>`;
       files[slidePath] = strToU8(
         strFromU8(files[slidePath]).replace(
-          '<a:rPr lang="en"/><a:t>Company Name',
-          '<a:rPr lang="en"><a:hlinkClick r:id="rIdLink"/></a:rPr><a:t>Company Name'
+          run('Company Name'),
+          run('Visit ') + run('Docs', 'rIdA') + run('Help', 'rIdB')
         )
       );
       files[rels] = strToU8(
         strFromU8(files[rels]).replace(
           '</Relationships>',
-          '<Relationship Id="rIdLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com" TargetMode="External"/></Relationships>'
+          `${relationship('rIdA', A)}${relationship('rIdB', B)}</Relationships>`
         )
       );
-      return openDeck('marketing-parity.pptx', zipSync(files));
+      const deck = openDeck('marketing-parity.pptx', zipSync(files));
+      const paragraph = deck.find('Visit DocsHelp')[0].id;
+      return { deck, paragraph, node: deck.read(paragraph) };
     };
-    const subtitleRuns = (deck: ReturnType<typeof openDeck>) =>
+    type Node = Record<string, any>;
+    // Each run of the deck's subtitle as saved: its text and the link it carries
+    const savedRuns = (deck: ReturnType<typeof openDeck>) =>
       (
         JSON.parse(serializeDeck(deck.engine)).slides as Array<{
           path: string;
@@ -302,76 +315,189 @@ describe('PowerPoint text', () => {
       )
         .find((part) => part.path === slidePath)!
         .xml.match(/<a:r>.*?<\/a:r>/g)!
-        .filter((run) => /Company|Name|draft/.test(run))
-        .map((run) => [
-          run.match(/<a:t>(.*?)<\/a:t>/)![1],
-          run.includes('hlinkClick')
-        ]);
-    const bold = (deck: ReturnType<typeof openDeck>, paragraph: string) => {
-      const span = { start: 8, end: 12 };
-      return {
-        kind: 'set',
-        target: {
-          id: paragraph,
-          shape: deck.read(paragraph).shape,
-          match: { text: 'Name', span }
-        },
-        props: { bold: true }
-      };
-    };
+        .map((xml) => [
+          xml.match(/<a:t>(.*?)<\/a:t>/)?.[1] ?? '',
+          xml.match(/hlinkClick r:id="(\w+)"/)?.[1] ?? null
+        ])
+        .filter(([text]) => /Visit|Docs|Help|^Do$|^cs!?$|draft/.test(String(text)));
 
-    it('adds text after it without making the new text part of the link', () => {
-      const deck = linkedDeck();
-      const { paragraph } = subtitle(deck);
-      const node = deck.read(paragraph);
+    it('reads linked text as a link holding its runs, with where it goes', () => {
+      const { node } = linkedDeck();
+      expect(
+        (node.runs as Node[]).map((child) =>
+          child.kind === 'link'
+            ? [child.target, child.runs.map((inner: Node) => inner.text)]
+            : child.text
+        )
+      ).toEqual(['Visit ', [A, ['Docs']], [B, ['Help']]]);
+    });
+
+    it('adds text after a link outside it', () => {
+      const { deck, paragraph, node } = linkedDeck();
       expectCard(
         replaceParagraph(deck, paragraph, {
           ...node,
-          runs: [...(node.runs as unknown[]), { text: ' (draft)' }]
+          runs: [...node.runs, { text: ' (draft)' }]
         })
       );
-      expect(subtitleRuns(deck)).toEqual([
-        ['Company Name', true],
-        [' (draft)', false]
+      expect(savedRuns(deck)).toEqual([
+        ['Visit ', null],
+        ['Docs', 'rIdA'],
+        ['Help', 'rIdB'],
+        [' (draft)', null]
       ]);
     });
 
-    it('keeps the link on every piece when part of it is formatted', () => {
-      const deck = linkedDeck();
-      const { paragraph } = subtitle(deck);
+    it('adds a run matching linked text outside the link', () => {
+      const { deck, paragraph, node } = linkedDeck();
+      const [visit, a, b] = node.runs as Node[];
       expectCard(
-        deck.write({
-          intent: 'Bold the word Name.',
-          scope: { ids: [paragraph] },
-          changes: [bold(deck, paragraph)]
+        replaceParagraph(deck, paragraph, {
+          ...node,
+          runs: [visit, { text: 'Docs' }, a, b]
         })
       );
-      expect(subtitleRuns(deck)).toEqual([
-        ['Company ', true],
-        ['Name', true]
+      expect(savedRuns(deck)).toEqual([
+        ['Visit ', null],
+        ['Docs', null],
+        ['Docs', 'rIdA'],
+        ['Help', 'rIdB']
       ]);
     });
 
-    it('keeps the link on the formatted piece and not on text added in the same write', () => {
-      const deck = linkedDeck();
-      const { paragraph } = subtitle(deck);
-      const node = deck.read(paragraph);
-      const runs = node.runs as Array<Record<string, unknown>>;
+    it('drops both links when the sentence is rewritten as plain text', () => {
+      const { deck, paragraph, node } = linkedDeck();
+      const [visit] = node.runs as Node[];
+      expectCard(
+        replaceParagraph(deck, paragraph, {
+          ...node,
+          runs: [{ ...visit, text: 'Visit DocsHelp' }]
+        })
+      );
+      expect(savedRuns(deck)).toEqual([['Visit DocsHelp', null]]);
+    });
+
+    it('links the whole sentence when it is rewritten inside one link', () => {
+      const { deck, paragraph, node } = linkedDeck();
+      const [, a] = node.runs as Node[];
+      expectCard(
+        replaceParagraph(deck, paragraph, {
+          ...node,
+          runs: [{ ...a, runs: [{ ...a.runs[0], text: 'Visit DocsHelp' }] }]
+        })
+      );
+      expect(savedRuns(deck)).toEqual([['Visit DocsHelp', 'rIdA']]);
+    });
+
+    it('keeps text added inside a link in it, formatted or not', () => {
+      const { deck, paragraph, node } = linkedDeck();
+      const [visit, a, b] = node.runs as Node[];
       expectCard(
         replaceParagraph(deck, paragraph, {
           ...node,
           runs: [
-            { ...runs[0], text: 'Company ' },
-            { text: 'Name', bold: true },
-            { text: ' (draft)' }
+            visit,
+            {
+              ...a,
+              runs: [
+                { ...a.runs[0], text: 'Do' },
+                { text: 'cs!', bold: true }
+              ]
+            },
+            b
           ]
         })
       );
-      expect(subtitleRuns(deck)).toEqual([
-        ['Company ', true],
-        ['Name', true],
-        [' (draft)', false]
+      expect(savedRuns(deck)).toEqual([
+        ['Visit ', null],
+        ['Do', 'rIdA'],
+        ['cs!', 'rIdA'],
+        ['Help', 'rIdB']
       ]);
+    });
+
+    it('leaves linked text moved to a new paragraph out of the link', () => {
+      const { deck } = linkedDeck();
+      const shape = deck.find('Visit DocsHelp')[0].within[0];
+      const box = deck.read(shape);
+      const [first] = box.paragraphs as Node[];
+      const [visit, a] = first.runs as Node[];
+      expectCard(
+        deck.write({
+          intent: 'Split the subtitle.',
+          scope: { ids: [shape] },
+          changes: [
+            {
+              kind: 'replace',
+              id: shape,
+              base: box.base,
+              node: {
+                ...box,
+                paragraphs: [
+                  {
+                    ...first,
+                    runs: [visit, { ...a, runs: [{ ...a.runs[0], text: 'Do' }] }]
+                  },
+                  { runs: [{ text: 'cs' }] }
+                ]
+              }
+            }
+          ]
+        })
+      );
+      expect(savedRuns(deck)).toEqual([
+        ['Visit ', null],
+        ['Do', 'rIdA'],
+        ['cs', null]
+      ]);
+    });
+
+    it('bolds part of a link, keeping both pieces in it', () => {
+      const { deck, paragraph } = linkedDeck();
+      expectCard(
+        deck.write({
+          intent: 'Bold cs.',
+          scope: { ids: [paragraph] },
+          changes: [
+            {
+              kind: 'set',
+              target: {
+                id: paragraph,
+                shape: deck.read(paragraph).shape,
+                match: { text: 'cs', span: { start: 8, end: 10 } }
+              },
+              props: { bold: true }
+            }
+          ]
+        })
+      );
+      expect(savedRuns(deck)).toEqual([
+        ['Visit ', null],
+        ['Do', 'rIdA'],
+        ['cs', 'rIdA'],
+        ['Help', 'rIdB']
+      ]);
+      expect(
+        (deck.read(paragraph).runs as Node[])[1].runs.map(
+          (inner: Node) => [inner.text, inner.bold]
+        )
+      ).toEqual([
+        ['Do', undefined],
+        ['cs', true]
+      ]);
+    });
+
+    it.each([
+      ['adding a link', (node: Node) => [...node.runs, { kind: 'link', target: A, runs: [{ text: ' more' }] }]],
+      ['changing where a link goes', (node: Node) => node.runs.map((child: Node) => (child.kind === 'link' ? { ...child, target: 'https://c.example.com' } : child))]
+    ])('refuses %s', (_, runs) => {
+      const { deck, paragraph, node } = linkedDeck();
+      expect(replaceParagraph(deck, paragraph, { ...node, runs: runs(node) })).toEqual(
+        expect.objectContaining({
+          ok: false,
+          refusal: expect.objectContaining({ invariant: 'limits' })
+        })
+      );
     });
   });
 

@@ -1,4 +1,5 @@
 import type { NfNode } from '../../tree';
+import { leafRuns } from './tree';
 
 export const RUN_FORMAT = [
   'bold',
@@ -18,7 +19,7 @@ export interface Location {
 
 const paragraphsOf = (node: NfNode) =>
   (node.paragraphs as NfNode[] | undefined) ?? [];
-const runsOf = (paragraph: NfNode) => paragraph.runs as NfNode[];
+const runsOf = leafRuns;
 
 /** The formatting a new text box's text starts with */
 export const TEXT_BOX_RUN_FORMAT = { size: 18 };

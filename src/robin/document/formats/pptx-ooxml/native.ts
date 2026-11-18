@@ -27,6 +27,7 @@ export interface NativeSlide {
   path: string;
   xml: string;
   inherited?: InheritedFormat;
+  links?: Record<string, string>;
 }
 
 export interface DeckNative {
@@ -36,9 +37,12 @@ export interface DeckNative {
 
 export function writeNative(native: DeckNative): string {
   return JSON.stringify({
-    slides: native.slides.map(({ path, xml, inherited }) =>
-      inherited ? { path, xml, inherited } : { path, xml }
-    ),
+    slides: native.slides.map(({ path, xml, inherited, links }) => ({
+      path,
+      xml,
+      ...(inherited ? { inherited } : {}),
+      ...(links ? { links } : {})
+    })),
     pending: native.pending.map(({ by, beforeSlides, beforeOrder }) =>
       beforeOrder ? { by, beforeSlides, beforeOrder } : { by, beforeSlides }
     )
@@ -76,14 +80,42 @@ export function serializeDeck(engine: PptxEditorEngine): string {
   return writeNative({
     slides: deck.slides.map((slide) => {
       const inherited = inheritedFormat(deck, slide);
+      const xml = buildXml(slide.raw);
+      const links = linkTargets(deck, slide.path, [
+        xml,
+        ...pending.flatMap(({ beforeSlides }) => beforeSlides[slide.path] ?? [])
+      ]);
       return {
         path: slide.path,
-        xml: buildXml(slide.raw),
-        ...(inherited ? { inherited } : {})
+        xml,
+        ...(inherited ? { inherited } : {}),
+        ...(links ? { links } : {})
       };
     }),
     pending
   });
+}
+
+/** Where each link on a slide goes, by the relationship its runs name */
+function linkTargets(
+  deck: Deck,
+  path: string,
+  xmls: string[]
+): Record<string, string> | null {
+  const named = new Set(
+    xmls.flatMap((xml) =>
+      [...xml.matchAll(/<a:hlinkClick\b[^>]*\br:id="([^"]+)"/g)].map(
+        (match) => match[1]
+      )
+    )
+  );
+  if (!named.size) return null;
+  return Object.fromEntries(
+    deck.pkg
+      .rels(path)
+      .filter((relationship) => named.has(relationship.id))
+      .map((relationship) => [relationship.id, relationship.target])
+  );
 }
 
 function inheritedFormat(deck: Deck, slide: Slide): InheritedFormat | null {

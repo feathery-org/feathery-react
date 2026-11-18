@@ -38,6 +38,7 @@ export interface ReadNodes {
   residue: Record<string, ONode>;
   sources: Map<NfNode, ONode>;
   inherited?: Record<string, Record<string, Record<string, unknown>>>;
+  links?: Record<string, string>;
 }
 
 function withSlots(node: ONode, isModeled: (kid: ONode) => boolean): ONode {
@@ -109,6 +110,9 @@ function ownRunFormat(rPr: ONode | undefined): Record<string, unknown> {
   return out;
 }
 
+export const linkOf = (run: ONode) =>
+  child(child(run, 'a:rPr') ?? {}, 'a:hlinkClick');
+
 export function runText(node: ONode): string {
   if (tagOf(node) === 'a:br') return '\n';
   const t = child(node, 'a:t');
@@ -143,9 +147,35 @@ function readParagraph(
   if (level !== undefined) paragraph.level = Number(level);
   const from = inherited?.[Number(level ?? 0)];
   if (from) paragraph.inherited = from;
-  paragraph.runs = childrenOf(node)
+  // Consecutive runs that name one link are that link's text
+  const runs: NfNode[] = [];
+  let link: NfNode | undefined;
+  let linked: string | undefined;
+  childrenOf(node)
     .filter(isRunNode)
-    .map((run, r) => readRun(run, `${id}r${r}`, read));
+    .forEach((native, r) => {
+      const run = readRun(native, `${id}r${r}`, read);
+      const hlink = linkOf(native);
+      const relationship = hlink && getAttr(hlink, 'r:id');
+      if (!hlink || !relationship) {
+        link = linked = undefined;
+        runs.push(run);
+        return;
+      }
+      if (!link || linked !== relationship) {
+        link = {
+          id: `${id}l${r}`,
+          kind: 'link',
+          target: read.links?.[relationship] ?? relationship,
+          runs: []
+        };
+        linked = relationship;
+        read.residue[link.id] = clone(hlink);
+        runs.push(link);
+      }
+      (link.runs as NfNode[]).push(run);
+    });
+  paragraph.runs = runs;
   read.residue[id] = withSlots(node, isRunNode);
   read.sources.set(paragraph, node);
   return paragraph;

@@ -138,7 +138,10 @@ export const emptyRuns: Normalization = {
   }
 };
 
-const isEmptyRun = (run: NfNode) => run.kind === 'run' && run.text === '';
+const isEmptyRun = (run: NfNode): boolean =>
+  run.kind === 'link'
+    ? (run.runs as NfNode[]).every(isEmptyRun)
+    : run.kind === 'run' && run.text === '';
 
 /** What a paragraph takes from the layout is read from the deck, never written */
 export const inheritedFormat: Normalization = {

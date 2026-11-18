@@ -21,10 +21,17 @@ const LISTS: Record<string, [string, readonly string[]]> = {
   cell: ['paragraphs', ['paragraph']],
   table: ['rows', ['row']],
   row: ['cells', ['cell']],
-  paragraph: ['runs', RUN_KINDS]
+  paragraph: ['runs', [...RUN_KINDS, 'link']],
+  link: ['runs', RUN_KINDS]
 };
 
 export const isShapeKind = (kind: string) => SHAPE_KINDS.includes(kind);
+
+/** A paragraph's runs in reading order, through the links that hold some of them */
+export const leafRuns = (paragraph: NfNode): NfNode[] =>
+  ((paragraph.runs as NfNode[] | undefined) ?? []).flatMap((run) =>
+    run.kind === 'link' ? (run.runs as NfNode[]) : [run]
+  );
 
 export const pptxTree: PackTree = {
   childLists: (node: NfNode) => {
@@ -35,6 +42,8 @@ export const pptxTree: PackTree = {
     if (LISTS[parentKind]?.[0] !== listKey) return null;
     if (listKey === 'shapes')
       return Array.isArray(node.paragraphs) ? 'shape' : null;
+    if (listKey === 'runs' && parentKind === 'paragraph' && 'target' in node)
+      return 'link';
     if (listKey === 'runs')
       return node.text === '\n'
         ? 'break'

@@ -11,6 +11,7 @@ import {
   type Location
 } from '../textSources';
 import type { DeckOperation, ShapeRef, SlideRef } from '../seams/deck';
+import { leafRuns } from '../tree';
 
 const paragraphsOf = (node: NfNode) => node.paragraphs as NfNode[];
 
@@ -19,7 +20,7 @@ function breakLocation(
   id: string
 ): { paragraph: number; run: number } | undefined {
   for (const [p, paragraph] of paragraphsOf(before).entries()) {
-    const r = (paragraph.runs as NfNode[]).findIndex((run) => run.id === id);
+    const r = leafRuns(paragraph).findIndex((run) => run.id === id);
     if (r >= 0) return { paragraph: p, run: r };
   }
   return undefined;
@@ -42,48 +43,17 @@ function styleChange(
   return Object.keys(style).length ? style : null;
 }
 
-const sameLocation = (a?: Location, b?: Location) =>
-  !!a && !!b && a.paragraph === b.paragraph && a.run === b.run;
-
-/** Runs that are new text beside their source, not pieces of it split by formatting */
-function continuingRuns(
-  before: NfNode,
-  runs: NfNode[],
-  sources: Array<Location | undefined>,
-  origin: (id: string) => string
-): boolean[] {
-  const continues = runs.map(() => false);
-  let start = 0;
-  while (start < runs.length) {
-    const at = sources[start];
-    let end = start + 1;
-    while (end < runs.length && sameLocation(sources[end], at)) end++;
-    const source = at && runAt(before, at);
-    if (source) {
-      const texts = runs.slice(start, end).map((run) => String(run.text));
-      const pieces = splitPieces(texts, String(source.text));
-      for (let k = start; k < end; k++)
-        continues[k] =
-          runs[k].kind === 'run' &&
-          source.id !== origin(runs[k].id) &&
-          !pieces.has(k - start);
+/** Where each link of the shape starts, the run the editor copies the link from */
+function linkStarts(shape: NfNode): Map<string, Location> {
+  const starts = new Map<string, Location>();
+  paragraphsOf(shape).forEach((paragraph, p) => {
+    let r = 0;
+    for (const run of paragraph.runs as NfNode[]) {
+      if (run.kind === 'link') starts.set(run.id, { paragraph: p, run: r });
+      r += run.kind === 'link' ? (run.runs as NfNode[]).length : 1;
     }
-    start = end;
-  }
-  return continues;
-}
-
-/** The consecutive pieces whose text together is the source run's text */
-function splitPieces(texts: string[], whole: string): Set<number> {
-  for (let i = 0; i < texts.length; i++) {
-    let joined = '';
-    for (let j = i; j < texts.length && joined.length < whole.length; j++) {
-      joined += texts[j];
-      if (joined === whole)
-        return new Set(texts.map((_, k) => k).filter((k) => k >= i && k <= j));
-    }
-  }
-  return new Set();
+  });
+  return starts;
 }
 
 /** New text as the editor's own edits, then the formatting of each run that differs from what it continues */
@@ -99,25 +69,32 @@ export function textOperations(
   )
     return [];
   const sources = textSources(before, after, origin);
-  const continuing = paragraphsOf(after).map((paragraph, p) =>
-    continuingRuns(before, paragraph.runs as NfNode[], sources.runs[p], origin)
-  );
+  const starts = linkStarts(before);
+  // Each run with the link it sits in, none when it is outside every link
+  const linked = (paragraph: NfNode) =>
+    (paragraph.runs as NfNode[]).flatMap((run) =>
+      run.kind === 'link'
+        ? (run.runs as NfNode[]).map((inner) => ({
+            run: inner,
+            link: starts.get(origin(run.id)) ?? null
+          }))
+        : [{ run, link: null }]
+    );
   const paragraphs: RichPara[] = paragraphsOf(after).map((paragraph, p) => {
     const source = sources.paragraphs[p];
     const from = source === undefined ? undefined : paragraphAt(before, source);
     const rich: RichPara = {
       ...(source === undefined ? {} : { sourceParagraph: source }),
-      runs: (paragraph.runs as NfNode[]).map((run, r) => {
+      runs: linked(paragraph).map(({ run, link }, r) => {
         if (run.kind === 'break') {
           const own = breakLocation(before, origin(run.id));
           return { text: '', break: true, ...(own ? { source: own } : {}) };
         }
         const at = sources.runs[p][r];
-        const continues = continuing[p][r];
         return {
           text: String(run.text),
           ...(at ? { source: at, styleChanged: false } : {}),
-          ...(continues ? { continues } : {})
+          link
         };
       })
     };
@@ -140,7 +117,7 @@ export function textOperations(
 
   paragraphsOf(after).forEach((paragraph, p) => {
     let offset = 0;
-    (paragraph.runs as NfNode[]).forEach((run, r) => {
+    leafRuns(paragraph).forEach((run, r) => {
       const start = offset;
       offset += String(run.text).length;
       if (run.kind !== 'run' || start === offset) return;
