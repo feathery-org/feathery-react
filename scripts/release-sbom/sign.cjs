@@ -42,9 +42,8 @@ function bundledPackages() {
   return bundled;
 }
 
-// name@version -> package.json of every package npm put on disk. Copying
-// only these manifests keeps syft away from the test fixtures and
-// sub-entry-point package.json files some packages ship.
+// name@version -> package.json of every package npm put on disk, once each
+// (npm can install the same version at several nested paths).
 function installedPackages(project, tarball) {
   fs.writeFileSync(path.join(project, 'package.json'), '{"private": true}\n');
   run(
@@ -95,9 +94,13 @@ function main() {
       copy(manifest, location);
     }
     // One entry per name@version: an inlined copy of a package that is also
-    // installed at the same version adds nothing to the inventory.
+    // installed at the same version adds nothing to the inventory. The tool
+    // only counts package roots (node_modules/<name>/package.json), so each
+    // inlined package gets one.
     for (const [id, manifest] of bundled) {
-      if (!installed.has(id)) copy(manifest, path.join('bundled', id));
+      if (installed.has(id)) continue;
+      const { name } = readJson(manifest);
+      copy(manifest, path.join('bundled', id, 'node_modules', name));
     }
 
     run('python3', [
