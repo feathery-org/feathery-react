@@ -242,6 +242,7 @@ export class PptxEditorEngine {
       throw new Error('Reopening a deck with a different set of slides');
 
     for (const slide of slides) deck.pkg.setXmlPart(slide.path, slide.raw);
+    deck.slides = [];
     rebuildSlides(deck);
     this.adopt(deck);
   }

@@ -357,8 +357,9 @@ export default function DocumentEditorContainer({
         if (name in fieldValues) newValues[name] = value;
       }
       for (const name of Object.keys(newValues)) {
+        // A blank field holds '' and a blank number binding null, the same value
         if (
-          fieldValues[name] === newValues[name] &&
+          (fieldValues[name] ?? '') === (newValues[name] ?? '') &&
           !(name in pendingWritebackRef.current)
         )
           delete newValues[name];

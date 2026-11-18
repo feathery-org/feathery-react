@@ -1,3 +1,4 @@
+import { createHost } from '../index';
 import { serializeDeck } from '../native';
 import { openDeck, type WriteResult } from './harness';
 
@@ -270,6 +271,58 @@ describe('PowerPoint text', () => {
       })
     );
     expect(deck.pending()).toHaveLength(0);
+  });
+
+  it('writes to a deck that was reopened', () => {
+    const deck = openDeck();
+    const host = createHost(deck.store, { readOnly: false });
+    host.open(host.serialize());
+    const { run } = subtitle(deck);
+    expectCard(
+      deck.write({
+        intent: 'Rename the client.',
+        scope: { ids: [run] },
+        changes: [
+          {
+            kind: 'replace',
+            id: run,
+            base: deck.read(run).base,
+            node: { ...deck.read(run), text: 'Acme' }
+          }
+        ]
+      })
+    );
+  });
+
+  it('a bulk set covers the formatting it spreads, not other edits inside what it matched', () => {
+    const deck = openDeck();
+    const { run, shape } = subtitle(deck);
+    const find = { kind: 'paragraph', within: shape };
+    const found = deck.call('find', find) as { total: number; shape: string };
+    const bulk = {
+      kind: 'set',
+      target: { find, total: found.total, shape: found.shape },
+      props: { size: 20 }
+    };
+    const result = deck.write({
+      intent: 'Bigger, and rename the client.',
+      scope: { ids: [], bulk: [{ find, total: found.total }] },
+      changes: [
+        bulk,
+        {
+          kind: 'replace',
+          id: run,
+          base: deck.read(run).base,
+          node: { ...deck.read(run), text: 'Acme' }
+        }
+      ]
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: false,
+        refusal: expect.objectContaining({ invariant: 'scope' })
+      })
+    );
   });
 
   it('refuses text holding a control character a deck cannot hold', () => {

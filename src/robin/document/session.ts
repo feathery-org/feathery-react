@@ -488,10 +488,13 @@ export class DocumentSession {
     }
 
     this.install(outcome.live.native, outcome.live);
-    if (outcome.plan.history === 'engine' && outcome.plan.landed === 'card') {
+    if (outcome.plan.history === 'engine' && outcome.plan.landed === 'card')
       this.structural.add(changeSetId);
+    if (
+      (outcome.plan.history === 'engine' || this.host.resolveCards) &&
+      outcome.plan.landed === 'card'
+    )
       this.beforeCards.set(changeSetId, { nf: before.view.nf, restoreGuesses });
-    }
     trace.committed(
       'committed',
       outcome.seams,
@@ -563,9 +566,21 @@ export class DocumentSession {
     by: 'robin' | 'person' = 'person'
   ): boolean {
     if (this.host.resolveCards) {
+      const newest = [...this.beforeCards.keys()].pop();
+      const prior =
+        !accept && changeSetIds.length === 1 && changeSetIds[0] === newest
+          ? this.beforeCards.get(newest)
+          : undefined;
       const resolved = this.host.resolveCards(changeSetIds, accept);
       if (resolved) alongside?.();
-      this.refresh();
+      // Withdrawing the newest card gives its nodes back the ids they had before it
+      if (resolved && prior) {
+        this.adopt(this.host.serialize(), [prior.nf]);
+        prior.restoreGuesses();
+      } else this.refresh();
+      if (resolved)
+        for (const changeSetId of changeSetIds)
+          this.beforeCards.delete(changeSetId);
       if (resolved) this.replaced(by);
       return resolved;
     }

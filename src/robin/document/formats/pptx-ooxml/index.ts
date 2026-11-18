@@ -25,10 +25,8 @@ import { pptxTree } from './tree';
 import VOCABULARY from './vocabulary';
 import type { PendingSuggestion } from './native';
 
-export const PPTX_FORMAT = 'pptx-ooxml';
-
 export const pptxPack: Pack = {
-  format: PPTX_FORMAT,
+  format: 'pptx-ooxml',
   vocabulary: VOCABULARY,
   tree: pptxTree,
   formatRefKeys: [],

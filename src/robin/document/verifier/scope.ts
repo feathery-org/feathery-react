@@ -10,6 +10,7 @@
  *
  *   - its id, or an ancestor's id, in `scope.ids` (declaring a node covers everything below it);
  *   - a bulk `set` that matched it, when the bulk target is repeated in `scope.bulk`;
+ *   - below a node a bulk `set` matched, a change to that set's own properties alone;
  *   - for a node whose only change is which children it holds: every child added, removed or
  *     reordered being itself created or covered.
  *
@@ -22,6 +23,7 @@ import {
   childIdLists,
   NfNode,
   ownContentText,
+  walk,
   withoutLists
 } from '../tree';
 import { bulkQuery } from './base';
@@ -147,6 +149,8 @@ export function scopeProblems(inputs: ScopeInputs): RefusalProblem[] {
     )
   );
   const bulkCovered = new Set<string>();
+  // Properties a bulk set spreads onto what is inside the nodes it matched
+  const spreadProps = new Map<string, string[]>();
   write.changes.forEach((change, index) => {
     if (change.kind !== 'set') return;
     const t = change.target;
@@ -164,7 +168,19 @@ export function scopeProblems(inputs: ScopeInputs): RefusalProblem[] {
             }
           )
         );
-      else for (const id of bulkHits.get(index) ?? []) bulkCovered.add(id);
+      else
+        for (const id of bulkHits.get(index) ?? []) {
+          bulkCovered.add(id);
+          const hit = before.get(id);
+          if (hit)
+            walk(hit, pack.tree, ({ node }) => {
+              if (node !== hit)
+                spreadProps.set(node.id, [
+                  ...(spreadProps.get(node.id) ?? []),
+                  ...Object.keys(change.props)
+                ]);
+            });
+        }
     }
     if (
       'formatId' in t &&
@@ -186,10 +202,22 @@ export function scopeProblems(inputs: ScopeInputs): RefusalProblem[] {
     if (declared.has(id)) return true;
     let p = before.placement(id)?.parent ?? null;
     while (p) {
-      if (declared.has(p.id) || bulkCovered.has(p.id)) return true;
+      if (declared.has(p.id)) return true;
       p = before.placement(p.id)?.parent ?? null;
     }
     return false;
+  };
+  const onlySpread = (id: string): boolean => {
+    const names = spreadProps.get(id);
+    const was = before.get(id);
+    const now = after.get(id);
+    if (!names || !was || !now || diff.moved.has(id)) return false;
+    const without = (node: NfNode) => {
+      const rest: NfNode = { ...node };
+      for (const name of names) delete rest[name];
+      return ownContentText(rest, pack.tree);
+    };
+    return without(was) === without(now);
   };
   const memo = new Map<string, boolean>();
   const covered = (id: string): boolean => {
@@ -197,7 +225,7 @@ export function scopeProblems(inputs: ScopeInputs): RefusalProblem[] {
     const known = memo.get(id);
     if (known !== undefined) return known;
     memo.set(id, false); // cycles cannot cover themselves
-    let ok = declaredOrAncestor(id) || bulkCovered.has(id);
+    let ok = declaredOrAncestor(id) || bulkCovered.has(id) || onlySpread(id);
     if (!ok && diff.membershipOnly.has(id)) {
       const a = childIdLists(before.get(id) as NfNode, pack.tree);
       const b = childIdLists(after.get(id) as NfNode, pack.tree);

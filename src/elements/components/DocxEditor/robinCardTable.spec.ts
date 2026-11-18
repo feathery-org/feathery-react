@@ -43,7 +43,7 @@ describe("Robin's card table in a docx (Hilb post-v9 G1)", () => {
       {
         key: 'Robin⁠',
         id: 'card-one',
-        intent: 'Remove\u0001 the\uFFFE lines\nthen\ttotal'
+        intent: 'Remove\u0001 the\uFFFE lines\nthen\ttotal\uD800 😀'
       },
       { key: 'Robin⁡', id: 'card-two' }
     ];
@@ -52,7 +52,7 @@ describe("Robin's card table in a docx (Hilb post-v9 G1)", () => {
       {
         key: 'Robin⁠',
         id: 'card-one',
-        intent: 'Remove the lines\nthen\ttotal'
+        intent: 'Remove the lines\nthen\ttotal 😀'
       },
       { key: 'Robin⁡', id: 'card-two' }
     ]);

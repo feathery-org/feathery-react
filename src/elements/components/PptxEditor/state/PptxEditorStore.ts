@@ -349,6 +349,11 @@ export class PptxEditorStore {
     });
   }
 
+  discardRedo = (): void => {
+    this.engine.discardRedo();
+    this.set({ ...historyFields(this.engine.snapshot()) });
+  };
+
   resetHistory = (): void => {
     if (!this.state.deck) return;
     this.engine.resetHistory();

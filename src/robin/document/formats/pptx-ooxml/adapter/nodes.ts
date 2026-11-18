@@ -83,7 +83,7 @@ function placeholderOf(node: ONode): string | undefined {
 }
 
 /** A run's own formatting: only what its own properties set, never what it inherits */
-export function ownRunFormat(rPr: ONode | undefined): Record<string, unknown> {
+function ownRunFormat(rPr: ONode | undefined): Record<string, unknown> {
   if (!rPr) return {};
   const out: Record<string, unknown> = {};
   const flag = (name: string) => {

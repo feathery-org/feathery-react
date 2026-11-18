@@ -434,6 +434,14 @@ export function planDeck(
       );
       continue;
     }
+    const shapeIds = liveShapes(source).map((shape) => shape.shapeId);
+    if (new Set(shapeIds).size !== shapeIds.length) {
+      refuse(
+        slide.id,
+        'copies a slide where two shapes share a shapeId, which the editor cannot tell apart: tell the person to copy it by hand'
+      );
+      continue;
+    }
     const keys = unwritable(source, slide);
     if (keys.length) {
       refuse(

@@ -23,7 +23,7 @@ export function createHost(
     undo: () => store.undo(),
     canRedo: () => store.engine.canRedo(),
     redo: () => store.redo(),
-    discardRedo: () => store.engine.discardRedo(),
+    discardRedo: () => store.discardRedo(),
     readOnly: () => readOnly,
     selection: () => {
       const { deck, activeSlide, selectedIds } = store.getState();
@@ -59,7 +59,7 @@ function resolveSuggestions(
     if (store.rejectChange(newestFirst[done].id).ok) continue;
     // Take back the rejects already made so the deck is as it was
     for (let i = 0; i < done; i++) store.undo();
-    store.engine.discardRedo();
+    if (done) store.discardRedo();
     return false;
   }
   return true;

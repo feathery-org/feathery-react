@@ -78,7 +78,7 @@ export const limits: Invariant = {
         problems.push(
           refusal(
             id,
-            'has a character a deck cannot hold: a line break inside a paragraph is a break run'
+            'has a character a deck cannot hold, a control character or half of a character pair: a line break inside a paragraph is a break run'
           )
         );
       if (Array.isArray(node.paragraphs) && !node.paragraphs.length)

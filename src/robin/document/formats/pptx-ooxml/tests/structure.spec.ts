@@ -301,6 +301,83 @@ describe('PowerPoint structure', () => {
     deck.store.redo();
     expect(serializeDeck(deck.engine)).toEqual(edited);
     expect(deck.pending()).toHaveLength(2);
+    expect(deck.store.getState().redoStack).toHaveLength(0);
+  });
+
+  it('gives the nodes of a rejected card back the ids they had before it', () => {
+    const deck = openDeck();
+    const outline = (turnId: string) =>
+      (deck.call('outline', { depth: 4 }, turnId) as { lines: string }).lines;
+    const before = outline('turn-0001');
+    const shape = deck.find('Q1', 'turn-0001')[0].within[0];
+    const run = (deck.read(shape, 'turn-0001').paragraphs as any)[0].runs[0];
+    expectCard(
+      deck.write(
+        {
+          intent: 'Rename the quarter.',
+          scope: { ids: [run.id] },
+          changes: [
+            {
+              kind: 'replace',
+              id: run.id,
+              base: deck.read(run.id, 'turn-0001').base as string,
+              node: { ...run, text: 'ONE' }
+            }
+          ]
+        },
+        'turn-0001'
+      )
+    );
+    expect(
+      deck.call('resolve', { cards: ['turn-0001'], accept: false }, 'turn-0002')
+    ).toEqual(expect.objectContaining({ ok: true }));
+    expect(outline('turn-0003')).toEqual(before);
+  });
+
+  it("keeps the person's own redo when the first reject conflicts", () => {
+    const deck = openDeck();
+    const rename = (text: string, to: string, turnId: string) => {
+      const shape = deck.find(text, turnId)[0].within[0];
+      const run = (deck.read(shape, turnId).paragraphs as any)[0].runs[0];
+      expectCard(
+        deck.write(
+          {
+            intent: `Rename ${text}.`,
+            scope: { ids: [run.id] },
+            changes: [
+              {
+                kind: 'replace',
+                id: run.id,
+                base: deck.read(run.id, turnId).base as string,
+                node: { ...run, text: to }
+              }
+            ]
+          },
+          turnId
+        )
+      );
+    };
+    rename('Q1', 'ONE', 'turn-0001');
+    rename('ONE', 'TWO', 'turn-0002');
+    const subtitle = deck.find('Company Name', 'turn-0003')[0].within;
+    deck.engine.execute({
+      type: 'format-text',
+      slideId: deck.read(subtitle[1], 'turn-0003').path as string,
+      shapeId: deck.read(subtitle[0], 'turn-0003').shapeId as string,
+      style: { italic: true }
+    });
+    const italic = serializeDeck(deck.engine);
+    deck.store.undo();
+
+    expect(
+      deck.call(
+        'resolve',
+        { cards: ['turn-0001'], accept: false },
+        'turn-0003'
+      )
+    ).toEqual(expect.objectContaining({ ok: false }));
+    deck.store.redo();
+    expect(serializeDeck(deck.engine)).toEqual(italic);
   });
 
   it('removes and moves slides', () => {
@@ -493,7 +570,7 @@ describe('PowerPoint shapes sharing an id on one slide', () => {
     expect(JSON.stringify(deck.read(month).paragraphs)).toContain('Month');
   });
 
-  it('refuses editing or removing either one, and still edits the rest', () => {
+  it('refuses editing, removing or copying either one, and still edits the rest', () => {
     const deck = openSharing();
     const month = shapeOf(deck, 'Month');
     const run = (deck.read(month).paragraphs as any)[0].runs[0];
@@ -517,6 +594,13 @@ describe('PowerPoint shapes sharing an id on one slide', () => {
         intent: 'Drop the quarter.',
         scope: { ids: [q1] },
         changes: [{ kind: 'delete', id: q1, base: deck.read(q1).base }]
+      })
+    );
+    expectLimits(
+      deck.write({
+        intent: 'Copy the title slide.',
+        scope: { ids: ['n1'] },
+        changes: [{ kind: 'insert_after', anchor: 'n1', node: deck.read('n1') }]
       })
     );
     const year = (deck.read(shapeOf(deck, 'Year')).paragraphs as any)[0]
