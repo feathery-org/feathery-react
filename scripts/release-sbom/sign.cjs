@@ -1,10 +1,14 @@
 // Signs the release SBOM for the packed @feathery/react tarball before it is
-// published: node scripts/release-sbom/sign.cjs <dir with the .tgz> <out dir>
+// published:
+//   node scripts/release-sbom/sign.cjs <dir with the .tgz> <out dir> [sign args]
+// Extra arguments go to feathery_sbom.py sign (for example --pending-id).
 //
-// It describes what a consumer gets: the tarball installed the way npm
-// installs it for them (production dependencies, without peer dependencies,
-// which the consumer's app supplies), plus every third-party package the
-// build inlined into dist/, cjs/ and umd/ (recorded by bundled-packages.cjs).
+// It describes what a consumer gets: the tarball installed the way npm 7+
+// installs it for them, including the peer dependencies of our dependencies,
+// but not our own peerDependencies (react, react-dom) or packages reachable
+// only through them, because those resolve to the consumer's app. Plus every
+// third-party package the build inlined into dist/, cjs/ and umd/ (recorded
+// by bundled-packages.cjs), which includes the react the UMD bundle ships.
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -12,7 +16,9 @@ const path = require('path');
 const { RECORD_DIR } = require('./bundled-packages.cjs');
 
 const REPO = path.resolve(__dirname, '../..');
+const PACKAGE = '@feathery/react';
 const BUILDS = ['rollup', 'umd', 'pptx-worker'];
+const NODE_MODULES = 'node_modules/';
 
 function run(command, args, options) {
   const result = spawnSync(command, args, { stdio: 'inherit', ...options });
@@ -25,7 +31,84 @@ function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
-// name@version -> package.json of every third-party package the builds
+// Node's lookup: the nearest node_modules/<name> at or above `from`.
+function resolve(packages, from, name) {
+  let base = from;
+  for (;;) {
+    const candidate = base
+      ? `${base}/${NODE_MODULES}${name}`
+      : `${NODE_MODULES}${name}`;
+    if (packages[candidate]) return candidate;
+    if (!base) return null;
+    const parent = base.lastIndexOf(`/${NODE_MODULES}`);
+    base = parent === -1 ? '' : base.slice(0, parent);
+  }
+}
+
+// name@version -> install location of every package a consumer of `root`
+// gets from us, read from npm's package-lock.json. Follows dependencies,
+// optionalDependencies and peerDependencies (npm 7+ installs peers), except
+// that root's own peerDependencies resolve to the consumer's app, so those
+// packages, and anything reachable only through them, are left out.
+function consumerPackages(lock, root) {
+  const { packages } = lock;
+  const rootLocation = `${NODE_MODULES}${root}`;
+  if (!packages[rootLocation]) throw new Error(`${root} is not installed`);
+  const consumers = new Set(
+    Object.keys(packages[rootLocation].peerDependencies || {}).map((name) =>
+      resolve(packages, rootLocation, name)
+    )
+  );
+  const seen = new Set([rootLocation]);
+  const queue = [rootLocation];
+  while (queue.length) {
+    const location = queue.shift();
+    const entry = packages[location];
+    const edges = {
+      ...entry.dependencies,
+      ...entry.optionalDependencies,
+      ...(location === rootLocation ? {} : entry.peerDependencies)
+    };
+    for (const name of Object.keys(edges)) {
+      const target = resolve(packages, location, name);
+      if (target && !consumers.has(target) && !seen.has(target)) {
+        seen.add(target);
+        queue.push(target);
+      }
+    }
+  }
+  const result = new Map();
+  for (const location of [...seen].sort()) {
+    const entry = packages[location];
+    const name =
+      entry.name ||
+      location.slice(location.lastIndexOf(NODE_MODULES) + NODE_MODULES.length);
+    const id = `${name}@${entry.version}`;
+    if (!result.has(id)) result.set(id, location);
+  }
+  return result;
+}
+
+// Where each package.json goes in the scanned directory: installed packages
+// at their install location, inlined packages that are not also installed at
+// the same version under bundled/. The tool counts only package roots
+// (node_modules/<name>/package.json), so each inlined package gets one.
+function scanLayout(installed, bundled) {
+  const layout = [...installed].map(([, location]) => ({
+    source: location,
+    directory: location
+  }));
+  for (const [id, { name, manifest }] of bundled) {
+    if (installed.has(id)) continue;
+    layout.push({
+      manifest,
+      directory: path.posix.join('bundled', id, NODE_MODULES, name)
+    });
+  }
+  return layout;
+}
+
+// name@version -> { name, manifest } of every third-party package the builds
 // inlined. A record older than the version bump belongs to an earlier build.
 function bundledPackages() {
   const bumped = fs.statSync(path.join(REPO, 'package.json')).mtimeMs;
@@ -35,72 +118,58 @@ function bundledPackages() {
     if (!fs.existsSync(file) || fs.statSync(file).mtimeMs < bumped) {
       throw new Error(`${file} is missing or older than package.json`);
     }
-    for (const pkg of readJson(file).packages) {
-      bundled.set(`${pkg.name}@${pkg.version}`, pkg.manifest);
+    for (const { name, version, manifest } of readJson(file).packages) {
+      bundled.set(`${name}@${version}`, { name, manifest });
     }
   }
   return bundled;
 }
 
-// name@version -> package.json of every package npm put on disk, once each
-// (npm can install the same version at several nested paths).
-function installedPackages(project, tarball) {
+function install(project, tarball) {
   fs.writeFileSync(path.join(project, 'package.json'), '{"private": true}\n');
   run(
     'npm',
-    [
-      'install',
-      tarball,
-      '--omit=dev',
-      '--omit=peer',
-      '--ignore-scripts',
-      '--no-audit',
-      '--no-fund'
-    ],
+    ['install', tarball, '--omit=dev', '--ignore-scripts', '--no-audit'],
     { cwd: project }
   );
-  const installed = new Map();
-  const lock = readJson(path.join(project, 'package-lock.json'));
-  for (const location of Object.keys(lock.packages)) {
-    const manifest = path.join(project, location, 'package.json');
-    if (!location || !fs.existsSync(manifest)) continue;
-    const pkg = readJson(manifest);
-    installed.set(`${pkg.name}@${pkg.version}`, { location, manifest });
-  }
-  return installed;
+  return readJson(path.join(project, 'package-lock.json'));
 }
 
 function main() {
-  const [packageDir, out] = process.argv.slice(2);
+  const [packageDir, out, ...signArgs] = process.argv.slice(2);
   if (!packageDir || !out) {
-    throw new Error('usage: sign.cjs <package dir> <out dir>');
+    throw new Error('usage: sign.cjs <package dir> <out dir> [sign args]');
   }
   const tarballs = fs.readdirSync(packageDir).filter((f) => f.endsWith('.tgz'));
-  if (tarballs.length !== 1)
+  if (tarballs.length !== 1) {
     throw new Error(`expected one .tgz in ${packageDir}`);
+  }
   const tarball = path.resolve(packageDir, tarballs[0]);
-  const { version } = readJson(path.join(REPO, 'package.json'));
+  const { version, peerDependencies } = readJson(
+    path.join(REPO, 'package.json')
+  );
+  const peers = Object.keys(peerDependencies).join(' and ');
 
   const bundled = bundledPackages();
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'release-sbom-'));
   const scan = fs.mkdtempSync(path.join(os.tmpdir(), 'release-sbom-scan-'));
   try {
-    const installed = installedPackages(project, tarball);
-    const copy = (manifest, directory) => {
-      fs.mkdirSync(path.join(scan, directory), { recursive: true });
-      fs.copyFileSync(manifest, path.join(scan, directory, 'package.json'));
-    };
-    for (const { location, manifest } of installed.values()) {
-      copy(manifest, location);
+    const installed = consumerPackages(install(project, tarball), PACKAGE);
+    // npm skips optional packages built for other platforms.
+    for (const [id, location] of installed) {
+      if (!fs.existsSync(path.join(project, location, 'package.json'))) {
+        installed.delete(id);
+      }
     }
-    // One entry per name@version: an inlined copy of a package that is also
-    // installed at the same version adds nothing to the inventory. The tool
-    // only counts package roots (node_modules/<name>/package.json), so each
-    // inlined package gets one.
-    for (const [id, manifest] of bundled) {
-      if (installed.has(id)) continue;
-      const { name } = readJson(manifest);
-      copy(manifest, path.join('bundled', id, 'node_modules', name));
+    for (const { source, manifest, directory } of scanLayout(
+      installed,
+      bundled
+    )) {
+      fs.mkdirSync(path.join(scan, directory), { recursive: true });
+      fs.copyFileSync(
+        manifest || path.join(project, source, 'package.json'),
+        path.join(scan, directory, 'package.json')
+      );
     }
 
     run('python3', [
@@ -120,7 +189,7 @@ function main() {
       '@feathery/',
       // The tarball is the version being released.
       '--require',
-      `@feathery/react@${version.replace(/\./g, '\\.')}`,
+      `${PACKAGE}@${version.replace(/\./g, '\\.')}`,
       '--require',
       '@feathery/client-utils',
       // react ships only inlined in the UMD bundle; jszip is the dependency
@@ -130,16 +199,19 @@ function main() {
       '--require',
       'jszip',
       '--min-packages',
-      '195',
+      '211',
       '--artifact-file',
       tarball,
       '--describe',
-      `npm tarball ${tarballs[0]} installed with its production ` +
-        `dependencies (installed packages: ${installed.size}; peer ` +
-        `dependencies omitted because the consumer supplies them), plus the ` +
-        `${bundled.size} third-party packages the build inlined into dist, cjs and umd`,
+      `npm tarball ${tarballs[0]} installed the way npm installs it for a ` +
+        `consumer (${installed.size} packages, including peer dependencies ` +
+        `of our dependencies; our own peerDependencies ${peers}, ` +
+        `and packages reachable only through them, are left out because ` +
+        `the consumer's app supplies them), plus the ${bundled.size} ` +
+        `third-party packages the build inlined into dist, cjs and umd`,
       '--out',
-      out
+      out,
+      ...signArgs
     ]);
   } finally {
     fs.rmSync(project, { recursive: true, force: true });
@@ -147,9 +219,13 @@ function main() {
   }
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(`[release-sbom] ERROR: ${error.message}`);
-  process.exit(1);
+if (require.main === module) {
+  try {
+    main();
+  } catch (error) {
+    console.error(`[release-sbom] ERROR: ${error.message}`);
+    process.exit(1);
+  }
 }
+
+module.exports = { consumerPackages, scanLayout };

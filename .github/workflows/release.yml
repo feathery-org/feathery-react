@@ -20,6 +20,9 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      # Where sign stages the signed SBOM so filing can be retried.
+      SBOM_PENDING_ID: feathery-react/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Validate User
         env:
@@ -95,13 +98,10 @@ jobs:
       # Fails the release before publishing unless the SBOM is signed. The
       # signer role trusts only master, which is where releases run.
       - name: Sign Release SBOM
-        run: node scripts/release-sbom/sign.cjs "$RUNNER_TEMP/package" "$RUNNER_TEMP/sbom"
+        run: node scripts/release-sbom/sign.cjs "$RUNNER_TEMP/package" "$RUNNER_TEMP/sbom" --pending-id "$SBOM_PENDING_ID"
 
       - name: Publish to NPM
         run: npm publish "$RUNNER_TEMP"/package/*.tgz
-
-      - name: File Release SBOM
-        run: python3 scripts/release-sbom/feathery_sbom.py file --out "$RUNNER_TEMP/sbom"
 
       - name: Push Changes
         env:
@@ -119,3 +119,13 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.FEATHERY_BOT_TOKEN }}
+
+      # Last, so a filing failure never strands the published version, its
+      # tag or its GitHub release. The signed files are staged under the
+      # pending id, so filing can be retried from any machine.
+      - name: File Release SBOM
+        run: |
+          if ! python3 scripts/release-sbom/feathery_sbom.py file --pending-id "$SBOM_PENDING_ID"; then
+            echo "::error::Filing the release SBOM failed after the release shipped. Retry with operator AWS credentials: python3 scripts/release-sbom/feathery_sbom.py file --pending-id $SBOM_PENDING_ID"
+            exit 1
+          fi

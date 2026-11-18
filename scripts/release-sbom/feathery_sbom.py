@@ -24,6 +24,7 @@ import base64
 import datetime
 import hashlib
 import hmac
+import io
 import json
 import os
 import platform
@@ -40,7 +41,7 @@ import urllib.request
 import uuid
 import xml.etree.ElementTree as ET
 
-TOOL_VERSION = "1.3.0"
+TOOL_VERSION = "1.4.0"
 
 REGION = "us-west-1"
 ACCOUNT_ID = "737208625848"
@@ -98,6 +99,15 @@ NODE_PACKAGE_ROOT = re.compile(
 )
 UNKNOWN_VERSIONS = ("", "UNKNOWN", "NOASSERTION")
 COMPONENT_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+WORKLOAD_REGIONS = (
+    "ap-northeast-1",
+    "ap-southeast-2",
+    "eu-west-1",
+    "ca-central-1",
+    "us-west-1",
+)
+RETRYABLE_STATUS = (429, 500, 502, 503, 504)
+THROTTLING_CODES = (b"Throttling", b"SlowDown", b"RequestLimitExceeded", b"TooMany")
 
 
 class SbomError(Exception):
@@ -200,17 +210,34 @@ def _sign_v4(method, url, service, credentials, headers, body):
     return signed
 
 
+def _with_retries(label, attempt_once, attempts=5):
+    """Retry network errors, 5xx and throttling; return the first other answer."""
+    last = "no attempt"
+    for attempt in range(attempts):
+        try:
+            status, headers, data = attempt_once()
+        except (urllib.error.URLError, OSError) as error:
+            last = f"{type(error).__name__}: {error}"
+        else:
+            throttled = status == 400 and any(code in data for code in THROTTLING_CODES)
+            if status not in RETRYABLE_STATUS and not throttled:
+                return status, headers, data
+            last = f"HTTP {status}: {data.decode(errors='replace')[:200]}"
+        if attempt < attempts - 1:
+            time.sleep(min(2**attempt, 8))
+    raise SbomError(f"{label} failed after {attempts} attempts ({last})")
+
+
+def http_request(label, method, url, headers=None, body=None, timeout=60):
+    return _with_retries(label, lambda: _http(method, url, headers, body, timeout))
+
+
 def aws_request(method, url, service, credentials, headers=None, body=None):
-    signed = _sign_v4(method, url, service, credentials, headers or {}, body)
-    last = None
-    for attempt in range(4):
-        status, response_headers, data = _http(method, url, signed, body)
-        if status < 500 and status != 429:
-            return status, response_headers, data
-        last = (status, data)
-        time.sleep(2**attempt)
+    def attempt_once():
         signed = _sign_v4(method, url, service, credentials, headers or {}, body)
-    return last[0], {}, last[1]
+        return _http(method, url, signed, body)
+
+    return _with_retries(f"{service} {method}", attempt_once)
 
 
 def _sts_credentials(xml_body, source):
@@ -255,7 +282,7 @@ def base_credentials():
                 token = handle.read().strip()
         if token:
             headers["Authorization"] = token
-        status, _, data = _http("GET", url, headers)
+        status, _, data = http_request("container credentials", "GET", url, headers)
         if status != 200:
             raise SbomError(f"container credentials endpoint returned {status}")
         values = json.loads(data)
@@ -305,8 +332,11 @@ def signer_credentials(context):
             + ("&" if "?" in request_url else "?")
             + "audience=sts.amazonaws.com"
         )
-        status, _, data = _http(
-            "GET", audience_url, {"Authorization": "Bearer " + request_token}
+        status, _, data = http_request(
+            "GitHub OIDC token",
+            "GET",
+            audience_url,
+            {"Authorization": "Bearer " + request_token},
         )
         if status != 200:
             raise SbomError(f"GitHub OIDC token request failed with {status}")
@@ -321,7 +351,8 @@ def signer_credentials(context):
                 "DurationSeconds": "3600",
             }
         ).encode()
-        status, _, data = _http(
+        status, _, data = http_request(
+            "STS AssumeRoleWithWebIdentity",
             "POST",
             f"https://sts.{REGION}.amazonaws.com/",
             {"Content-Type": "application/x-www-form-urlencoded"},
@@ -393,12 +424,19 @@ def s3_put(credentials, key, data, content_type, create_only):
         headers["If-None-Match"] = "*"
     status, _, body = aws_request("PUT", s3_url(key), "s3", credentials, headers, data)
     if status == 412:
-        return False
+        # A retry after a lost response finds our own object; anything else
+        # means the key was already taken.
+        return _s3_get_optional(credentials, key) == data
     if status != 200:
         raise SbomError(
             f"S3 PUT {key} failed ({status}): {body.decode(errors='replace')[:300]}"
         )
     return True
+
+
+def _s3_get_optional(credentials, key):
+    status, _, body = aws_request("GET", s3_url(key), "s3", credentials)
+    return body if status == 200 else None
 
 
 def s3_get(credentials, key):
@@ -460,49 +498,58 @@ def _platform():
     return system, arch
 
 
-def install_syft():
+def _syft_archive(credentials):
+    """The pinned syft tarball, checksum-verified on every use."""
     system, arch = _platform()
-    cache = os.path.join(
-        os.environ.get("SBOM_CACHE_DIR")
-        or os.path.join(os.path.expanduser("~"), ".cache", "feathery-sbom"),
-        f"syft-{SYFT_VERSION}-{system}-{arch}",
-    )
-    binary = os.path.join(cache, "syft")
-    if os.path.exists(binary):
-        return binary
+    expected = SYFT_SHA256[f"{system}/{arch}"]
     name = f"syft_{SYFT_VERSION}_{system}_{arch}.tar.gz"
-    url = f"https://github.com/anchore/syft/releases/download/v{SYFT_VERSION}/{name}"
+    cache_root = os.environ.get("SBOM_CACHE_DIR") or os.path.join(
+        os.path.expanduser("~"), ".cache", "feathery-sbom"
+    )
+    os.makedirs(cache_root, exist_ok=True)
+    cached = os.path.join(cache_root, name)
+    if os.path.exists(cached):
+        with open(cached, "rb") as handle:
+            data = handle.read()
+        if sha256_bytes(data) == expected:
+            return data, cache_root
     data = None
-    for attempt in range(4):
-        status, _, body = _http("GET", url, timeout=120)
-        if status == 200:
-            data = body
-            break
-        time.sleep(2**attempt)
-    if data is None:
-        raise SbomError(f"could not download {url}")
-    if sha256_bytes(data) != SYFT_SHA256[f"{system}/{arch}"]:
+    if credentials is not None:
+        # Our mirror first, so a GitHub outage does not block a release.
+        data = _s3_get_optional(credentials, f"tools/syft/{SYFT_VERSION}/{name}")
+    if data is None or sha256_bytes(data) != expected:
+        url = (
+            f"https://github.com/anchore/syft/releases/download/v{SYFT_VERSION}/{name}"
+        )
+        status, _, data = http_request("syft download", "GET", url, timeout=120)
+        if status != 200:
+            raise SbomError(f"could not download {url} (HTTP {status})")
+    if sha256_bytes(data) != expected:
         raise SbomError(f"syft download checksum mismatch for {name}")
-    os.makedirs(cache, exist_ok=True)
-    with tempfile.TemporaryDirectory() as scratch:
-        archive = os.path.join(scratch, name)
-        with open(archive, "wb") as handle:
-            handle.write(data)
-        with tarfile.open(archive) as tar:
+    fd, partial = tempfile.mkstemp(dir=cache_root)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(data)
+    os.replace(partial, cached)
+    return data, cache_root
+
+
+def run_syft(source, profile, component, version, output, credentials=None):
+    if profile not in PROFILES:
+        raise SbomError(f"unknown profile {profile}")
+    archive, cache_root = _syft_archive(credentials)
+    with tempfile.TemporaryDirectory(dir=cache_root) as scratch:
+        with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
             member = tar.getmember("syft")
             if hasattr(tarfile, "data_filter"):
                 tar.extract(member, scratch, filter="data")
             else:
                 tar.extract(member, scratch)
-        os.chmod(os.path.join(scratch, "syft"), 0o755)
-        os.replace(os.path.join(scratch, "syft"), binary)
-    return binary
+        syft = os.path.join(scratch, "syft")
+        os.chmod(syft, 0o755)
+        _run_syft_binary(syft, source, profile, component, version, output)
 
 
-def run_syft(source, profile, component, version, output):
-    if profile not in PROFILES:
-        raise SbomError(f"unknown profile {profile}")
-    syft = install_syft()
+def _run_syft_binary(syft, source, profile, component, version, output):
     env = dict(
         os.environ,
         SYFT_CHECK_FOR_APP_UPDATE="false",
@@ -590,9 +637,6 @@ def finalize(
     )
     kept = []
     for package in doc.get("packages", []):
-        # GitHub Actions references found in workflow files never ship.
-        if (_purl(package) or "").startswith("pkg:github/"):
-            continue
         if package["SPDXID"] not in roots and _stray_node_manifest(package):
             continue
         if package["SPDXID"] in roots:
@@ -878,9 +922,14 @@ def command_sign(args):
     if args.artifact_file:
         artifact_sha256 = sha256_file(args.artifact_file)
 
+    if args.pending_id:
+        _pending_prefix(args.pending_id, args.component)
+    context = build_context()
+    credentials = signer_credentials(f"{args.component}-{context.get('system')}")
+
     os.makedirs(args.out, exist_ok=True)
     raw = os.path.join(args.out, "syft.spdx.json")
-    run_syft(args.source, args.profile, args.component, version, raw)
+    run_syft(args.source, args.profile, args.component, version, raw, credentials)
     with open(raw, encoding="utf-8") as handle:
         doc = json.load(handle)
     os.remove(raw)
@@ -907,8 +956,6 @@ def command_sign(args):
     )
     data = serialize(doc)
 
-    context = build_context()
-    credentials = signer_credentials(f"{args.component}-{context.get('system')}")
     key_arn, pem, fingerprint = fetch_public_key(credentials)
     signature = kms_sign(credentials, data)
     if not openssl_verify(data, signature, pem):
@@ -949,6 +996,8 @@ def command_sign(args):
         f"signed {args.component}@{version}: {count} components, "
         f"sbom sha256 {build['sbom_sha256']}"
     )
+    if args.pending_id:
+        _stage(credentials, args.out, args.pending_id)
 
 
 def _read_local(directory):
@@ -964,16 +1013,22 @@ def _read_local(directory):
     return result
 
 
-def _pending_prefix(pending_id):
+def _pending_prefix(pending_id, component=None):
     if not re.match(r"^[a-z0-9-]+/[A-Za-z0-9-]+$", pending_id or ""):
-        raise SbomError("pending id must look like <component>/<pipeline-execution-id>")
+        raise SbomError("pending id must look like <component>/<run-or-execution-id>")
+    if component is not None and pending_id.split("/", 1)[0] != component:
+        raise SbomError(f"pending id {pending_id} does not belong to {component}")
     return f"pending/{pending_id}/"
 
 
 def command_stage(args):
-    files = _read_local(args.out)
-    credentials = signer_credentials("stage")
-    prefix = _pending_prefix(args.pending_id)
+    _stage(signer_credentials("stage"), args.out, args.pending_id)
+
+
+def _stage(credentials, directory, pending_id):
+    files = _read_local(directory)
+    component = json.loads(files[BUILD_FILE])["component"]
+    prefix = _pending_prefix(pending_id, component)
     for name in FILES:
         s3_put(
             credentials,
@@ -1000,6 +1055,10 @@ def command_file(args):
     else:
         files = _read_local(args.out)
     build = json.loads(files[BUILD_FILE])
+    if not COMPONENT_NAME.match(build.get("component", "")):
+        raise SbomError("build.json has no valid component")
+    if args.pending_id:
+        _pending_prefix(args.pending_id, build["component"])
     if sha256_bytes(files[SBOM_FILE]) != build["sbom_sha256"]:
         raise SbomError("SBOM bytes do not match build.json")
     _, pem, fingerprint = fetch_public_key(credentials)
@@ -1011,6 +1070,7 @@ def command_file(args):
         raise SbomError("signature does not verify; refusing to file")
 
     root = "sboms-test" if args.dry_run else "sboms"
+    _refuse_older_release(credentials, root, build, args.regions)
     for _ in range(5):
         moment = utcnow()
         build["filed_at"] = iso(moment)
@@ -1029,11 +1089,13 @@ def command_file(args):
         time.sleep(1.1)
     else:
         raise SbomError("could not claim a release folder")
-    s3_put(
-        credentials, prefix + SIG_FILE, files[SIG_FILE], "text/plain", create_only=True
-    )
     data = (json.dumps(build, indent=2) + "\n").encode()
-    s3_put(credentials, prefix + BUILD_FILE, data, "application/json", create_only=True)
+    for name, body, content_type in (
+        (SIG_FILE, files[SIG_FILE], "text/plain"),
+        (BUILD_FILE, data, "application/json"),
+    ):
+        if not s3_put(credentials, prefix + name, body, content_type, True):
+            raise SbomError(f"s3://{BUCKET}/{prefix}{name} already holds other content")
     print(f"s3://{BUCKET}/{prefix}")
     log(f"filed {build['component']}@{build['version']} at s3://{BUCKET}/{prefix}")
 
@@ -1042,10 +1104,75 @@ def _parse_time(value):
     text = value.strip().replace(" ", "T")
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
-    moment = datetime.datetime.fromisoformat(text)
+    try:
+        moment = datetime.datetime.fromisoformat(text)
+    except ValueError as error:
+        raise SbomError(f"cannot read --at {value!r}: {error}") from error
     if moment.tzinfo is None:
         raise SbomError("give --at with a timezone, for example 2026-11-18T13:05:26Z")
     return moment.astimezone(datetime.timezone.utc)
+
+
+def _releases(credentials, root, service):
+    """Release folders of a service, newest first, as (time, folder)."""
+    keys, _ = s3_list(credentials, f"{root}/service={service}/")
+    found = []
+    for key in keys:
+        match = RELEASE_KEY.match(key)
+        if match and match.group("file") == BUILD_FILE:
+            moment = datetime.datetime(
+                *(int(match.group(g)) for g in ("Y", "m", "d", "H", "M", "S")),
+                tzinfo=datetime.timezone.utc,
+            )
+            found.append((moment, key.rsplit("/", 1)[0] + "/"))
+    return sorted(found, reverse=True)
+
+
+def _live_releases(credentials, root, service, at):
+    """Which release each region ran at `at`.
+
+    Returns [(time, folder, build, regions)], regions None meaning every region.
+    A record without `regions` was a full rollout and covers whatever newer
+    per-region records have not.
+    """
+    covered, live = set(), []
+    for moment, folder in _releases(credentials, root, service):
+        if moment > at:
+            continue
+        build = json.loads(s3_get(credentials, folder + BUILD_FILE))
+        regions = build.get("regions")
+        if not regions:
+            rest = None if not covered else sorted(set(WORKLOAD_REGIONS) - covered)
+            if rest is None or rest:
+                live.append((moment, folder, build, rest))
+            break
+        new = sorted(set(regions) - covered)
+        if new:
+            live.append((moment, folder, build, new))
+            covered.update(new)
+        if covered >= set(WORKLOAD_REGIONS):
+            break
+    return live
+
+
+def _refuse_older_release(credentials, root, build, regions):
+    """Never let a retried, older release become the newest record."""
+    mine = set(regions or WORKLOAD_REGIONS)
+    for _, folder, newer, newer_regions in _live_releases(
+        credentials, root, build["component"], utcnow()
+    ):
+        overlap = mine & set(newer_regions or WORKLOAD_REGIONS)
+        if overlap and newer.get("signed_at", "") > build.get("signed_at", ""):
+            raise SbomError(
+                f"a newer release ({newer.get('version')}, signed "
+                f"{newer.get('signed_at')}) is already filed at {folder} for "
+                f"{', '.join(sorted(overlap))}; filing this older one would make "
+                "the archive claim it is live"
+            )
+
+
+def _package_key(name):
+    return re.sub(r"[-_.]+", "-", (name or "").lower())
 
 
 def command_find(args):
@@ -1059,42 +1186,34 @@ def command_find(args):
         if "service=" in p
     )
     if args.service:
+        for unknown in sorted(set(args.service) - set(services)):
+            log(f"no releases are filed for service {unknown}")
         services = [s for s in services if s in args.service]
     rows = []
     for service in services:
-        keys, _ = s3_list(credentials, f"{root}/service={service}/")
-        live_at, live_folder = None, None
-        for key in keys:
-            match = RELEASE_KEY.match(key)
-            if not match or match.group("file") != BUILD_FILE:
-                continue
-            moment = datetime.datetime(
-                *(int(match.group(g)) for g in ("Y", "m", "d", "H", "M", "S")),
-                tzinfo=datetime.timezone.utc,
-            )
-            if moment <= at and (live_at is None or moment > live_at):
-                live_at, live_folder = moment, key.rsplit("/", 1)[0] + "/"
-        if live_at is None:
+        live = _live_releases(credentials, root, service, at)
+        if not live:
             rows.append({"service": service, "live_since": None})
             continue
-        build = json.loads(s3_get(credentials, live_folder + BUILD_FILE))
-        row = {
-            "service": service,
-            "live_since": iso(live_at),
-            "version": build["version"],
-            "folder": live_folder,
-        }
-        if args.package:
-            doc = json.loads(s3_get(credentials, live_folder + SBOM_FILE))
-            wanted = args.package.lower()
-            row["matches"] = sorted(
-                set(
-                    f"{p.get('name')}@{p.get('versionInfo')}"
-                    for p in doc.get("packages", [])
-                    if p.get("name", "").lower() == wanted
+        for moment, folder, build, regions in live:
+            row = {
+                "service": service,
+                "regions": regions or "all",
+                "live_since": iso(moment),
+                "version": build["version"],
+                "folder": folder,
+            }
+            if args.package:
+                doc = json.loads(s3_get(credentials, folder + SBOM_FILE))
+                wanted = _package_key(args.package)
+                row["matches"] = sorted(
+                    set(
+                        f"{p.get('name')}@{p.get('versionInfo')}"
+                        for p in doc.get("packages", [])
+                        if _package_key(p.get("name")) == wanted
+                    )
                 )
-            )
-        rows.append(row)
+            rows.append(row)
     print(
         json.dumps({"at": iso(at), "package": args.package, "services": rows}, indent=2)
     )
@@ -1109,7 +1228,17 @@ def command_verify(args):
     signature = (
         read(args.signature or os.path.join(args.dir, SIG_FILE)).decode().strip()
     )
-    pem = read(args.public_key).decode()
+    if args.kms:
+        _, pem, fingerprint = fetch_public_key(signer_credentials("verify"))
+        build_path = os.path.join(args.dir, BUILD_FILE)
+        if not args.sbom and os.path.exists(build_path):
+            recorded = json.loads(read(build_path))["signature"]["public_key_sha256"]
+            if recorded != fingerprint:
+                raise SbomError("build.json names a different signing key")
+    elif args.public_key:
+        pem = read(args.public_key).decode()
+    else:
+        raise SbomError("pass --public-key PEM or --kms")
     if not openssl_verify(sbom, signature, pem):
         raise SbomError("signature does NOT verify")
     print("Verified OK")
@@ -1173,9 +1302,15 @@ def parser():
     )
     sign.add_argument("--describe", help="one-line description of what was scanned")
     sign.add_argument("--out", required=True, help="directory for the signed files")
+    sign.add_argument(
+        "--pending-id",
+        help="also stage the signed files as <component>/<id> so filing can be retried",
+    )
     sign.set_defaults(func=command_sign)
 
-    stage = sub.add_parser("stage", help="park signed files for a later pipeline stage")
+    stage = sub.add_parser(
+        "stage", help="park signed files so another step can file them"
+    )
     stage.add_argument("--out", required=True)
     stage.add_argument(
         "--pending-id", required=True, help="<component>/<pipeline-execution-id>"
@@ -1225,7 +1360,12 @@ def parser():
     )
     verify.add_argument("--sbom")
     verify.add_argument("--signature")
-    verify.add_argument("--public-key", required=True)
+    verify.add_argument("--public-key", help="PEM file of the signing key")
+    verify.add_argument(
+        "--kms",
+        action="store_true",
+        help="use the live signing key from KMS instead of a PEM file",
+    )
     verify.set_defaults(func=command_verify)
     return root
 

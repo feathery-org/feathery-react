@@ -26,7 +26,7 @@ function packageRoot(moduleId) {
   );
 }
 
-function record(build, moduleIds) {
+function record(build, moduleIds, directory = RECORD_DIR) {
   const manifests = new Set();
   for (const id of moduleIds) {
     const root = packageRoot(id);
@@ -36,10 +36,10 @@ function record(build, moduleIds) {
     const { name, version } = JSON.parse(fs.readFileSync(manifest, 'utf8'));
     return { name, version, manifest };
   });
-  fs.mkdirSync(RECORD_DIR, { recursive: true });
+  fs.mkdirSync(directory, { recursive: true });
   // Both builds run in parallel and each bundles the pptx worker, so write
   // atomically.
-  const target = path.join(RECORD_DIR, `${build}.json`);
+  const target = path.join(directory, `${build}.json`);
   const temporary = `${target}.${process.pid}`;
   fs.writeFileSync(temporary, JSON.stringify({ build, packages }, null, 2));
   fs.renameSync(temporary, target);
@@ -90,4 +90,10 @@ class WebpackPlugin {
   }
 }
 
-module.exports = { RECORD_DIR, record, rollupPlugin, WebpackPlugin };
+module.exports = {
+  RECORD_DIR,
+  packageRoot,
+  record,
+  rollupPlugin,
+  WebpackPlugin
+};
