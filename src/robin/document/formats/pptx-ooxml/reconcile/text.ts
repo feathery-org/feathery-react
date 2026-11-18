@@ -60,9 +60,11 @@ export function textOperations(
           return { text: '', break: true, ...(own ? { source: own } : {}) };
         }
         const at = sources.runs[p][r];
+        const continues = !!at && runAt(before, at)?.id !== origin(run.id);
         return {
           text: String(run.text),
-          ...(at ? { source: at, styleChanged: false } : {})
+          ...(at ? { source: at, styleChanged: false } : {}),
+          ...(continues ? { continues } : {})
         };
       })
     };

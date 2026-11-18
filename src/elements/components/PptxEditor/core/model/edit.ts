@@ -256,6 +256,7 @@ export interface RichRun {
   font?: string;
   source?: { paragraph: number; run: number };
   styleChanged?: boolean;
+  continues?: boolean;
 }
 export interface RichPara {
   align?: 'l' | 'ctr' | 'r' | 'just';
@@ -353,6 +354,16 @@ export function setShapeRichText(
         continue;
       }
       const runNode = source ? deepClone(source.node) : el('a:r');
+      // New text takes the formatting of the text it continues, never its link
+      const linked = r.continues && child(runNode, 'a:rPr');
+      if (linked) {
+        const kids = childrenOf(linked);
+        const kept = kids.filter(
+          (kid) =>
+            !['a:hlinkClick', 'a:hlinkMouseOver'].includes(tagOf(kid) || '')
+        );
+        kids.splice(0, kids.length, ...kept);
+      }
       if (!source || r.styleChanged !== false) {
         const rPr = child(runNode, 'a:rPr') || el('a:rPr', { lang: 'en-US' });
         if (!child(runNode, 'a:rPr')) childrenOf(runNode).unshift(rPr);

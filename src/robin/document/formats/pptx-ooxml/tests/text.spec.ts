@@ -1,6 +1,7 @@
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { createHost } from '../index';
 import { serializeDeck } from '../native';
-import { openDeck, type WriteResult } from './harness';
+import { fixture, openDeck, type WriteResult } from './harness';
 
 function expectCard(result: WriteResult) {
   expect(result).toEqual(
@@ -271,6 +272,43 @@ describe('PowerPoint text', () => {
       })
     );
     expect(deck.pending()).toHaveLength(0);
+  });
+
+  it('adds text after a link without making the new text a link', () => {
+    const files = unzipSync(fixture('marketing-parity.pptx'));
+    const slide = 'ppt/slides/slide1.xml';
+    const rels = 'ppt/slides/_rels/slide1.xml.rels';
+    files[slide] = strToU8(
+      strFromU8(files[slide]).replace(
+        '<a:rPr lang="en"/><a:t>Company Name',
+        '<a:rPr lang="en"><a:hlinkClick r:id="rIdLink"/></a:rPr><a:t>Company Name'
+      )
+    );
+    files[rels] = strToU8(
+      strFromU8(files[rels]).replace(
+        '</Relationships>',
+        '<Relationship Id="rIdLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com" TargetMode="External"/></Relationships>'
+      )
+    );
+    const deck = openDeck('marketing-parity.pptx', zipSync(files));
+    const { paragraph } = subtitle(deck);
+    const node = deck.read(paragraph);
+    expectCard(
+      replaceParagraph(deck, paragraph, {
+        ...node,
+        runs: [...(node.runs as unknown[]), { text: ' (draft)' }]
+      })
+    );
+    const xml = (
+      JSON.parse(serializeDeck(deck.engine)).slides as Array<{
+        path: string;
+        xml: string;
+      }>
+    ).find((part) => part.path === slide)!.xml;
+    expect(xml.match(/<a:r>.*?<\/a:r>/g)!.filter((run) => run.includes('Company Name') || run.includes('(draft)'))).toEqual([
+      expect.stringContaining('hlinkClick'),
+      expect.not.stringContaining('hlinkClick')
+    ]);
   });
 
   it('writes to a deck that was reopened', () => {
