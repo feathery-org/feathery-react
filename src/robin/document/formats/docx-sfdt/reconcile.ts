@@ -137,7 +137,11 @@ function acceptOthers(node: NfNode): void {
 
 /** Mark every revision anchor inside a node: runs and other text inlines, paragraph marks, rows. */
 export function markSubtree(node: NfNode, p: Pending): void {
-  if (node.kind === KIND.run || node.kind === KIND.shape)
+  if (
+    node.kind === KIND.run ||
+    node.kind === KIND.shape ||
+    node.kind === KIND.field
+  )
     node.pending = withRevision(node.pending, p);
   if (node.kind === KIND.paragraph) {
     const mark = isObject(node.pending) ? node.pending.mark : undefined;
