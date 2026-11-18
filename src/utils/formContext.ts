@@ -406,6 +406,7 @@ export const getFormContext = (formUuid: string) => {
       repeatable,
       download,
       merge,
+      mergeGroups,
       mergedFileName,
       zipName,
       saveDocumentFieldKey,
@@ -475,6 +476,11 @@ export const getFormContext = (formUuid: string) => {
       repeatable?: boolean;
       download?: boolean;
       merge?: boolean;
+      // Packets: each inner list merges those generated copies into one PDF,
+      // in order. A member is a document reference (one copy) or a template
+      // id (all of that template's copies). On a DocuSign sign the whole
+      // packet becomes one signable document; otherwise one download file.
+      mergeGroups?: string[][];
       mergedFileName?: string;
       zipName?: string;
       saveDocumentFieldKey?: string;
@@ -571,7 +577,10 @@ export const getFormContext = (formUuid: string) => {
         !!envelopeAction ||
         !!toolbarActions?.length ||
         !!repeatable ||
+        !!mergeGroups?.length ||
         documentIds.some((doc) => typeof doc !== 'string');
+      // Captured before awaits below, like the document sources.
+      mergeGroups = mergeGroups?.map((group) => [...group]);
       // Capture explicit Quik inputs before awaiting saves or opening review.
       // Caller edits to the original object must not change this request.
       documentIds = documentIds.map((doc) =>
@@ -707,6 +716,7 @@ export const getFormContext = (formUuid: string) => {
             custom_fields: customFields,
             repeatable,
             merge_docs: merge,
+            merge_groups: mergeGroups,
             merged_file_name: mergedFileName,
             envelope_zip_name: zipName,
             save_document_field_key: saveDocumentFieldKey,
@@ -735,6 +745,11 @@ export const getFormContext = (formUuid: string) => {
           new Error(
             'generateDocuments: per-role signers require a mounted <Form />.'
           )
+        );
+      }
+      if (mergeGroups?.length) {
+        return Promise.reject(
+          new Error('generateDocuments: mergeGroups require a mounted <Form />.')
         );
       }
       if (ccRecipients !== undefined) {
