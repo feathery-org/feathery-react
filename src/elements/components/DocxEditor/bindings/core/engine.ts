@@ -135,6 +135,11 @@ function readValues(
   const values = new Map<string, string>();
   const errors = new Set<string>();
   for (const occurrence of index.occurrences) {
+    // A blank number is a valid value, not an input error
+    if (isNumericType(occurrence.def.fieldType) && !occurrence.text.trim()) {
+      values.set(occurrence.key, '');
+      continue;
+    }
     try {
       values.set(
         occurrence.key,
@@ -608,17 +613,20 @@ export function applyRules(
   for (const id of nodes.keys()) visit(id, []);
 
   /* ---- 4. evaluate in order ---- */
+  // A formula reads a blank number as 0
+  const asNumber = (value: string): string => (value === '' ? '0' : value);
   function evalAst(ast: Ast, node: FormulaNode): string | string[] {
     if ('lit' in ast) return ast.lit;
-    if ('cell' in ast) return posGrid.positionalCellValue(ast.cell, node.occ);
+    if ('cell' in ast)
+      return asNumber(posGrid.positionalCellValue(ast.cell, node.occ));
     if ('range' in ast)
-      return posGrid.positionalRangeValues(ast.range, node.occ);
+      return posGrid.positionalRangeValues(ast.range, node.occ).map(asNumber);
     if ('ref' in ast) {
       const target = refTargets(ast.ref, node.occ);
       if (!target) {
         // A cell-shaped ref that names nothing reads a positional cell.
         const cell = bareCellRef(ast.ref);
-        if (cell) return posGrid.positionalCellValue(cell, node.occ);
+        if (cell) return asNumber(posGrid.positionalCellValue(cell, node.occ));
         throw new FormulaError(`unresolved reference "${ast.ref}"`);
       }
       if (target.kind === 'field') {
@@ -629,7 +637,7 @@ export function applyRules(
           throw new FormulaError(`"${ast.ref}" has no valid value`);
         if (!isNumericType(occurrences[0].def.fieldType))
           throw new FormulaError(`"${ast.ref}" is not numeric`);
-        return values.get(occurrences[0].key) as string;
+        return asNumber(values.get(occurrences[0].key) as string);
       }
       if (target.kind === 'formula') {
         if (!results.has(target.id))
@@ -639,7 +647,7 @@ export function applyRules(
       if (target.kind === 'occurrence') {
         if (!values.has(target.key))
           throw new FormulaError(`"${ast.ref}" has an invalid value`);
-        return values.get(target.key) as string;
+        return asNumber(values.get(target.key) as string);
       }
       return target.items.map((item) => {
         if (item.kind === 'formula') {
@@ -651,7 +659,7 @@ export function applyRules(
         }
         if (!values.has(item.key))
           throw new FormulaError(`"${ast.ref}" includes an invalid value`);
-        return values.get(item.key) as string;
+        return asNumber(values.get(item.key) as string);
       });
     }
     const args = ast.args.map((arg) => evalAst(arg, node));

@@ -150,6 +150,94 @@ describe('applyRules', () => {
     ]);
   });
 
+  it('counts a blank number as 0 without blocking saving, and leaves the cell blank', () => {
+    const doc = buildCostsFixture();
+    const base = applyRules(doc, {});
+    const quantity = occ(
+      base.index,
+      (entry) => entry.name === 'quantity' && entry.rowId === 'r-1'
+    );
+    const edited = setOccurrenceText(base.sfdt, quantity, '');
+
+    const result = applyRules(edited, { prevValues: base.values });
+    expect(hasBlockingErrors(result.diagnostics)).toBe(false);
+    expect(costsRows(result.index)[0].bindings.get('line_total')!.text).toBe(
+      '$0.00'
+    );
+    expect(costsRows(result.index)[0].bindings.get('quantity')!.text).toBe(
+      ''
+    );
+  });
+
+  it('totals a blank document field as 0', () => {
+    const doc = {
+      sections: [
+        {
+          blocks: [
+            {
+              inlines: [
+                {
+                  contentControlProperties: {
+                    tag: '[[name=prior|type=currency]]'
+                  },
+                  inlines: [{ text: '' }]
+                },
+                {
+                  contentControlProperties: {
+                    tag: '[[name=priorTotal|expr=sum(prior)|type=currency]]'
+                  },
+                  inlines: [{ text: '' }]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+
+    const result = applyRules(doc, {});
+    expect(result.diagnostics).toEqual([]);
+    expect(result.index.formulas.get('priorTotal')![0].text).toBe('$0.00');
+  });
+
+  describe('a blank copy of a number field syncs like any other value', () => {
+    const premium = (text: string) => ({
+      contentControlProperties: { tag: '[[name=premium|type=currency]]' },
+      inlines: [{ text }]
+    });
+    const docOf = (first: string, second: string) => ({
+      sections: [{ blocks: [{ inlines: [premium(first), premium(second)] }] }]
+    });
+    const premiums = (index: BindingIndex) =>
+      index.fields.get('premium')!.map((entry) => entry.text);
+
+    it('clears the other copy when one is cleared', () => {
+      const base = applyRules(docOf('$500.00', '$500.00'), {});
+      const first = base.index.fields.get('premium')![0];
+      const result = applyRules(setOccurrenceText(base.sfdt, first, ''), {
+        prevValues: base.values
+      });
+      expect(premiums(result.index)).toEqual(['', '']);
+      expect(hasBlockingErrors(result.diagnostics)).toBe(false);
+    });
+
+    it('fills the other copy when one is typed into', () => {
+      const base = applyRules(docOf('', ''), {});
+      const first = base.index.fields.get('premium')![0];
+      const result = applyRules(setOccurrenceText(base.sfdt, first, '700'), {
+        prevValues: base.values
+      });
+      expect(premiums(result.index)).toEqual(['$700.00', '$700.00']);
+    });
+
+    it('reports copies that disagree, one of them blank', () => {
+      const result = applyRules(docOf('$500.00', ''), {});
+      expect(result.diagnostics.map((entry) => entry.code)).toContain(
+        'ambiguous-edit'
+      );
+    });
+  });
+
   it('blocks recalculation on invalid input instead of producing NaN', () => {
     const doc = buildCostsFixture();
     const base = applyRules(doc, {});
