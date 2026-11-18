@@ -4,11 +4,15 @@ import React from 'react';
  * embedded editor width, including when the surrounding page stays wide. */
 export default function DocumentSaveStatus({
   dirty,
-  compact = false
+  compact = false,
+  reserveSpace = true
 }: {
   dirty?: boolean;
   compact?: boolean;
+  // false: render nothing when clean, so the toolbar has no gap.
+  reserveSpace?: boolean;
 }) {
+  if (!dirty && !reserveSpace) return null;
   const label = dirty ? 'Unsaved changes' : undefined;
   return (
     <span
@@ -23,7 +27,7 @@ export default function DocumentSaveStatus({
         justifyContent: 'flex-end',
         gap: 6,
         flex: '0 0 auto',
-        width: compact ? 14 : 140,
+        width: compact ? 14 : reserveSpace ? 140 : 'auto',
         fontSize: 12,
         color: dirty ? '#71717a' : '#15803d',
         whiteSpace: 'nowrap',

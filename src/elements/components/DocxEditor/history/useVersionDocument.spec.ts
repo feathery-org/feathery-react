@@ -1,9 +1,11 @@
+import { useLayoutEffect, useState } from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 
 import {
   __clearVersionDocumentCache,
   LiveVersionDocument,
   clearLocalVersionArtifacts,
+  cacheImportedVersion,
   prefetchVersionDocuments,
   registerLocalVersionArtifacts,
   retainVersionDocuments,
@@ -57,6 +59,100 @@ const host = (over: Partial<DocxHistoryHost> = {}): DocxHistoryHost => ({
 });
 
 describe('useVersionDocument', () => {
+  it('prepares Original before selection and shares the prepared result', async () => {
+    const original = version({
+      id: 'original',
+      is_baseline: true,
+      file: 'original.docx'
+    });
+    const prepared = { ...original, final_sfdt: 'original.sfdt' };
+    const h = host({
+      prepareVersion: jest.fn().mockResolvedValue(prepared),
+      fetchVersionFile: jest
+        .fn()
+        .mockResolvedValue(new TextEncoder().encode('{"sections":[]}').buffer)
+    });
+    await prefetchVersionDocuments(h, [original], 5);
+    expect(h.prepareVersion).toHaveBeenCalledWith('original');
+    const view = renderHook(() => useVersionDocument(h, original));
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    expect(view.result.current.sfdt).toBe('{"sections":[]}');
+    expect(view.result.current.docxBytes).toBeUndefined();
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps five large saved versions including Current ready after prefetch', async () => {
+    const rows = Array.from({ length: 5 }, (_, i) =>
+      version({
+        id: `large-${i}`,
+        seq: 5 - i,
+        is_current: i === 0,
+        final_sfdt: `large-${i}.sfdt`
+      })
+    );
+    const data = new TextEncoder().encode(
+      JSON.stringify({ sections: [], padding: 'x'.repeat(2500000) })
+    ).buffer;
+    const h = host({ fetchVersionFile: jest.fn().mockResolvedValue(data) });
+    await prefetchVersionDocuments(h, rows, 5);
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(5);
+    for (const row of rows) {
+      const view = renderHook(() => useVersionDocument(h, row));
+      await waitFor(() => expect(view.result.current.loading).toBe(false));
+      view.unmount();
+    }
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(5);
+  });
+
+  it('never renders previous bytes as a newly selected pending version', async () => {
+    const h = host({
+      fetchVersionFile: jest
+        .fn()
+        .mockResolvedValueOnce(
+          new TextEncoder().encode('{"sections":[]}').buffer
+        )
+        .mockImplementation(() => new Promise(() => {}))
+    });
+    const seen: Array<{ id: string; sfdt?: string; loading: boolean }> = [];
+    const view = renderHook(
+      ({ row }) => {
+        const doc = useVersionDocument(h, row);
+        // VersionViewer updates its loading phase in a layout effect on selection.
+        const [, setSelected] = useState(row.id);
+        useLayoutEffect(() => setSelected(row.id), [row.id]);
+        seen.push({ id: row.id, sfdt: doc.sfdt, loading: doc.loading });
+        return doc;
+      },
+      { initialProps: { row: version({ id: 'first', final_sfdt: 'first' }) } }
+    );
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    view.rerender({ row: version({ id: 'pending', final_sfdt: 'pending' }) });
+    expect(
+      seen
+        .filter((entry) => entry.id === 'pending')
+        .every((entry) => entry.loading && !entry.sfdt)
+    ).toBe(true);
+  });
+
+  it('downloads a DOCX fallback once during prefetch, then retains its converted preview', async () => {
+    const bytes = new Uint8Array([1, 2, 3]).buffer;
+    const h = host({ fetchVersionFile: jest.fn().mockResolvedValue(bytes) });
+    const row = version({ editor_file: 'baseline.docx' });
+    await prefetchVersionDocuments(h, [row]);
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+    const view = renderHook(() => useVersionDocument(h, row));
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    expect(view.result.current.docxBytes).toBe(bytes);
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+    view.unmount();
+    cacheImportedVersion(h, row, '{"sections":[]}');
+    const again = renderHook(() => useVersionDocument(h, row));
+    await waitFor(() => expect(again.result.current.loading).toBe(false));
+    expect(again.result.current.sfdt).toBe('{"sections":[]}');
+    expect(again.result.current.docxBytes).toBeUndefined();
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+  });
+
   it('does not refetch Current when only row object identity and signatures change', async () => {
     const h = host({
       fetchVersionFile: jest
@@ -78,6 +174,53 @@ describe('useVersionDocument', () => {
       }
     });
     expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('reopens an unchanged saved Current version without downloading it again', async () => {
+    const h = host({
+      fetchVersionFile: jest
+        .fn()
+        .mockResolvedValue(new TextEncoder().encode('{}').buffer)
+    });
+    const current = version({
+      is_current: true,
+      final_sfdt: 'current-file',
+      final_sha256: ''
+    });
+    const first = renderHook(() => useVersionDocument(h, current));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    first.unmount();
+    const second = renderHook(() => useVersionDocument(h, current));
+    await waitFor(() => expect(second.result.current.loading).toBe(false));
+    expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts snapshot and changes downloads together instead of serializing network waits', async () => {
+    let finishSnapshot!: (value: ArrayBuffer) => void;
+    const snapshot = new Promise<ArrayBuffer>((resolve) => {
+      finishSnapshot = resolve;
+    });
+    const fetchVersionFile = jest.fn((url: string) =>
+      url === 'snapshot'
+        ? snapshot
+        : Promise.resolve(new TextEncoder().encode('{}').buffer)
+    );
+    const h = host({ fetchVersionFile });
+    const view = renderHook(() =>
+      useVersionDocument(
+        h,
+        version({ final_sfdt: 'snapshot', changes: 'changes', change_count: 1 })
+      )
+    );
+    try {
+      expect(fetchVersionFile.mock.calls.map(([url]) => url)).toEqual([
+        'snapshot',
+        'changes'
+      ]);
+    } finally {
+      finishSnapshot(new TextEncoder().encode('{}').buffer);
+      await waitFor(() => expect(view.result.current.loading).toBe(false));
+    }
   });
 
   it('releases one editor’s cache without clearing another editor’s versions', async () => {
@@ -742,6 +885,63 @@ describe('useVersionDocument', () => {
 
       expect(convert).toHaveBeenCalledTimes(1);
       expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+    });
+
+    it('normalizes a prepared compact Original once before comparing grouped edits', async () => {
+      const compact = JSON.stringify({ optimizeSfdt: true, sec: [{}] });
+      const prepared = { ...original, final_sfdt: 'original.sfdt' };
+      const h = host({
+        fetchVersionFile: jest
+          .fn()
+          .mockResolvedValue(new TextEncoder().encode(compact).buffer)
+      });
+      const convert = jest.fn().mockResolvedValue(text({ text: 'Hello' }));
+      const openPrepared = () =>
+        renderHook(() =>
+          useVersionDocument(
+            h,
+            bob,
+            { earlier: [alice], preceding: prepared },
+            convert
+          )
+        );
+
+      const first = openPrepared();
+      await waitFor(() => expect(first.result.current.loading).toBe(false));
+      expect(first.result.current.formatCount).toBe(1);
+      expect(first.result.current.editCount).toBe(2);
+      expect(convert).toHaveBeenCalledWith(compact);
+      const second = openPrepared();
+      await waitFor(() => expect(second.result.current.loading).toBe(false));
+      expect(convert).toHaveBeenCalledTimes(1);
+      expect(h.fetchVersionFile).toHaveBeenCalledTimes(1);
+
+      const baseline = renderHook(() => useVersionDocument(h, prepared));
+      await waitFor(() => expect(baseline.result.current.loading).toBe(false));
+      expect(baseline.result.current.sfdt).toBe(
+        JSON.stringify(text({ text: 'Hello' }))
+      );
+      expect(baseline.result.current.needsBindingPopulation).toBeFalsy();
+    });
+
+    it('shows the newest session alone if a compact Original cannot be normalized', async () => {
+      const prepared = { ...original, final_sfdt: 'original.sfdt' };
+      const h = host({
+        fetchVersionFile: jest
+          .fn()
+          .mockResolvedValue(
+            new TextEncoder().encode('{"optimizeSfdt":true,"sec":[{}]}').buffer
+          )
+      });
+      const { result } = renderHook(() =>
+        useVersionDocument(h, bob, { earlier: [alice], preceding: prepared })
+      );
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      const display = JSON.parse(must(result.current.sfdt));
+      expect(
+        display.sections[0].blocks[0].inlines[0].revisionIds
+      ).toBeUndefined();
+      expect(result.current.editCount).toBe(1);
     });
 
     it.each([
