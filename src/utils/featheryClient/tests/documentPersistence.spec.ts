@@ -57,6 +57,23 @@ describe('document persistence requests', () => {
     expect(unscoped[0]).not.toContain('form_key');
   });
 
+  it('requests individual signing only when the caller opts in', async () => {
+    (globalThis.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ file: 'document.pdf' })
+    });
+    const client = new FeatheryClient('form-key');
+    await client.finalizeEnvelope('env-1', [], 'feathery', {
+      individualSigning: true
+    });
+    await client.finalizeEnvelope('env-2', [], 'feathery');
+    const bodies = (globalThis.fetch as jest.Mock).mock.calls.map(
+      ([, request]) => JSON.parse(request.body)
+    );
+    expect(bodies[0].individual_signing).toBe(true);
+    expect(bodies[1]).not.toHaveProperty('individual_signing');
+  });
+
   it('sends form context on version-history reads', async () => {
     (globalThis.fetch as jest.Mock).mockResolvedValue({
       ok: false,

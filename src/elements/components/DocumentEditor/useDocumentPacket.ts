@@ -286,6 +286,36 @@ export function useDocumentPacket({
     []
   );
 
+  const filesForSave = useCallback(async (saved: EditorEnvelope[]) => {
+    const tabs = current.current.tabs;
+    const resolved = await Promise.all(
+      tabs.map((tab) => {
+        const snapshot = saved.find((env) =>
+          tab.envelope
+            ? env.id === tab.envelope.id
+            : env.document === tab.documentId
+        );
+        return snapshot ?? resolveTab(tab);
+      })
+    );
+    const latest = current.current.tabs;
+    if (
+      latest.length !== tabs.length ||
+      tabs.some((tab, index) => tab.id !== latest[index]?.id)
+    )
+      throw new Error(
+        'Documents changed before saving completed. Please save again.'
+      );
+    // A restore or signing action can replace a file while an unvisited tab
+    // resolves. Read loaded envelopes again instead of publishing stale URLs.
+    const values = latest.map((tab, index) => {
+      const value = tab.envelope ?? resolved[index];
+      if (!value?.file) throw new Error(`No generated file for ${tab.label}`);
+      return value.file;
+    });
+    return values.length === 1 ? values[0] : values;
+  }, []);
+
   return {
     tabs,
     activeId,
@@ -305,6 +335,7 @@ export function useDocumentPacket({
     selectTab,
     updateTabEnvelope,
     resolveEnvelopes,
+    filesForSave,
     resolveTabEnvelope: resolveTab
   };
 }

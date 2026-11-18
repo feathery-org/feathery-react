@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import TrackedChangeGroups from './TrackedChangeGroups';
 import SectionList from './sections/SectionPanel';
 import { RailErrorBoundary } from './RailErrorBoundary';
@@ -26,7 +26,7 @@ const SANS =
 // tabs). Collapses to zero width when closed but stays mounted so the
 // tracked-changes body keeps reporting its pending count for the rail badge.
 
-const PANEL_WIDTH = 341;
+export const PANEL_WIDTH = 341;
 
 const TITLES: Record<PanelTab, string> = {
   changes: 'Suggested changes',
@@ -34,7 +34,8 @@ const TITLES: Record<PanelTab, string> = {
   history: 'Version History'
 };
 
-interface Props {
+export interface DocumentPanelProps {
+  active?: boolean;
   editor: any;
   open: boolean;
   /** Which panel the rail has open; also drives the header title. */
@@ -75,42 +76,44 @@ interface Props {
   ) => Promise<void>;
 }
 
-export default function DocumentPanel({
-  editor,
+export type DocumentPanelFrameProps = Pick<
+  DocumentPanelProps,
+  | 'open'
+  | 'tab'
+  | 'onClose'
+  | 'onRestoreVersion'
+  | 'versionSelected'
+  | 'restoreDisabled'
+  | 'restoreDisabledReason'
+  | 'restoring'
+> & { children: React.ReactNode; animate?: boolean };
+
+export function DocumentPanelFrame({
   open,
   tab,
   onClose,
-  reviewChanges,
-  onChangesCount,
-  markDirty,
-  boundaryKey,
-  history,
-  currentUser,
-  onSelectVersion,
-  onVersionsLoaded,
   onRestoreVersion,
   versionSelected,
   restoreDisabled,
   restoreDisabledReason,
   restoring = false,
-  selectedVersionId,
-  currentPendingCount,
-  liveSessionAuthors,
-  historyRefreshKey,
-  onAcceptTrackedChanges
-}: Props) {
+  children,
+  animate = true
+}: DocumentPanelFrameProps) {
   // Restore is offered only for an older version that is open — never for the
   // current version (it's already the live document).
   const canRestore = !!versionSelected && !restoreDisabled && !restoring;
   return (
     <div
+      role='complementary'
+      aria-label='Document panel'
       css={{
         flex: '0 0 auto',
         alignSelf: 'stretch',
         width: open ? PANEL_WIDTH : 0,
         minHeight: 0,
         overflow: 'hidden',
-        transition: 'width .15s ease'
+        transition: animate ? 'width .15s ease' : 'none'
       }}
     >
       <div
@@ -163,52 +166,7 @@ export default function DocumentPanel({
 
         {/* Bodies */}
         <div css={{ position: 'relative', flex: 1, minHeight: 0 }}>
-          {reviewChanges && (
-            // display:flex so TrackedChangeGroups' outer (a flex child that
-            // stretches to full height) sizes correctly and owns a single
-            // internal scroll — a block wrapper left its absolute inner
-            // mis-sized, producing a stray nested scrollbar.
-            <div
-              css={{
-                position: 'absolute',
-                inset: 0,
-                display: open && tab === 'changes' ? 'flex' : 'none'
-              }}
-            >
-              <RailErrorBoundary key={`changes:${boundaryKey}`}>
-                <TrackedChangeGroups
-                  editor={editor}
-                  onPendingCountChange={onChangesCount}
-                  onAcceptTrackedChanges={onAcceptTrackedChanges}
-                />
-              </RailErrorBoundary>
-            </div>
-          )}
-          {open && tab === 'sections' && (
-            <div css={{ position: 'absolute', inset: 0 }}>
-              <RailErrorBoundary key={`sections:${boundaryKey}`}>
-                <SectionList editor={editor} markDirty={markDirty} />
-              </RailErrorBoundary>
-            </div>
-          )}
-          {open && tab === 'history' && history && (
-            <div css={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
-              <RailErrorBoundary key={`history:${boundaryKey}`}>
-                <HistoryPanel
-                  host={history}
-                  currentUser={
-                    currentUser ?? { kind: 'user', key: 'you', label: 'You' }
-                  }
-                  onSelect={onSelectVersion}
-                  onVersionsLoaded={onVersionsLoaded}
-                  selectedId={selectedVersionId}
-                  currentPendingCount={currentPendingCount}
-                  liveSessionAuthors={liveSessionAuthors}
-                  refreshKey={historyRefreshKey}
-                />
-              </RailErrorBoundary>
-            </div>
-          )}
+          {children}
         </div>
 
         {/* Footer (version history): Close returns to the live editor; Restore
@@ -280,5 +238,105 @@ export default function DocumentPanel({
         )}
       </div>
     </div>
+  );
+}
+
+export function DocumentPanelBodies({
+  editor,
+  open,
+  active = true,
+  tab,
+  reviewChanges,
+  onChangesCount,
+  markDirty,
+  boundaryKey,
+  history,
+  currentUser,
+  onSelectVersion,
+  onVersionsLoaded,
+  selectedVersionId,
+  currentPendingCount,
+  liveSessionAuthors,
+  historyRefreshKey,
+  onAcceptTrackedChanges
+}: DocumentPanelProps) {
+  const [historyOpened, setHistoryOpened] = useState(false);
+  const [sectionsOpened, setSectionsOpened] = useState(false);
+  useEffect(() => {
+    if (!active || !open) return;
+    if (tab === 'history') setHistoryOpened(true);
+    if (tab === 'sections') setSectionsOpened(true);
+  }, [active, open, tab]);
+  return (
+    <>
+      {reviewChanges && (
+        // display:flex so TrackedChangeGroups' outer (a flex child that
+        // stretches to full height) sizes correctly and owns a single
+        // internal scroll — a block wrapper left its absolute inner
+        // mis-sized, producing a stray nested scrollbar.
+        <div
+          css={{
+            position: 'absolute',
+            inset: 0,
+            display: open && tab === 'changes' ? 'flex' : 'none'
+          }}
+        >
+          <RailErrorBoundary key={`changes:${boundaryKey}`}>
+            <TrackedChangeGroups
+              editor={editor}
+              onPendingCountChange={onChangesCount}
+              onAcceptTrackedChanges={onAcceptTrackedChanges}
+            />
+          </RailErrorBoundary>
+        </div>
+      )}
+      {(sectionsOpened || (active && open && tab === 'sections')) && (
+        <div
+          css={{
+            position: 'absolute',
+            inset: 0,
+            display: open && tab === 'sections' ? 'block' : 'none'
+          }}
+        >
+          <RailErrorBoundary key={`sections:${boundaryKey}`}>
+            <SectionList editor={editor} markDirty={markDirty} />
+          </RailErrorBoundary>
+        </div>
+      )}
+      {(historyOpened || (active && open && tab === 'history')) && history && (
+        <div
+          css={{
+            position: 'absolute',
+            inset: 0,
+            overflow: 'hidden',
+            display: open && tab === 'history' ? 'block' : 'none'
+          }}
+        >
+          <RailErrorBoundary key={`history:${boundaryKey}`}>
+            <HistoryPanel
+              active={active && open && tab === 'history'}
+              host={history}
+              currentUser={
+                currentUser ?? { kind: 'user', key: 'you', label: 'You' }
+              }
+              onSelect={onSelectVersion}
+              onVersionsLoaded={onVersionsLoaded}
+              selectedId={selectedVersionId}
+              currentPendingCount={currentPendingCount}
+              liveSessionAuthors={liveSessionAuthors}
+              refreshKey={historyRefreshKey}
+            />
+          </RailErrorBoundary>
+        </div>
+      )}
+    </>
+  );
+}
+
+export default function DocumentPanel(props: DocumentPanelProps) {
+  return (
+    <DocumentPanelFrame {...props}>
+      <DocumentPanelBodies {...props} />
+    </DocumentPanelFrame>
   );
 }
