@@ -11,12 +11,15 @@ import {
 } from '../../../../../elements/components/DocxEditor/bindings/core/formula';
 import type { Invariant } from '../../../pack';
 import { bindingState } from '../features/binding';
+import { freshBindingErrors } from './bindings';
 import { refusal } from './common';
 
 export const orphanedDependents: Invariant = {
   name: 'orphaned-dependents',
   cards: ['binding'],
   check({ before, after }) {
+    // A fresh binding error is why its formulas fail, and the binding check reports it
+    if (freshBindingErrors(before.nf, after.nf).length) return [];
     const b = bindingState(before.nf);
     const a = bindingState(after.nf);
     const orphans = analyzeBindingOrphans(b.native, a.native);
