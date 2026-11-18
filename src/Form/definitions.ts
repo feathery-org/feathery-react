@@ -13,10 +13,13 @@ export interface SharedCodeDeclaration {
   // The declaration as the rule re-declares it
   code: string;
   isFunction: boolean;
-  // Every name it reads, including inside nested functions
+  // Every name it reads that it does not declare itself, including inside
+  // nested functions
   referencedNames: string[];
   // Names a variable's initializer reads while it is evaluated
   evaluatedNames: string[];
+  // Names it calls or hands to a call
+  invokedNames: string[];
   // Whether evaluating a variable's initializer awaits
   awaits: boolean;
 }

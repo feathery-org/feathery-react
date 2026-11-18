@@ -232,11 +232,16 @@ function addPatternNames(pattern: any, names: Set<string>) {
   }
 }
 
+function parameterNames(fnNode: any): Set<string> {
+  const names = new Set<string>();
+  fnNode.params.forEach((param: any) => addPatternNames(param, names));
+  return names;
+}
+
 // Names a function declares itself: its parameters and its body's top-level
 // declarations, which a prelude must not declare again
 function namesBoundBy(fnNode: any): Set<string> {
-  const names = new Set<string>();
-  fnNode.params.forEach((param: any) => addPatternNames(param, names));
+  const names = parameterNames(fnNode);
   if (fnNode.body.type !== 'BlockStatement') return names;
 
   for (const statement of fnNode.body.body) {
@@ -256,22 +261,152 @@ function namesBoundBy(fnNode: any): Set<string> {
   return names;
 }
 
-// Names this node reads while it is evaluated. A nested function's body runs
-// only when that function is called.
-function evaluatedIdentifiers(node: any): Set<string> {
-  const identifiers = new Set<string>();
-  const skipNestedFunction = () => {};
+const isFunctionScope = (node: any) =>
+  node.type === 'FunctionDeclaration' ||
+  node.type === 'FunctionExpression' ||
+  node.type === 'ArrowFunctionExpression';
 
-  walk.recursive(node, null, {
-    Identifier(identifier: any) {
-      identifiers.add(identifier.name);
-    },
-    FunctionDeclaration: skipNestedFunction,
-    FunctionExpression: skipNestedFunction,
-    ArrowFunctionExpression: skipNestedFunction
+// Names `scopeNode` declares for the code inside it
+function namesDeclaredIn(scopeNode: any): Set<string> {
+  const names = new Set<string>();
+  const addVariables = (
+    node: any,
+    isDeclaredHere: (kind: string) => boolean
+  ) => {
+    if (node?.type !== 'VariableDeclaration' || !isDeclaredHere(node.kind)) {
+      return;
+    }
+    for (const declarator of node.declarations) {
+      addPatternNames(declarator.id, names);
+    }
+  };
+  const isBlockScoped = (kind: string) => kind !== 'var';
+  const addBlockDeclarations = (statements: any[]) => {
+    for (const statement of statements) {
+      addVariables(statement, isBlockScoped);
+      if (
+        (statement.type === 'FunctionDeclaration' ||
+          statement.type === 'ClassDeclaration') &&
+        statement.id
+      ) {
+        names.add(statement.id.name);
+      }
+    }
+  };
+
+  if (isFunctionScope(scopeNode)) {
+    parameterNames(scopeNode).forEach((name) => names.add(name));
+    if (scopeNode.type === 'FunctionExpression' && scopeNode.id) {
+      names.add(scopeNode.id.name);
+    }
+
+    // A `var` belongs to the function wherever in its body it is declared
+    const skipNestedFunction = () => {};
+    walk.recursive(scopeNode.body, null, {
+      VariableDeclaration(declaration: any) {
+        addVariables(declaration, (kind) => kind === 'var');
+      },
+      FunctionDeclaration: skipNestedFunction,
+      FunctionExpression: skipNestedFunction,
+      ArrowFunctionExpression: skipNestedFunction
+    });
+  }
+  if (scopeNode.type === 'BlockStatement' || scopeNode.type === 'Program') {
+    addBlockDeclarations(scopeNode.body);
+  }
+  if (scopeNode.type === 'SwitchStatement') {
+    addBlockDeclarations(
+      scopeNode.cases.flatMap((switchCase: any) => switchCase.consequent)
+    );
+  }
+  if (scopeNode.type === 'ForStatement') {
+    addVariables(scopeNode.init, isBlockScoped);
+  }
+  if (
+    scopeNode.type === 'ForInStatement' ||
+    scopeNode.type === 'ForOfStatement'
+  ) {
+    addVariables(scopeNode.left, isBlockScoped);
+  }
+  if (scopeNode.type === 'CatchClause') {
+    addPatternNames(scopeNode.param, names);
+  }
+  if (
+    (scopeNode.type === 'ClassDeclaration' ||
+      scopeNode.type === 'ClassExpression') &&
+    scopeNode.id
+  ) {
+    names.add(scopeNode.id.name);
+  }
+
+  return names;
+}
+
+interface FreeNames {
+  // Every name the node reads that it does not declare itself
+  referenced: Set<string>;
+  // Those it reads outside any nested function, so while it is evaluated
+  evaluated: Set<string>;
+  // Those it calls or hands to a call
+  invoked: Set<string>;
+}
+
+// The names `node` reads from outside itself. `boundNames` are declared for it
+// by an enclosing scope the walk does not see, such as a function's parameters
+// for its body.
+function freeNamesOf(
+  node: any,
+  boundNames: Set<string> = new Set()
+): FreeNames {
+  const free: FreeNames = {
+    referenced: new Set(),
+    evaluated: new Set(),
+    invoked: new Set()
+  };
+  const declaredNamesByScope = new Map<any, Set<string>>();
+  const declares = (scopeNode: any, name: string) => {
+    let declaredNames = declaredNamesByScope.get(scopeNode);
+    if (!declaredNames) {
+      declaredNames = namesDeclaredIn(scopeNode);
+      declaredNamesByScope.set(scopeNode, declaredNames);
+    }
+    return declaredNames.has(name);
+  };
+  const isCall = (candidate: any) =>
+    candidate?.type === 'CallExpression' || candidate?.type === 'NewExpression';
+
+  walk.ancestor(node, {
+    Identifier(identifier: any, _state: any, ancestors: any[]) {
+      const name = identifier.name;
+      const enclosing = ancestors.slice(0, -1);
+      if (
+        boundNames.has(name) ||
+        enclosing.some((scopeNode) => declares(scopeNode, name))
+      ) {
+        return;
+      }
+
+      free.referenced.add(name);
+      if (!enclosing.some(isFunctionScope)) free.evaluated.add(name);
+
+      const parent = enclosing[enclosing.length - 1];
+      const grandparent = enclosing[enclosing.length - 2];
+      const isCalledThroughMember =
+        parent?.type === 'MemberExpression' &&
+        parent.object === identifier &&
+        isCall(grandparent) &&
+        grandparent.callee === parent;
+      if (isCall(parent) || isCalledThroughMember) free.invoked.add(name);
+    }
   });
 
-  return identifiers;
+  return free;
+}
+
+// What a function's body reads from outside the function. Parameter defaults
+// are left out: only a call that omits the argument reads what they depend on.
+function freeNamesOfFunctionBody(fnNode: any): FreeNames {
+  return freeNamesOf(fnNode.body, parameterNames(fnNode));
 }
 
 function extractJsElements(code: string): Omit<ExtractedSharedCodeInfo, 'key'> {
@@ -316,14 +451,11 @@ function extractJsElements(code: string): Omit<ExtractedSharedCodeInfo, 'key'> {
     node?.type === 'FunctionExpression';
 
   const exportedFunction = (name: string, fnNode: any) => {
-    const ownNames = namesBoundBy(fnNode);
     exportFunctions.push({
       name,
       ...buildFnParts(fnNode),
-      referencedNames: [...extractReferencedIdentifiers(fnNode.body)].filter(
-        (referencedName) => !ownNames.has(referencedName)
-      ),
-      ownNames: [...ownNames]
+      referencedNames: [...freeNamesOfFunctionBody(fnNode).referenced],
+      ownNames: [...namesBoundBy(fnNode)]
     });
   };
 
@@ -344,28 +476,30 @@ function extractJsElements(code: string): Omit<ExtractedSharedCodeInfo, 'key'> {
 
         if (isFunctionNode(decl.init)) {
           const { signature, body, isAsync } = buildFnParts(decl.init);
+          const freeNames = freeNamesOfFunctionBody(decl.init);
           declarations.push({
             name,
             code: `${
               isAsync ? 'async ' : ''
             }function ${name}${signature} {\n${body}\n}`,
             isFunction: true,
-            referencedNames: [...extractReferencedIdentifiers(decl.init.body)],
+            referencedNames: [...freeNames.referenced],
             evaluatedNames: [],
+            invokedNames: [...freeNames.invoked],
             awaits: false
           });
           if (isExport) exportedFunction(name, decl.init);
           continue;
         }
 
+        const freeNames = decl.init ? freeNamesOf(decl.init) : null;
         declarations.push({
           name,
           code: declaration,
           isFunction: false,
-          referencedNames: decl.init
-            ? [...extractReferencedIdentifiers(decl.init)]
-            : [],
-          evaluatedNames: decl.init ? [...evaluatedIdentifiers(decl.init)] : [],
+          referencedNames: [...(freeNames?.referenced ?? [])],
+          evaluatedNames: [...(freeNames?.evaluated ?? [])],
+          invokedNames: [...(freeNames?.invoked ?? [])],
           awaits: Boolean(decl.init) && awaitsAtTopLevel(decl.init)
         });
         if (!isExport) continue;
@@ -395,6 +529,7 @@ function extractJsElements(code: string): Omit<ExtractedSharedCodeInfo, 'key'> {
       const body = code
         .slice(declarationNode.body.start + 1, declarationNode.body.end - 1)
         .trim();
+      const freeNames = freeNamesOfFunctionBody(declarationNode);
 
       declarations.push({
         name,
@@ -402,10 +537,9 @@ function extractJsElements(code: string): Omit<ExtractedSharedCodeInfo, 'key'> {
           declarationNode.async ? 'async ' : ''
         }function ${name}(${params.join(', ')}) {\n${body}\n}`,
         isFunction: true,
-        referencedNames: [
-          ...extractReferencedIdentifiers(declarationNode.body)
-        ],
+        referencedNames: [...freeNames.referenced],
         evaluatedNames: [],
+        invokedNames: [...freeNames.invoked],
         awaits: false
       });
       if (isExport) exportedFunction(name, declarationNode);
@@ -447,21 +581,26 @@ function preludeDeclarations(
     declarations.map((declaration) => [declaration.name, declaration])
   );
 
-  // Every declaration that runs while `declaration` is evaluated. A function it
-  // reads counts as called, so that function's whole body runs.
+  // Every declaration that runs while `declaration` is evaluated. A function
+  // runs where it is called or handed to a call, and then its whole body runs;
+  // one that is only stored does not.
   const namesEvaluatedBy = (declaration: SharedCodeDeclaration) => {
     const evaluated = new Set<string>();
-    const pending = [...declaration.evaluatedNames];
-    let name: string | undefined;
-    while ((name = pending.pop()) !== undefined) {
-      const reached = declarationByName.get(name);
-      if (!reached || evaluated.has(name)) continue;
-      evaluated.add(name);
-      pending.push(
-        ...(reached.isFunction
-          ? reached.referencedNames
-          : reached.evaluatedNames)
-      );
+    const pending = [declaration];
+    let running: SharedCodeDeclaration | undefined;
+    while ((running = pending.pop()) !== undefined) {
+      const namesRead = running.isFunction
+        ? running.referencedNames
+        : running.evaluatedNames;
+      for (const name of namesRead) {
+        const reached = declarationByName.get(name);
+        if (!reached || evaluated.has(name)) continue;
+        if (reached.isFunction && !running.invokedNames.includes(name)) {
+          continue;
+        }
+        evaluated.add(name);
+        pending.push(reached);
+      }
     }
     return evaluated;
   };
@@ -535,13 +674,15 @@ function inlinedFunction(
 
   // A parameter or local shares a name with a prelude declaration, so the
   // prelude goes in an enclosing scope where helpers still see the module's
-  // declaration
+  // declaration. The function that scope returns is unnamed and the rule's
+  // function takes no parameters of its own, so the export's name still means
+  // the rule's function and parameter defaults run once.
   const preludeAwaits = prelude.some((declaration) => declaration.awaits);
   const factory = `(${preludeAwaits ? 'async ' : ''}() => {\n${preludeCode.join(
     '\n'
-  )}\nreturn ${asyncPrefix}function ${name}${signature} {\n${body}\n};\n})()`;
+  )}\nreturn ${asyncPrefix}function ${signature} {\n${body}\n};\n})()`;
   const implementation = preludeAwaits ? `(await ${factory})` : factory;
-  return `${asyncPrefix}function ${localName}${signature} {\nreturn ${implementation}.apply(this, arguments);\n}`;
+  return `${asyncPrefix}function ${localName}() {\nreturn ${implementation}.apply(this, arguments);\n}`;
 }
 
 // The computed constants a rule imports from one module, evaluated together
@@ -624,8 +765,20 @@ function replaceImportsWithDefinitions(
     }
   });
 
+  const namesRuleReads = extractReferencedIdentifiers(parsedNodes);
+
   const definitions: string[] = [];
-  for (const [sharedModule, moduleImports] of importsByModule) {
+  for (const [sharedModule, allModuleImports] of importsByModule) {
+    // A computed constant the rule never reads is not evaluated, so importing
+    // it cannot fail the rule
+    const moduleImports = allModuleImports.filter(
+      ({ importedName, localName }) =>
+        namesRuleReads.has(localName) ||
+        !sharedModule.exportVariables.some(
+          (exportVariable) =>
+            exportVariable.name === importedName && exportVariable.isComputed
+        )
+    );
     const sameNameImports = new Set(
       moduleImports
         .filter(({ importedName, localName }) => importedName === localName)

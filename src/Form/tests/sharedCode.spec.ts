@@ -298,4 +298,111 @@ describe('inlining shared code into a logic rule', () => {
 
     await expect(runRuleImporting(sharedCode, ruleCode)).resolves.toBe('$5');
   });
+
+  it("keeps a nested helper's parameter apart from a module declaration", async () => {
+    const sharedCode = `
+      const email = Email.value.trim();
+      function domainOf(email) { return email.split('@')[1]; }
+      export function isWorkEmail(address) {
+        return domainOf(address) !== 'gmail.com';
+      }
+    `;
+    const ruleCode = `
+      import { isWorkEmail } from 'helpers';
+      return isWorkEmail('a@acme.com');
+    `;
+
+    await expect(
+      runRuleImporting(sharedCode, ruleCode, { Email: { value: null } })
+    ).resolves.toBe(true);
+  });
+
+  it("keeps a callback's parameter apart from a module declaration", async () => {
+    const sharedCode = `
+      const price = Price.value.trim();
+      export function doubleAll(prices) {
+        return prices.map((price) => price * 2);
+      }
+    `;
+    const ruleCode = `
+      import { doubleAll } from 'helpers';
+      return doubleAll([1, 2]);
+    `;
+
+    await expect(
+      runRuleImporting(sharedCode, ruleCode, { Price: { value: null } })
+    ).resolves.toEqual([2, 4]);
+  });
+
+  it('keeps a declaration that stores a helper without calling it', async () => {
+    const sharedCode = `
+      const RENDERERS = { text: (node) => node.text, group: renderGroup };
+      function renderGroup(node) {
+        return node.children.map(render).join(' ');
+      }
+      export function render(node) { return RENDERERS[node.type](node); }
+    `;
+    const ruleCode = `
+      import { render } from 'helpers';
+      return render({
+        type: 'group',
+        children: [{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }]
+      });
+    `;
+
+    await expect(runRuleImporting(sharedCode, ruleCode)).resolves.toBe('a b');
+  });
+
+  it('does not evaluate an imported constant the rule never reads', async () => {
+    const sharedCode = `
+      export const STATE_CODE = State.value.slice(0, 2);
+      export function greet(name) { return 'Hi ' + name; }
+    `;
+    const ruleCode = `
+      import { STATE_CODE, greet } from 'helpers';
+      return greet('Ada');
+    `;
+
+    await expect(
+      runRuleImporting(sharedCode, ruleCode, { State: { value: null } })
+    ).resolves.toBe('Hi Ada');
+  });
+
+  it('keeps state on a function whose parameter shares a name with a module declaration', async () => {
+    const sharedCode = `
+      const prefix = 'T';
+      function label(id) { return prefix + id; }
+      export function nextTicket(prefix) {
+        nextTicket.n = (nextTicket.n || 0) + 1;
+        return label(prefix) + nextTicket.n;
+      }
+    `;
+    const ruleCode = `
+      import { nextTicket } from 'helpers';
+      return [nextTicket('a'), nextTicket('b')];
+    `;
+
+    await expect(runRuleImporting(sharedCode, ruleCode)).resolves.toEqual([
+      'Ta1',
+      'Tb2'
+    ]);
+  });
+
+  it('runs a parameter default once when the parameter shares a name with a module declaration', async () => {
+    const sharedCode = `
+      const separator = '-';
+      function join(left, right) { return left + separator + right; }
+      export function tag(separator = (calls.value += 1, 'd')) {
+        return join('x', separator);
+      }
+    `;
+    const ruleCode = `
+      import { tag } from 'helpers';
+      return [tag(), calls.value];
+    `;
+
+    await expect(
+      runRuleImporting(sharedCode, ruleCode, { calls: { value: 0 } })
+    ).resolves.toEqual(['x-d', 1]);
+  });
 });
