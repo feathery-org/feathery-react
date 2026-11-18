@@ -8,6 +8,7 @@ import babel from '@rollup/plugin-babel';
 import { readFileSync } from 'fs';
 import path from 'path';
 import pptxWorkerBuild from './scripts/pptx-worker-bundle.cjs';
+import bundledPackages from './scripts/release-sbom/bundled-packages.cjs';
 
 // Read package.json
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
@@ -105,6 +106,7 @@ export default {
       babelrc: false,
       presets: [['@babel/preset-env', { targets: { ie: '11' } }]]
     }),
+    bundledPackages.rollupPlugin('rollup'),
     typescript({
       tsconfig: './tsconfig.json',
       tsconfigOverride: {

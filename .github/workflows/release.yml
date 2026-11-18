@@ -79,13 +79,29 @@ jobs:
             exit 1
           fi
 
-      # The only build in this workflow runs inside `npm publish` via the
-      # prepublishOnly hook, so the key must be in scope on THIS step for
-      # rollup/webpack to bake it into the bundle.
-      - name: Publish to NPM
+      # Build and pack once, then sign and publish that same tarball, so the
+      # release SBOM describes exactly the bytes npm serves. This is the only
+      # build in the workflow (publishing a tarball skips prepublishOnly), so
+      # the key must be in scope on THIS step for rollup/webpack to bake it
+      # into the bundle.
+      - name: Build Package
         env:
           SYNCFUSION_LICENSE_KEY: ${{ secrets.SYNCFUSION_LICENSE_KEY }}
-        run: npm publish
+        run: |
+          yarn build
+          mkdir -p "$RUNNER_TEMP/package"
+          npm pack --pack-destination "$RUNNER_TEMP/package"
+
+      # Fails the release before publishing unless the SBOM is signed. The
+      # signer role trusts only master, which is where releases run.
+      - name: Sign Release SBOM
+        run: node scripts/release-sbom/sign.cjs "$RUNNER_TEMP/package" "$RUNNER_TEMP/sbom"
+
+      - name: Publish to NPM
+        run: npm publish "$RUNNER_TEMP"/package/*.tgz
+
+      - name: File Release SBOM
+        run: python3 scripts/release-sbom/feathery_sbom.py file --out "$RUNNER_TEMP/sbom"
 
       - name: Push Changes
         env:
