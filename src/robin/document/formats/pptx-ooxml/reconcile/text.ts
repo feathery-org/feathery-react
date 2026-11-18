@@ -3,7 +3,13 @@ import type {
   TextStyle
 } from '../../../../../elements/components/PptxEditor/core/model/edit';
 import { canonicalJson, type NfNode } from '../../../tree';
-import { RUN_FORMAT, paragraphAt, runAt, textSources } from '../textSources';
+import {
+  RUN_FORMAT,
+  paragraphAt,
+  runAt,
+  textSources,
+  type Location
+} from '../textSources';
 import type { DeckOperation, ShapeRef, SlideRef } from '../seams/deck';
 
 const paragraphsOf = (node: NfNode) => node.paragraphs as NfNode[];
@@ -36,6 +42,50 @@ function styleChange(
   return Object.keys(style).length ? style : null;
 }
 
+const sameLocation = (a?: Location, b?: Location) =>
+  !!a && !!b && a.paragraph === b.paragraph && a.run === b.run;
+
+/** Runs that are new text beside their source, not pieces of it split by formatting */
+function continuingRuns(
+  before: NfNode,
+  runs: NfNode[],
+  sources: Array<Location | undefined>,
+  origin: (id: string) => string
+): boolean[] {
+  const continues = runs.map(() => false);
+  let start = 0;
+  while (start < runs.length) {
+    const at = sources[start];
+    let end = start + 1;
+    while (end < runs.length && sameLocation(sources[end], at)) end++;
+    const source = at && runAt(before, at);
+    if (source) {
+      const texts = runs.slice(start, end).map((run) => String(run.text));
+      const pieces = splitPieces(texts, String(source.text));
+      for (let k = start; k < end; k++)
+        continues[k] =
+          runs[k].kind === 'run' &&
+          source.id !== origin(runs[k].id) &&
+          !pieces.has(k - start);
+    }
+    start = end;
+  }
+  return continues;
+}
+
+/** The consecutive pieces whose text together is the source run's text */
+function splitPieces(texts: string[], whole: string): Set<number> {
+  for (let i = 0; i < texts.length; i++) {
+    let joined = '';
+    for (let j = i; j < texts.length && joined.length < whole.length; j++) {
+      joined += texts[j];
+      if (joined === whole)
+        return new Set(texts.map((_, k) => k).filter((k) => k >= i && k <= j));
+    }
+  }
+  return new Set();
+}
+
 /** New text as the editor's own edits, then the formatting of each run that differs from what it continues */
 export function textOperations(
   slide: SlideRef,
@@ -49,6 +99,9 @@ export function textOperations(
   )
     return [];
   const sources = textSources(before, after, origin);
+  const continuing = paragraphsOf(after).map((paragraph, p) =>
+    continuingRuns(before, paragraph.runs as NfNode[], sources.runs[p], origin)
+  );
   const paragraphs: RichPara[] = paragraphsOf(after).map((paragraph, p) => {
     const source = sources.paragraphs[p];
     const from = source === undefined ? undefined : paragraphAt(before, source);
@@ -60,7 +113,7 @@ export function textOperations(
           return { text: '', break: true, ...(own ? { source: own } : {}) };
         }
         const at = sources.runs[p][r];
-        const continues = !!at && runAt(before, at)?.id !== origin(run.id);
+        const continues = continuing[p][r];
         return {
           text: String(run.text),
           ...(at ? { source: at, styleChanged: false } : {}),

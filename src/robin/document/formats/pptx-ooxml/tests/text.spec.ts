@@ -274,41 +274,105 @@ describe('PowerPoint text', () => {
     expect(deck.pending()).toHaveLength(0);
   });
 
-  it('adds text after a link without making the new text a link', () => {
-    const files = unzipSync(fixture('marketing-parity.pptx'));
-    const slide = 'ppt/slides/slide1.xml';
-    const rels = 'ppt/slides/_rels/slide1.xml.rels';
-    files[slide] = strToU8(
-      strFromU8(files[slide]).replace(
-        '<a:rPr lang="en"/><a:t>Company Name',
-        '<a:rPr lang="en"><a:hlinkClick r:id="rIdLink"/></a:rPr><a:t>Company Name'
+  describe('a linked run', () => {
+    const slidePath = 'ppt/slides/slide1.xml';
+    const linkedDeck = () => {
+      const files = unzipSync(fixture('marketing-parity.pptx'));
+      const rels = 'ppt/slides/_rels/slide1.xml.rels';
+      files[slidePath] = strToU8(
+        strFromU8(files[slidePath]).replace(
+          '<a:rPr lang="en"/><a:t>Company Name',
+          '<a:rPr lang="en"><a:hlinkClick r:id="rIdLink"/></a:rPr><a:t>Company Name'
+        )
+      );
+      files[rels] = strToU8(
+        strFromU8(files[rels]).replace(
+          '</Relationships>',
+          '<Relationship Id="rIdLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com" TargetMode="External"/></Relationships>'
+        )
+      );
+      return openDeck('marketing-parity.pptx', zipSync(files));
+    };
+    const subtitleRuns = (deck: ReturnType<typeof openDeck>) =>
+      (
+        JSON.parse(serializeDeck(deck.engine)).slides as Array<{
+          path: string;
+          xml: string;
+        }>
       )
-    );
-    files[rels] = strToU8(
-      strFromU8(files[rels]).replace(
-        '</Relationships>',
-        '<Relationship Id="rIdLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com" TargetMode="External"/></Relationships>'
-      )
-    );
-    const deck = openDeck('marketing-parity.pptx', zipSync(files));
-    const { paragraph } = subtitle(deck);
-    const node = deck.read(paragraph);
-    expectCard(
-      replaceParagraph(deck, paragraph, {
-        ...node,
-        runs: [...(node.runs as unknown[]), { text: ' (draft)' }]
-      })
-    );
-    const xml = (
-      JSON.parse(serializeDeck(deck.engine)).slides as Array<{
-        path: string;
-        xml: string;
-      }>
-    ).find((part) => part.path === slide)!.xml;
-    expect(xml.match(/<a:r>.*?<\/a:r>/g)!.filter((run) => run.includes('Company Name') || run.includes('(draft)'))).toEqual([
-      expect.stringContaining('hlinkClick'),
-      expect.not.stringContaining('hlinkClick')
-    ]);
+        .find((part) => part.path === slidePath)!
+        .xml.match(/<a:r>.*?<\/a:r>/g)!
+        .filter((run) => /Company|Name|draft/.test(run))
+        .map((run) => [
+          run.match(/<a:t>(.*?)<\/a:t>/)![1],
+          run.includes('hlinkClick')
+        ]);
+    const bold = (deck: ReturnType<typeof openDeck>, paragraph: string) => {
+      const span = { start: 8, end: 12 };
+      return {
+        kind: 'set',
+        target: {
+          id: paragraph,
+          shape: deck.read(paragraph).shape,
+          match: { text: 'Name', span }
+        },
+        props: { bold: true }
+      };
+    };
+
+    it('adds text after it without making the new text part of the link', () => {
+      const deck = linkedDeck();
+      const { paragraph } = subtitle(deck);
+      const node = deck.read(paragraph);
+      expectCard(
+        replaceParagraph(deck, paragraph, {
+          ...node,
+          runs: [...(node.runs as unknown[]), { text: ' (draft)' }]
+        })
+      );
+      expect(subtitleRuns(deck)).toEqual([
+        ['Company Name', true],
+        [' (draft)', false]
+      ]);
+    });
+
+    it('keeps the link on every piece when part of it is formatted', () => {
+      const deck = linkedDeck();
+      const { paragraph } = subtitle(deck);
+      expectCard(
+        deck.write({
+          intent: 'Bold the word Name.',
+          scope: { ids: [paragraph] },
+          changes: [bold(deck, paragraph)]
+        })
+      );
+      expect(subtitleRuns(deck)).toEqual([
+        ['Company ', true],
+        ['Name', true]
+      ]);
+    });
+
+    it('keeps the link on the formatted piece and not on text added in the same write', () => {
+      const deck = linkedDeck();
+      const { paragraph } = subtitle(deck);
+      const node = deck.read(paragraph);
+      const runs = node.runs as Array<Record<string, unknown>>;
+      expectCard(
+        replaceParagraph(deck, paragraph, {
+          ...node,
+          runs: [
+            { ...runs[0], text: 'Company ' },
+            { text: 'Name', bold: true },
+            { text: ' (draft)' }
+          ]
+        })
+      );
+      expect(subtitleRuns(deck)).toEqual([
+        ['Company ', true],
+        ['Name', true],
+        [' (draft)', false]
+      ]);
+    });
   });
 
   it('writes to a deck that was reopened', () => {
