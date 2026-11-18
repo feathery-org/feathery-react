@@ -5,6 +5,7 @@ import {
   validateCellValue,
   validateGrid
 } from '../spreadsheet/validation';
+import { editorKindFor, parseCellInput } from '../spreadsheet/fieldEditors';
 
 describe('validateCellValue', () => {
   test('an empty cell only fails when the column is required', () => {
@@ -87,6 +88,10 @@ describe('validateCellValue', () => {
     const country = { label: 'Country', type: 'country_code' } as const;
     expect(validateCellValue('US', country)).toBeNull();
     expect(validateCellValue('ZZ', country)).toBe('Must be a valid country');
+    // The Netherlands Antilles dissolved in 2010; its successors are valid.
+    expect(validateCellValue('AN', country)).toBe('Must be a valid country');
+    expect(validateCellValue('CW', country)).toBeNull();
+    expect(validateCellValue('AQ', country)).toBeNull();
   });
 
   test('phone numbers are held to the hub rule: digits only', () => {
@@ -280,13 +285,43 @@ describe('rule derivation', () => {
         { field_key: 'c', name: 'Country', hub_field_key: 'country' }
       ],
       [
-        { key: 'state', type: 'us_state' },
+        // Their own code lists win over options a text field left behind.
+        { key: 'state', type: 'us_state', metadata: { options: ['North'] } },
         { key: 'country', type: 'country_code' }
       ]
     );
     expect(rules.s.type).toBe('us_state');
-    expect(rules.s.options).toEqual(expect.arrayContaining(['CA', 'DC']));
-    expect(rules.c.options).toEqual(expect.arrayContaining(['US', 'GB']));
+    expect(editorKindFor(rules.s)).toBe('select');
+    expect(editorKindFor(rules.c)).toBe('select');
+    // Pinned to the hub's lists (apps/hub/locations.py, US_STATE_DATA): a
+    // code added or dropped on one side alone fails here, as CI once did.
+    expect(rules.s.options).toHaveLength(62);
+    expect(rules.c.options).toHaveLength(250);
+    expect(rules.s.options).not.toContain('North');
+    expect(rules.c.options).toEqual(
+      expect.arrayContaining(['CI', 'CW', 'SX', 'BQ', 'AQ', 'EH', 'UM'])
+    );
+    expect(rules.c.options).not.toContain('AN');
+  });
+
+  test('state and country cells check the codes their menu offers', () => {
+    const rules = hubCellRules(
+      [{ field_key: 's', name: 'State', hub_field_key: 'state' }],
+      [{ key: 'state', type: 'us_state' }]
+    );
+    // One list: whatever the editor offers is what passes.
+    for (const code of rules.s.options ?? []) {
+      expect(validateCellValue(code, rules.s)).toBeNull();
+    }
+    // Names convert on entry; lower-case codes and stray text don't.
+    expect(
+      validateCellValue(parseCellInput('California', rules.s), rules.s)
+    ).toBeNull();
+    for (const input of ['ca', 'california (CA)', 'Calif.']) {
+      expect(validateCellValue(parseCellInput(input, rules.s), rules.s)).toBe(
+        'Must be a valid US state'
+      );
+    }
   });
 
   test('field-backed columns only get format and storage-type rules', () => {

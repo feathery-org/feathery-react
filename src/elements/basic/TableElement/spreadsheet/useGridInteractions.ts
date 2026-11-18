@@ -19,8 +19,12 @@ import {
   serializeTsv
 } from './model';
 import type { SeedAction } from './fieldEditors';
+import { matchChoice } from './fieldEditors';
 import { choiceRows } from './ChoiceMenu';
 import type { SpreadsheetTable } from './table';
+
+/** A pause this long starts a new type-ahead search, as a native select does. */
+const TYPEAHEAD_RESET_MS = 1000;
 
 /** Where the selection goes after a commit: an arrow direction, or along the Tab order. */
 type CommitMove = CellSelectionDirection | 'next' | 'prev';
@@ -679,15 +683,21 @@ export function useGridInteractions(options: GridInteractionOptions) {
   /**
    * Keys while a choice menu is open. The grid holds focus, so they arrive
    * here: arrows move the highlight, Enter/Tab commit it (moving on like the
-   * text editor does), Escape closes, a letter jumps to the first match.
+   * text editor does), Escape closes, and letters typed in quick succession
+   * jump to the first match for all of them, as a native select does.
    * Everything else is swallowed so nothing reaches the grid underneath.
    */
+  const typeahead = React.useRef({ text: '', at: 0 });
   const handleChoiceMenuKeyDown = React.useCallback(
     (event: React.KeyboardEvent<HTMLElement>): boolean => {
       if (!editing) return false;
       const choices = choicesFor?.(editing.columnId);
       if (!choices) return false;
       const rows = choiceRows(choices);
+      // The next cell's search starts fresh, however fast the typing.
+      if (['Enter', 'Tab', 'Escape'].includes(event.key)) {
+        typeahead.current = { text: '', at: 0 };
+      }
       const step = (delta: number) => {
         const at = rows.indexOf(editing.draft);
         const next =
@@ -719,10 +729,12 @@ export function useGridInteractions(options: GridInteractionOptions) {
         default: {
           if (event.metaKey || event.ctrlKey || event.altKey) return false;
           if (event.key.length !== 1) return false;
-          const prefix = event.key.toLowerCase();
-          const match = choices.find((choice) =>
-            choice.toLowerCase().startsWith(prefix)
-          );
+          // One key at a time landed "NY" on NE, a different valid code.
+          const now = Date.now();
+          const recent = now - typeahead.current.at < TYPEAHEAD_RESET_MS;
+          const text = (recent ? typeahead.current.text : '') + event.key;
+          typeahead.current = { text, at: now };
+          const match = matchChoice(choices, text);
           if (match) setEditingDraft(match);
         }
       }
