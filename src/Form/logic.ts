@@ -5,6 +5,7 @@ import {
   ExtractedExportFuncInfo,
   ExtractedExportVarInfo,
   ExtractedSharedCodeInfo,
+  SharedCodeDeclaration,
   SharedCodeInfo
 } from './definitions';
 import {
@@ -255,25 +256,33 @@ function namesBoundBy(fnNode: any): Set<string> {
   return names;
 }
 
-function extractJsElements(code: string): {
-  exportVariables: ExtractedExportVarInfo[];
-  exportFunctions: ExtractedExportFuncInfo[];
-} {
-  const variableMap = new Map<string, { declaration: string; value: string }>();
-  const functionMap = new Map<
-    string,
-    { signature: string; body: string; isAsync?: boolean }
-  >();
-  // Every top-level declaration in source order, with the names it reads
-  const referencedNamesByDeclaration = new Map<string, Set<string>>();
-  const awaitingVariables = new Set<string>();
+// Names this node reads while it is evaluated. A nested function's body runs
+// only when that function is called.
+function evaluatedIdentifiers(node: any): Set<string> {
+  const identifiers = new Set<string>();
+  const skipNestedFunction = () => {};
+
+  walk.recursive(node, null, {
+    Identifier(identifier: any) {
+      identifiers.add(identifier.name);
+    },
+    FunctionDeclaration: skipNestedFunction,
+    FunctionExpression: skipNestedFunction,
+    ArrowFunctionExpression: skipNestedFunction
+  });
+
+  return identifiers;
+}
+
+function extractJsElements(code: string): Omit<ExtractedSharedCodeInfo, 'key'> {
+  const declarations: SharedCodeDeclaration[] = [];
   const exportFunctions: ExtractedExportFuncInfo[] = [];
   const exportVariables: ExtractedExportVarInfo[] = [];
 
   const parsedNodes = getAcornParsedNodes(code);
   if (!parsedNodes) {
     console.warn('Failed to parse logic rule code');
-    return { exportVariables, exportFunctions };
+    return { declarations, exportVariables, exportFunctions };
   }
 
   // Helper: turn a param node into its original text
@@ -306,11 +315,23 @@ function extractJsElements(code: string): {
     node?.type === 'ArrowFunctionExpression' ||
     node?.type === 'FunctionExpression';
 
-  // 1) Collect every top-level declaration, exported or not, so a helper can
-  // depend on one declared anywhere in the module
+  const exportedFunction = (name: string, fnNode: any) => {
+    const ownNames = namesBoundBy(fnNode);
+    exportFunctions.push({
+      name,
+      ...buildFnParts(fnNode),
+      referencedNames: [...extractReferencedIdentifiers(fnNode.body)].filter(
+        (referencedName) => !ownNames.has(referencedName)
+      ),
+      ownNames: [...ownNames]
+    });
+  };
+
+  // Every top-level declaration, exported or not, in source order, so a helper
+  // can depend on one declared anywhere in the module
   for (const node of parsedNodes.body as any[]) {
-    const declarationNode =
-      node.type === 'ExportNamedDeclaration' ? node.declaration : node;
+    const isExport = node.type === 'ExportNamedDeclaration';
+    const declarationNode = isExport ? node.declaration : node;
 
     if (declarationNode?.type === 'VariableDeclaration') {
       const kind = declarationNode.kind; // const | let | var
@@ -319,181 +340,38 @@ function extractJsElements(code: string): {
         if (decl.id.type !== 'Identifier') continue;
 
         const name = decl.id.name;
-        const valueCode = code.slice(decl.start, decl.end);
-        variableMap.set(name, {
-          declaration: `${kind} ${valueCode};`,
-          value: valueCode
-        });
+        const declaration = `${kind} ${code.slice(decl.start, decl.end)};`;
 
         if (isFunctionNode(decl.init)) {
-          functionMap.set(name, buildFnParts(decl.init));
-          referencedNamesByDeclaration.set(
+          const { signature, body, isAsync } = buildFnParts(decl.init);
+          declarations.push({
             name,
-            extractReferencedIdentifiers(decl.init.body)
-          );
-        } else {
-          referencedNamesByDeclaration.set(
-            name,
-            decl.init ? extractReferencedIdentifiers(decl.init) : new Set()
-          );
-          if (decl.init && awaitsAtTopLevel(decl.init)) {
-            awaitingVariables.add(name);
-          }
-        }
-      }
-    }
-
-    if (declarationNode?.type === 'FunctionDeclaration' && declarationNode.id) {
-      const name = declarationNode.id.name;
-      const params = declarationNode.params.map((p: any) => paramText(p));
-      const bodyStart = declarationNode.body.start + 1;
-      const bodyEnd = declarationNode.body.end - 1;
-
-      functionMap.set(name, {
-        signature: `(${params.join(', ')})`,
-        body: code.slice(bodyStart, bodyEnd).trim(),
-        isAsync: declarationNode.async
-      });
-      referencedNamesByDeclaration.set(
-        name,
-        extractReferencedIdentifiers(declarationNode.body)
-      );
-    }
-  }
-
-  const reachableNames = (rootNames: Iterable<string>): Set<string> => {
-    const reached = new Set<string>();
-    const pending = [...rootNames];
-    let name: string | undefined;
-    while ((name = pending.pop()) !== undefined) {
-      if (reached.has(name) || !referencedNamesByDeclaration.has(name)) {
-        continue;
-      }
-      reached.add(name);
-      pending.push(...(referencedNamesByDeclaration.get(name) ?? []));
-    }
-    return reached;
-  };
-
-  // The declarations `rootNames` reach, re-declared in source order. A variable
-  // is left out when its initializer would call back into `ownName`, which
-  // recurses, or would await where the prelude cannot.
-  const preludeFor = (
-    rootNames: Set<string>,
-    ownName: string,
-    canAwait: boolean
-  ): { prelude: string[]; awaits: boolean } => {
-    const isLeftOut = (name: string) => {
-      if (functionMap.has(name)) return false;
-      const initializerReaches = reachableNames(
-        referencedNamesByDeclaration.get(name) ?? []
-      );
-      if (initializerReaches.has(ownName)) return true;
-      return (
-        !canAwait &&
-        [name, ...initializerReaches].some((reached) =>
-          awaitingVariables.has(reached)
-        )
-      );
-    };
-
-    const included = new Set<string>();
-    const pending = [...rootNames];
-    let name: string | undefined;
-    while ((name = pending.pop()) !== undefined) {
-      if (
-        name === ownName ||
-        included.has(name) ||
-        !referencedNamesByDeclaration.has(name) ||
-        isLeftOut(name)
-      ) {
-        continue;
-      }
-      included.add(name);
-      pending.push(...(referencedNamesByDeclaration.get(name) ?? []));
-    }
-
-    const declarationNames = [...referencedNamesByDeclaration.keys()].filter(
-      (declarationName) => included.has(declarationName)
-    );
-    return {
-      prelude: declarationNames.map((declarationName) => {
-        const fn = functionMap.get(declarationName);
-        if (fn) {
-          return `${fn.isAsync ? 'async ' : ''}function ${declarationName}${
-            fn.signature
-          } {\n${fn.body}\n}`;
-        }
-        return variableMap.get(declarationName)?.declaration ?? '';
-      }),
-      awaits: declarationNames.some((declarationName) =>
-        awaitingVariables.has(declarationName)
-      )
-    };
-  };
-
-  const exportedFunction = (name: string, fnNode: any) => {
-    const ownNames = namesBoundBy(fnNode);
-    const rootNames = new Set(
-      [...extractReferencedIdentifiers(fnNode.body)].filter(
-        (referencedName) => !ownNames.has(referencedName)
-      )
-    );
-    const fn = functionMap.get(name);
-    if (!fn) return;
-    const { signature, body, isAsync } = fn;
-    const { prelude } = preludeFor(rootNames, name, Boolean(isAsync));
-
-    exportFunctions.push({
-      name,
-      signature,
-      body: prelude.concat([body]).join('\n'),
-      isAsync
-    });
-  };
-
-  // An initializer that is not a static value runs in the rule, with what it reads
-  const exportedVariableExpression = (name: string, init: any) => {
-    const { prelude, awaits } = preludeFor(
-      extractReferencedIdentifiers(init),
-      name,
-      true
-    );
-    const isAsync = awaits || awaitsAtTopLevel(init);
-    const evaluation = `(${isAsync ? 'async ' : ''}() => {\n${prelude.join(
-      '\n'
-    )}\nreturn (${code.slice(init.start, init.end)});\n})()`;
-    return isAsync ? `await ${evaluation}` : evaluation;
-  };
-
-  // 2) Exports
-  for (const node of parsedNodes.body as any[]) {
-    if (node.type !== 'ExportNamedDeclaration') continue;
-    const declarationNode = node.declaration;
-
-    if (declarationNode?.type === 'FunctionDeclaration') {
-      exportedFunction(declarationNode.id.name, declarationNode);
-    }
-
-    if (declarationNode?.type === 'VariableDeclaration') {
-      for (const decl of declarationNode.declarations) {
-        if (decl.id.type !== 'Identifier') continue;
-
-        const name = decl.id.name;
-
-        // If export is a function expression or arrow function, treat it as an exported function
-        if (isFunctionNode(decl.init)) {
-          exportedFunction(name, decl.init);
+            code: `${
+              isAsync ? 'async ' : ''
+            }function ${name}${signature} {\n${body}\n}`,
+            isFunction: true,
+            referencedNames: [...extractReferencedIdentifiers(decl.init.body)],
+            evaluatedNames: [],
+            awaits: false
+          });
+          if (isExport) exportedFunction(name, decl.init);
           continue;
         }
+
+        declarations.push({
+          name,
+          code: declaration,
+          isFunction: false,
+          referencedNames: decl.init
+            ? [...extractReferencedIdentifiers(decl.init)]
+            : [],
+          evaluatedNames: decl.init ? [...evaluatedIdentifiers(decl.init)] : [],
+          awaits: Boolean(decl.init) && awaitsAtTopLevel(decl.init)
+        });
+        if (!isExport) continue;
 
         if (!decl.init) {
           exportVariables.push({ name, value: 'undefined' });
-          continue;
-        }
-
-        if (decl.init.type === 'Literal') {
-          exportVariables.push({ name, value: (decl.init as any).value });
           continue;
         }
 
@@ -506,13 +384,35 @@ function extractJsElements(code: string): {
         exportVariables.push({
           name,
           value: code.slice(decl.init.start, decl.init.end),
-          expression: exportedVariableExpression(name, decl.init)
+          isComputed: true
         });
       }
     }
+
+    if (declarationNode?.type === 'FunctionDeclaration' && declarationNode.id) {
+      const name = declarationNode.id.name;
+      const params = declarationNode.params.map((p: any) => paramText(p));
+      const body = code
+        .slice(declarationNode.body.start + 1, declarationNode.body.end - 1)
+        .trim();
+
+      declarations.push({
+        name,
+        code: `${
+          declarationNode.async ? 'async ' : ''
+        }function ${name}(${params.join(', ')}) {\n${body}\n}`,
+        isFunction: true,
+        referencedNames: [
+          ...extractReferencedIdentifiers(declarationNode.body)
+        ],
+        evaluatedNames: [],
+        awaits: false
+      });
+      if (isExport) exportedFunction(name, declarationNode);
+    }
   }
 
-  return { exportVariables, exportFunctions };
+  return { declarations, exportVariables, exportFunctions };
 }
 
 export function extractExportedCodeInfoArray(
@@ -525,13 +425,164 @@ export function extractExportedCodeInfoArray(
   }));
 }
 
+interface PreludeOptions {
+  // The export being inlined. A declaration that calls it while being
+  // evaluated would recurse, so it is left out.
+  exportName?: string;
+  // Whether the prelude may await. A declaration that awaits while being
+  // evaluated is left out of a synchronous export.
+  canAwait: boolean;
+  // Names the rule itself binds, which the prelude reads instead of re-declaring
+  ruleBindingNames: Set<string>;
+}
+
+// The module declarations `rootNames` depend on, directly or through other
+// declarations, in source order
+function preludeDeclarations(
+  declarations: SharedCodeDeclaration[],
+  rootNames: Iterable<string>,
+  options: PreludeOptions
+): SharedCodeDeclaration[] {
+  const declarationByName = new Map(
+    declarations.map((declaration) => [declaration.name, declaration])
+  );
+
+  // Every declaration that runs while `declaration` is evaluated. A function it
+  // reads counts as called, so that function's whole body runs.
+  const namesEvaluatedBy = (declaration: SharedCodeDeclaration) => {
+    const evaluated = new Set<string>();
+    const pending = [...declaration.evaluatedNames];
+    let name: string | undefined;
+    while ((name = pending.pop()) !== undefined) {
+      const reached = declarationByName.get(name);
+      if (!reached || evaluated.has(name)) continue;
+      evaluated.add(name);
+      pending.push(
+        ...(reached.isFunction
+          ? reached.referencedNames
+          : reached.evaluatedNames)
+      );
+    }
+    return evaluated;
+  };
+
+  const isLeftOut = (declaration: SharedCodeDeclaration) => {
+    if (declaration.isFunction) return false;
+    const evaluated = namesEvaluatedBy(declaration);
+    if (options.exportName && evaluated.has(options.exportName)) return true;
+    return (
+      !options.canAwait &&
+      [declaration.name, ...evaluated].some(
+        (name) => declarationByName.get(name)?.awaits
+      )
+    );
+  };
+
+  const included = new Set<string>();
+  const pending = [...rootNames];
+  let name: string | undefined;
+  while ((name = pending.pop()) !== undefined) {
+    const declaration = declarationByName.get(name);
+    if (
+      !declaration ||
+      name === options.exportName ||
+      included.has(name) ||
+      options.ruleBindingNames.has(name) ||
+      isLeftOut(declaration)
+    ) {
+      continue;
+    }
+    included.add(name);
+    pending.push(...declaration.referencedNames);
+  }
+
+  return declarations.filter((declaration) => included.has(declaration.name));
+}
+
+// An exported function as the rule declares it. Its prelude is re-declared on
+// every call, as production does. A name the body reads directly gets its own
+// copy; one only its helpers read comes from the rule when the rule imports it
+// under the same name.
+function inlinedFunction(
+  localName: string,
+  exportFunction: ExtractedExportFuncInfo,
+  declarations: SharedCodeDeclaration[],
+  sameNameImports: Set<string>
+): string {
+  const { name, signature, body, isAsync, referencedNames, ownNames } =
+    exportFunction;
+  const prelude = preludeDeclarations(declarations, referencedNames, {
+    exportName: name,
+    canAwait: Boolean(isAsync),
+    ruleBindingNames: new Set(
+      [...sameNameImports].filter(
+        (importedName) => !referencedNames.includes(importedName)
+      )
+    )
+  });
+  const asyncPrefix = isAsync ? 'async ' : '';
+  const preludeCode = prelude.map((declaration) => declaration.code);
+
+  const shadowsPrelude = prelude.some((declaration) =>
+    ownNames.includes(declaration.name)
+  );
+  if (!shadowsPrelude) {
+    return `${asyncPrefix}function ${localName}${signature} {\n${[
+      ...preludeCode,
+      body
+    ].join('\n')}\n}`;
+  }
+
+  // A parameter or local shares a name with a prelude declaration, so the
+  // prelude goes in an enclosing scope where helpers still see the module's
+  // declaration
+  const preludeAwaits = prelude.some((declaration) => declaration.awaits);
+  const factory = `(${preludeAwaits ? 'async ' : ''}() => {\n${preludeCode.join(
+    '\n'
+  )}\nreturn ${asyncPrefix}function ${name}${signature} {\n${body}\n};\n})()`;
+  const implementation = preludeAwaits ? `(await ${factory})` : factory;
+  return `${asyncPrefix}function ${localName}${signature} {\nreturn ${implementation}.apply(this, arguments);\n}`;
+}
+
+// The computed constants a rule imports from one module, evaluated together
+// once so a declaration they share runs a single time
+function inlinedComputedConstants(
+  importedConstants: { importedName: string; localName: string }[],
+  declarations: SharedCodeDeclaration[]
+): string {
+  const prelude = preludeDeclarations(
+    declarations,
+    importedConstants.map(({ importedName }) => importedName),
+    { canAwait: true, ruleBindingNames: new Set() }
+  );
+  const isAsync = prelude.some((declaration) => declaration.awaits);
+  const bindings = importedConstants
+    .map(({ importedName, localName }) =>
+      importedName === localName
+        ? importedName
+        : `${importedName}: ${localName}`
+    )
+    .join(', ');
+  const returned = [
+    ...new Set(importedConstants.map(({ importedName }) => importedName))
+  ].join(', ');
+  const evaluation = `(${isAsync ? 'async ' : ''}() => {\n${prelude
+    .map((declaration) => declaration.code)
+    .join('\n')}\nreturn { ${returned} };\n})()`;
+
+  return `const { ${bindings} } = ${isAsync ? 'await ' : ''}${evaluation};`;
+}
+
 function replaceImportsWithDefinitions(
   code: string,
   extractedSharedCodeInfo: ExtractedSharedCodeInfo[]
 ): string {
   const lines = code.split('\n');
-  const definitions: string[] = [];
   const importLinesToRemove = new Set<number>();
+  const importsByModule = new Map<
+    ExtractedSharedCodeInfo,
+    { importedName: string; localName: string }[]
+  >();
 
   const parsedNodes = getAcornParsedNodes(code);
 
@@ -542,8 +593,10 @@ function replaceImportsWithDefinitions(
   walk.simple(parsedNodes, {
     ImportDeclaration(node: any) {
       const key = node.source.value;
-      const rule = extractedSharedCodeInfo.find((r: any) => r.key === key);
-      if (!rule) return;
+      const sharedModule = extractedSharedCodeInfo.find(
+        (r: any) => r.key === key
+      );
+      if (!sharedModule) return;
 
       const start = node.loc.start.line - 1;
       const end = node.loc.end.line - 1;
@@ -552,45 +605,75 @@ function replaceImportsWithDefinitions(
         importLinesToRemove.add(i);
       }
 
+      const moduleImports = importsByModule.get(sharedModule) ?? [];
+      importsByModule.set(sharedModule, moduleImports);
+
       for (const specifier of node.specifiers) {
-        let importedName: string;
-        let localName: string;
-
         if (specifier.type === 'ImportSpecifier') {
-          importedName = specifier.imported.name;
-          localName = specifier.local.name;
+          moduleImports.push({
+            importedName: specifier.imported.name,
+            localName: specifier.local.name
+          });
         } else if (specifier.type === 'ImportDefaultSpecifier') {
-          importedName = specifier.local.name;
-          localName = specifier.local.name;
-        } else {
-          continue;
-        }
-
-        const matchedVar = rule.exportVariables.find(
-          (v: any) => v.name === importedName
-        );
-        if (matchedVar) {
-          // If value is a plain JS value (string/number/boolean/null/array/object),
-          // print JS code accordingly. For plain strings we output single-quoted literals.
-          const rhs = matchedVar.expression ?? printJsValue(matchedVar.value);
-          definitions.push(`const ${localName} = ${rhs};`);
-
-          continue;
-        }
-
-        const matchedFunc = rule.exportFunctions.find(
-          (f: any) => f.name === importedName
-        );
-        if (matchedFunc) {
-          definitions.push(
-            `${matchedFunc.isAsync ? 'async ' : ''}function ${localName}${
-              matchedFunc.signature
-            } {\n${matchedFunc.body}\n}`
-          );
+          moduleImports.push({
+            importedName: specifier.local.name,
+            localName: specifier.local.name
+          });
         }
       }
     }
   });
+
+  const definitions: string[] = [];
+  for (const [sharedModule, moduleImports] of importsByModule) {
+    const sameNameImports = new Set(
+      moduleImports
+        .filter(({ importedName, localName }) => importedName === localName)
+        .map(({ importedName }) => importedName)
+    );
+    const importedComputedConstants: typeof moduleImports = [];
+
+    for (const { importedName, localName } of moduleImports) {
+      const matchedVar = sharedModule.exportVariables.find(
+        (v) => v.name === importedName
+      );
+      if (matchedVar?.isComputed) {
+        importedComputedConstants.push({ importedName, localName });
+        continue;
+      }
+      if (matchedVar) {
+        // If value is a plain JS value (string/number/boolean/null/array/object),
+        // print JS code accordingly. For plain strings we output single-quoted literals.
+        definitions.push(
+          `const ${localName} = ${printJsValue(matchedVar.value)};`
+        );
+        continue;
+      }
+
+      const matchedFunc = sharedModule.exportFunctions.find(
+        (f) => f.name === importedName
+      );
+      if (matchedFunc) {
+        definitions.push(
+          inlinedFunction(
+            localName,
+            matchedFunc,
+            sharedModule.declarations,
+            sameNameImports
+          )
+        );
+      }
+    }
+
+    if (importedComputedConstants.length) {
+      definitions.push(
+        inlinedComputedConstants(
+          importedComputedConstants,
+          sharedModule.declarations
+        )
+      );
+    }
+  }
 
   const remainingLines = lines.filter(
     (_, idx) => !importLinesToRemove.has(idx)

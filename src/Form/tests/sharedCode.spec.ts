@@ -217,4 +217,85 @@ describe('inlining shared code into a logic rule', () => {
       'Amount: 4'
     );
   });
+
+  it('keeps a declaration that refers to the helper only inside a callback', async () => {
+    const sharedCode = `
+      const handlers = { fallback: () => describe('fallback') };
+      export function describe(kind) {
+        return kind === 'fallback' ? 'Unknown' : handlers.fallback();
+      }
+    `;
+    const ruleCode = `
+      import { describe } from 'helpers';
+      return describe('other');
+    `;
+
+    await expect(runRuleImporting(sharedCode, ruleCode)).resolves.toBe(
+      'Unknown'
+    );
+  });
+
+  it('runs a declaration shared by two imported constants once', async () => {
+    const sharedCode = `
+      const next = () => { count.value += 1; return count.value; };
+      export const first = next();
+      export const second = first + 1;
+    `;
+    const ruleCode = `
+      import { first, second } from 'helpers';
+      return [first, second, count.value];
+    `;
+
+    await expect(
+      runRuleImporting(sharedCode, ruleCode, { count: { value: 0 } })
+    ).resolves.toEqual([1, 2, 1]);
+  });
+
+  it("gives a nested helper the module's declaration when a parameter shares its name", async () => {
+    const sharedCode = `
+      const label = 'Total';
+      function heading() { return label.toUpperCase(); }
+      export function report(label) { return heading() + ': ' + label; }
+    `;
+    const ruleCode = `
+      import { report } from 'helpers';
+      return report('Q3');
+    `;
+
+    await expect(runRuleImporting(sharedCode, ruleCode)).resolves.toBe(
+      'TOTAL: Q3'
+    );
+  });
+
+  it('lets a nested helper read a constant the rule imports and changes', async () => {
+    const sharedCode = `
+      export const settings = { currency: 'USD' };
+      const symbols = { USD: '$', EUR: '€' };
+      function format(amount) { return symbols[settings.currency] + amount; }
+      export function price(amount) { return format(amount); }
+    `;
+    const ruleCode = `
+      import { settings, price } from 'helpers';
+      settings.currency = 'EUR';
+      return price(5);
+    `;
+
+    await expect(runRuleImporting(sharedCode, ruleCode)).resolves.toBe('€5');
+  });
+
+  it('gives a helper its own copy of a constant its body reads directly', async () => {
+    const sharedCode = `
+      export const settings = { currency: 'USD' };
+      export function price(amount) {
+        return (settings.currency === 'EUR' ? '€' : '$') + amount;
+      }
+    `;
+    const ruleCode = `
+      import { settings, price } from 'helpers';
+      settings.currency = 'EUR';
+      return price(5);
+    `;
+
+    await expect(runRuleImporting(sharedCode, ruleCode)).resolves.toBe('$5');
+  });
 });
