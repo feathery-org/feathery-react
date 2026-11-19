@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ViewerDocument, documentName, documentUrl } from '../documents';
 import { color, fontSize, radius } from '../tokens';
 import { iconButtonCss, secondaryButtonCss } from '../buttonStyles';
@@ -33,17 +33,37 @@ export default function DocumentsPanel({
   packetEditor
 }: DocumentsPanelProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const addButtonRef = useRef<HTMLButtonElement | null>(null);
+  const rowButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // The row index whose Remove button had focus before it unmounted.
+  const focusAfterRemove = useRef<number | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [announcement, setAnnouncement] = useState('');
+
+  useEffect(() => {
+    const index = focusAfterRemove.current;
+    if (index === null) return;
+    focusAfterRemove.current = null;
+    // The next row takes the removed one's place; else the one before it.
+    const target =
+      rowButtonRefs.current[Math.min(index, documents.length - 1)] ??
+      addButtonRef.current;
+    target?.focus();
+  }, [documents]);
+
+  // A repeat of the same text wouldn't be read again, so vary it invisibly.
+  const announce = (text: string) =>
+    setAnnouncement((prev) => (prev === text ? `${text}\u200b` : text));
 
   if (!documents.length && !packetEditor) return null;
   const editable = !!packetEditor && !packetEditor.disabled;
 
   const move = (from: number, to: number) => {
-    if (!packetEditor || to < 0 || to >= documents.length) return;
+    if (!packetEditor || from === to || to < 0 || to >= documents.length)
+      return;
     packetEditor.onMove(from, to);
-    setAnnouncement(
+    announce(
       `Moved ${documentName(documents[from])} to position ${to + 1} of ${
         documents.length
       }`
@@ -135,6 +155,9 @@ export default function DocumentsPanel({
             )}
             <button
               type='button'
+              ref={(el) => {
+                rowButtonRefs.current[index] = el;
+              }}
               onClick={() => onNavigate(documentUrl(doc), 0)}
               css={rowButtonCss}
             >
@@ -174,8 +197,10 @@ export default function DocumentsPanel({
                     aria-label={`Remove ${documentName(doc)}`}
                     disabled={!editable}
                     onClick={async () => {
+                      focusAfterRemove.current = index;
                       if (await packetEditor.onRemove(index))
-                        setAnnouncement(`Removed ${documentName(doc)}`);
+                        announce(`Removed ${documentName(doc)}`);
+                      else focusAfterRemove.current = null;
                     }}
                     css={rowIconButtonCss}
                   >
@@ -191,6 +216,7 @@ export default function DocumentsPanel({
         <>
           <button
             type='button'
+            ref={addButtonRef}
             disabled={packetEditor.disabled}
             onClick={() => fileInputRef.current?.click()}
             css={{ ...secondaryButtonCss, width: '100%' }}

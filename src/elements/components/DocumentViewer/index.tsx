@@ -23,8 +23,12 @@ import {
   runningInClient
 } from '../../../utils/browser';
 import { stepPageKey, trapTabKey, isEditableTarget } from './keyboard';
-import { signsViaDocusign } from '../../../utils/document';
+import {
+  allowsReviewAttachments,
+  signsViaDocusign
+} from '../../../utils/document';
 import { isDocumentPersistenceError } from '../../../utils/documentPersistence';
+import { isFetchNetworkError } from '../../../utils/error';
 import {
   ViewerDocument,
   documentPageCount,
@@ -32,12 +36,6 @@ import {
   moveItem
 } from './documents';
 
-export {
-  documentName,
-  documentPageCount,
-  documentUrl,
-  moveItem
-} from './documents';
 export type { ViewerDocument } from './documents';
 
 export type ReviewEnvelopeAction = 'sign' | 'fill' | 'download' | 'save';
@@ -159,8 +157,8 @@ const errorMessage = (e: unknown) =>
 
 const removeErrorMessage = (e: unknown) => {
   const offline =
-    isDocumentPersistenceError(e) &&
-    (e.kind === 'timeout' || (e.kind === 'network' && !e.status));
+    isFetchNetworkError(e) ||
+    (isDocumentPersistenceError(e) && e.kind === 'timeout');
   if (offline)
     return "Couldn't remove the attachment. Check your connection and try again.";
   return `Couldn't remove the attachment: ${errorMessage(e)}`;
@@ -329,7 +327,7 @@ export default function DocumentViewer({
   // The filler may add attachments and reorder the packet; finalize acts on
   // `documents` in the order shown.
   const canEditPacket =
-    !!action.editor_allow_attachments &&
+    allowsReviewAttachments(action) &&
     !!onUploadAttachment &&
     !!onRemoveAttachment;
   // Fixed once sent, or once DocuSign may hold a draft: a draft refresh must
@@ -581,8 +579,7 @@ export default function DocumentViewer({
         const attachment = await onUploadAttachment(file);
         setDocuments((prev) => [...prev, attachment]);
       } catch (e) {
-        const reason = e instanceof Error ? e.message : 'Upload failed';
-        failures.push(`${file.name}: ${reason}`);
+        failures.push(`${file.name}: ${errorMessage(e)}`);
       }
     }
     if (failures.length) setError(`Couldn't attach ${failures.join('; ')}`);

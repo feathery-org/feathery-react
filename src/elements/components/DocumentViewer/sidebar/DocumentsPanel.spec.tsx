@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import DocumentsPanel from './DocumentsPanel';
-import { moveItem } from '../index';
+import { moveItem } from '../documents';
 
 it('lists forms and attachments and navigates on click', () => {
   const onNavigate = jest.fn();
@@ -56,6 +56,13 @@ it('reorders by drag and drop', () => {
   fireEvent.dragStart(first, { dataTransfer });
   fireEvent.drop(screen.getByRole('list'), { dataTransfer });
   expect(onMove).not.toHaveBeenCalled();
+
+  // Nor does a row dropped back on itself, and nothing new is announced.
+  const announced = screen.getByText(/^Moved/).textContent;
+  fireEvent.dragStart(first, { dataTransfer });
+  fireEvent.drop(first, { dataTransfer });
+  expect(onMove).not.toHaveBeenCalled();
+  expect(screen.getByText(/^Moved/).textContent).toBe(announced);
 });
 
 it('moveItem moves immutably and ignores out-of-range targets', () => {

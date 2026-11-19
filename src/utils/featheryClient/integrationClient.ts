@@ -49,6 +49,7 @@ import {
   parseVersionList
 } from '../../elements/components/DocxEditor/history/validation';
 import {
+  allowsReviewAttachments,
   editorContainerId,
   isDocusignSignAction,
   signsViaDocusign
@@ -131,15 +132,14 @@ const envelopeErrorMessage = (payload: any) => {
   return (!ownMessage && firstErrorMessage(payload)) || parseAPIError(payload);
 };
 
-// A definitive 4xx from finalize means nothing reached DocuSign. Timeouts,
-// throttling and an unexpected server failure (finalize_failed) might not.
+// A definitive 4xx from finalize means nothing reached DocuSign. A timeout or
+// an unexpected server failure (finalize_failed) might have sent it.
 const finalizeRefused = (status: number, payload: any) => {
   const code = Array.isArray(payload) ? payload[0]?.code : payload?.code;
   return (
     status >= 400 &&
     status < 500 &&
     status !== 408 &&
-    status !== 429 &&
     code !== 'finalize_failed'
   );
 };
@@ -919,7 +919,7 @@ export default class IntegrationClient {
         mergeDocs: action.merge_docs ?? false,
         openInEditor,
         editorMode: openInEditor ? action.editor_mode : undefined,
-        allowAttachments: openInEditor && !!action.editor_allow_attachments,
+        allowAttachments: allowsReviewAttachments(action),
         envelopeAction,
         signMethod: action.sign_method,
         draft: action.draft,
@@ -1362,6 +1362,7 @@ export default class IntegrationClient {
     formData.append('form_key', this.formKey);
     // Omitted when unset: the backend rejects a blank key.
     if (userId) formData.append('fuser_key', userId);
+    // Any builder preview: the backend then also checks the unpublished draft.
     if (this.draft) formData.append('form_draft', 'true');
     formData.append('file', file, file.name);
     const url = `${getApiUrl()}document/form/attachment/`;
@@ -1372,12 +1373,18 @@ export default class IntegrationClient {
           { method: 'POST', body: formData, keepalive: false, signal },
           false
         );
-        if (!response) throw new Error('Upload failed');
+        // Undefined on a network failure, which _fetch swallows here.
+        if (!response)
+          throw new Error(
+            'The upload failed. Check your connection and try again.'
+          );
         // A proxy rejecting the upload (e.g. a 413) answers with HTML, not JSON.
         const data = await response.json().catch(() => null);
-        if (!response.ok || !data) {
+        if (!response.ok) {
           throw new Error(data ? parseAPIError(data) : 'Upload failed');
         }
+        // Appended to the packet as is, so it must name its envelope.
+        if (!data?.envelope_id) throw new Error('Upload failed');
         return data;
       }, UPLOAD_TIMEOUT_MS);
     } catch (e) {

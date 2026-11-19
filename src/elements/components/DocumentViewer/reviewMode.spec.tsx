@@ -891,21 +891,87 @@ describe('DocumentViewer — packet editing (editor_allow_attachments)', () => {
     expect(screen.queryByText('Removed bundle')).not.toBeInTheDocument();
   });
 
-  it('asks the filler to check their connection when a remove times out', async () => {
+  it.each([
+    [
+      'times out',
+      new DocumentPersistenceError('Document request timed out.', 'timeout')
+    ],
+    ['cannot reach the server', new TypeError('Failed to fetch')]
+  ])(
+    'asks the filler to check their connection when a remove %s',
+    async (_, error) => {
+      renderViewer({ onRemoveAttachment: jest.fn().mockRejectedValue(error) });
+
+      await attach();
+      fireEvent.click(screen.getByRole('button', { name: 'Remove bundle' }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        "Couldn't remove the attachment. Check your connection and try again."
+      );
+    }
+  );
+
+  it('moves focus to the next document after a remove', async () => {
     renderViewer({
-      onRemoveAttachment: jest
-        .fn()
-        .mockRejectedValue(
-          new DocumentPersistenceError('Document request timed out.', 'timeout')
-        )
+      payload: {
+        ...twoDocs,
+        documents: [twoDocs.documents[0], attachment, twoDocs.documents[1]]
+      }
     });
 
-    await attach();
-    fireEvent.click(screen.getByRole('button', { name: 'Remove bundle' }));
+    const remove = screen.getByRole('button', { name: 'Remove bundle' });
+    remove.focus();
+    fireEvent.click(remove);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      "Couldn't remove the attachment. Check your connection and try again."
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'B' })).toHaveFocus()
     );
+  });
+
+  it('announces each remove, even of two files with the same name', async () => {
+    const twin = {
+      ...attachment,
+      envelope_id: 'att-2',
+      file_url: 'http://x/2'
+    };
+    renderViewer({
+      payload: {
+        ...twoDocs,
+        documents: [...twoDocs.documents, attachment, twin]
+      }
+    });
+    const announcement = () =>
+      screen.getByText(/^Removed bundle/, { ignore: 'button' }).textContent;
+
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Remove bundle' })[0]
+    );
+    await waitFor(() => expect(announcement()).toBeTruthy());
+    const first = announcement();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove bundle' }));
+    await waitFor(() =>
+      expect(screen.queryByText('Attachment')).not.toBeInTheDocument()
+    );
+
+    expect(announcement()).not.toBe(first);
+  });
+
+  it('labels a file card thumbnail with its name', async () => {
+    renderViewer({
+      payload: { ...twoDocs, documents: [...twoDocs.documents, attachment] }
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Pages' }));
+
+    expect(
+      screen.getByRole('button', { name: 'Go to bundle' })
+    ).toBeInTheDocument();
+  });
+
+  it('offers no packet editing for a container editor', () => {
+    renderViewer({ action: { ...action, editor_mode: 'container-1' } });
+    expect(
+      screen.queryByRole('button', { name: 'Add attachment' })
+    ).not.toBeInTheDocument();
   });
 
   it('reopens with earlier attachments in place and still movable', async () => {
@@ -1006,6 +1072,8 @@ describe('DocumentViewer — packet editing (editor_allow_attachments)', () => {
     screen.getByRole('dialog').appendChild(field);
     const text = { dataTransfer: { types: ['text/plain'] } };
     expect(fireEvent.drop(field, text)).toBe(true);
+    // A file dropped on a field still stays in the form.
+    expect(fireEvent.drop(field, files)).toBe(false);
   });
 
   it('keeps the packet editable after a native Sign fails', async () => {
@@ -1076,6 +1144,33 @@ describe('DocumentViewer — packet editing (editor_allow_attachments)', () => {
       expect(
         screen.getByRole('button', { name: 'Remove bundle' })
       ).toBeEnabled();
+    });
+
+    it('keeps the packet locked when a refused press follows one that may have reached DocuSign', async () => {
+      renderViewer({
+        action: keepOpen(['sign']),
+        onFinalize: jest
+          .fn()
+          .mockResolvedValueOnce({
+            status: 'error',
+            message: 'Document finalize took too long...'
+          })
+          .mockResolvedValueOnce({
+            status: 'error',
+            message: 'Too many sends',
+            rejected: true
+          })
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Sign' }));
+      await settle();
+      fireEvent.click(screen.getByRole('button', { name: 'Sign' }));
+      await settle();
+
+      expect(screen.getByRole('alert')).toHaveTextContent('Too many sends');
+      expect(
+        screen.getByRole('button', { name: 'Add attachment' })
+      ).toBeDisabled();
     });
 
     it('locks the packet when a DocuSign press may have reached DocuSign', async () => {
