@@ -446,7 +446,7 @@ export const getFormContext = (formUuid: string) => {
       draft?: boolean;
       // Only for envelopeAction 'open_in_editor': which buttons the editor
       // toolbar offers. 'draft' is DocuSign-only (it finalizes as a sign with
-      // draft=true).
+      // draft=true); 'print' shows only in the overlay review screen.
       toolbarActions?: ('sign' | 'download' | 'save' | 'draft' | 'print')[];
       // Only for envelopeAction 'open_in_editor': true locks the PDF fields in
       // the review viewer, like the Generate Documents action's editor "Read

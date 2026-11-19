@@ -89,7 +89,8 @@ export type DocumentReviewTrigger = {
   // The action's document sources: template ids, or source objects such as
   // the Quik item.
   documentIds: (string | Record<string, any>)[];
-  // Generated file URLs when the action produced files (download / save).
+  // Generated file URLs when the action produced files (download / print /
+  // save).
   files?: string[];
   // DocuSign envelope id when the action sent (or drafted) through DocuSign.
   docusignEnvelopeId?: string;

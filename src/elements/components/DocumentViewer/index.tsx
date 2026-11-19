@@ -23,7 +23,8 @@ export type ReviewEnvelopeAction = 'sign' | 'fill' | 'download' | 'save';
 export type EditorToolbarAction = ReviewEnvelopeAction | 'draft' | 'print';
 
 // Toolbar buttons render in this order, so the rightmost (primary) action is
-// the most conclusive one the filler configured.
+// the most conclusive one the filler configured. Print is least conclusive: it
+// only hands the filler paper copies.
 const TOOLBAR_ACTION_ORDER: EditorToolbarAction[] = [
   'print',
   'download',
@@ -56,8 +57,8 @@ const CLOSING_TOOLBAR_ACTIONS: EditorToolbarAction[] = [
 
 /** Whether pressing `action` should close the editor, given what the toolbar
  * offers. Anything not inherently conclusive closes only when it is the
- * highest-priority action available — so Download closes only when it stands
- * alone, and Save only when no signing action is offered. */
+ * highest-priority action available — so Print and Download close only when
+ * they stand alone, and Save only when no signing action is offered. */
 export const closesEditor = (
   action: EditorToolbarAction,
   available: EditorToolbarAction[]

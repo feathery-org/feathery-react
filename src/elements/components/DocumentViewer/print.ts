@@ -5,26 +5,36 @@ import { featheryDoc, featheryWindow } from '../../../utils/browser';
 // without the multi-hundred-MB canvases a long packet would need at 300.
 const PRINT_DPI = 150;
 const PRINT_SCALE = PRINT_DPI / 72;
+// Safari caps a canvas at 16.7M pixels and draws nothing past it, so oversize
+// pages (posters, engineering sheets) render at a lower DPI instead.
+const MAX_CANVAS_PIXELS = 16_000_000;
 const PRINT_ROOT_CLASS = 'fthry-review-print-root';
-// Fallback cleanup for when afterprint never fires: a sandboxed iframe without
-// allow-modals turns print() into a silent no-op. Browsers print from a
-// snapshot, so removing the markup while the dialog is open is safe.
-const PRINT_MARKUP_LIFETIME = 60000;
+// Last-resort cleanup when neither afterprint nor a later interaction arrives.
+const PRINT_MARKUP_LIFETIME = 10 * 60 * 1000;
 
-// While printing, only the rendered pages show. The review modal itself is a
-// body-level portal, so hiding every other body child hides it too.
+// While printing, only the rendered pages show, one per sheet, scaled to fit
+// the sheet both ways so landscape and off-size pages are neither cut nor
+// split. The review modal is a body-level portal, so hiding the other body
+// children hides it too.
 const PRINT_CSS = `
 .${PRINT_ROOT_CLASS} { display: none; }
 @media print {
+  html, body {
+    height: auto !important;
+    overflow: visible !important;
+  }
   body > *:not(.${PRINT_ROOT_CLASS}) { display: none !important; }
   .${PRINT_ROOT_CLASS} { display: block !important; }
   .${PRINT_ROOT_CLASS} img {
     display: block;
-    width: 100%;
-    height: auto;
-    break-after: page;
+    max-width: 100%;
+    /* 1px under the sheet, so rounding can't spill onto a blank page. */
+    max-height: calc(100vh - 1px);
+    margin: 0 auto;
+    object-fit: contain;
+    break-inside: avoid;
   }
-  .${PRINT_ROOT_CLASS} img:last-child { break-after: auto; }
+  .${PRINT_ROOT_CLASS} img + img { break-before: page; }
 }
 @page { margin: 0; }
 `;
@@ -42,7 +52,12 @@ const canvasToBlob = (canvas: HTMLCanvasElement) =>
  * included. */
 async function renderPageImage(pdfjs: any, pdfProxy: any, pageNumber: number) {
   const page = await pdfProxy.getPage(pageNumber);
-  const viewport = page.getViewport({ scale: PRINT_SCALE });
+  const base = page.getViewport({ scale: 1 });
+  const scale = Math.min(
+    PRINT_SCALE,
+    Math.sqrt(MAX_CANVAS_PIXELS / (base.width * base.height))
+  );
+  const viewport = page.getViewport({ scale });
   const canvas = featheryDoc().createElement('canvas');
   canvas.width = Math.floor(viewport.width);
   canvas.height = Math.floor(viewport.height);
@@ -63,30 +78,19 @@ async function renderPageImage(pdfjs: any, pdfProxy: any, pageNumber: number) {
   return URL.createObjectURL(blob);
 }
 
-/** Open the browser print dialog for every page of `pdfProxies`, in order.
- * Resolves once the dialog has been opened; the print markup is removed
- * after it closes. */
-async function printDocuments(pdfProxies: any[]) {
-  const pdfjs = await loadPdfjs();
-  const urls: string[] = [];
-  const images: HTMLImageElement[] = [];
+// Removes the markup of the print still in the page, if any.
+let cleanupActivePrint: (() => void) | null = null;
+
+/** Render every page of `pdfProxies`, in order, into a detached print root.
+ * Returns the root and the page images' blob URLs. */
+async function renderPrintMarkup(pdfjs: any, pdfProxies: any[]) {
   const doc = featheryDoc();
-  const win = featheryWindow();
   const root = doc.createElement('div');
   root.className = PRINT_ROOT_CLASS;
   const style = doc.createElement('style');
   style.textContent = PRINT_CSS;
   root.appendChild(style);
-
-  let cleanedUp = false;
-  const cleanup = () => {
-    if (cleanedUp) return;
-    cleanedUp = true;
-    win.removeEventListener('afterprint', cleanup);
-    root.remove();
-    urls.forEach((url) => URL.revokeObjectURL(url));
-  };
-
+  const urls: string[] = [];
   try {
     for (const pdfProxy of pdfProxies) {
       for (let n = 1; n <= pdfProxy.numPages; n++) {
@@ -96,39 +100,63 @@ async function printDocuments(pdfProxies: any[]) {
         img.src = url;
         img.alt = '';
         root.appendChild(img);
-        images.push(img);
       }
     }
-    // A leftover root from an earlier print would print its pages too.
-    doc
-      .querySelectorAll(`.${PRINT_ROOT_CLASS}`)
-      .forEach((el: Element) => el.remove());
-    doc.body.appendChild(root);
-    await Promise.all(images.map((img) => img.decode().catch(() => undefined)));
   } catch (e) {
-    cleanup();
+    urls.forEach((url) => URL.revokeObjectURL(url));
     throw e;
   }
-
-  win.addEventListener('afterprint', cleanup, { once: true });
-  // Whichever runs second is a no-op.
-  win.setTimeout(cleanup, PRINT_MARKUP_LIFETIME);
-  win.print();
+  return { root, urls };
 }
 
-/** Load pdf.js and resolve to the printer, so a blocked CDN or CSP fails
- * before the caller commits to anything (e.g. finalizing the envelopes). */
-export async function loadPrinter() {
-  await loadPdfjs();
-  return printFileUrls;
+/** Put the print markup in the page and call print(); the markup is removed
+ * once printing is over. */
+async function openPrintDialog(root: HTMLElement, urls: string[]) {
+  const win = featheryWindow();
+  let done = false;
+  const fallbackTimer = win.setTimeout(() => cleanup(), PRINT_MARKUP_LIFETIME);
+  const cleanup = () => {
+    if (done) return;
+    done = true;
+    win.clearTimeout(fallbackTimer);
+    win.removeEventListener('afterprint', cleanup);
+    win.removeEventListener('pointerdown', cleanup, true);
+    win.removeEventListener('keydown', cleanup, true);
+    root.remove();
+    urls.forEach((url) => URL.revokeObjectURL(url));
+    if (cleanupActivePrint === cleanup) cleanupActivePrint = null;
+  };
+
+  // An earlier print's pages would print too.
+  cleanupActivePrint?.();
+  cleanupActivePrint = cleanup;
+  featheryDoc().body.appendChild(root);
+  await Promise.all(
+    Array.from(root.querySelectorAll('img'), (img) =>
+      img.decode().catch(() => undefined)
+    )
+  );
+
+  win.addEventListener('afterprint', cleanup);
+  win.print();
+  // Where print() blocks until the dialog closes, afterprint has already
+  // cleaned up.
+  if (done) return;
+  // print() returns immediately, with no afterprint to follow, when it is
+  // suppressed (a sandboxed iframe without allow-modals). The filler's next
+  // input then cleans up, in the capture phase so a host-page Ctrl+P can't
+  // print these pages.
+  win.addEventListener('pointerdown', cleanup, true);
+  win.addEventListener('keydown', cleanup, true);
 }
 
 /** Print the PDFs at `urls` (a finalized review's files) in one dialog,
- * in order. Resolves once the dialog has been opened. */
+ * in order. Resolves once print() returns, which in most browsers is after
+ * the dialog closes. */
 export async function printFileUrls(urls: string[]) {
   if (!urls.length) return;
   const pdfjs = await loadPdfjs();
-  const pdfProxies = await Promise.all(
+  const loaded = await Promise.allSettled(
     urls.map(
       (url) =>
         pdfjs.getDocument({
@@ -137,10 +165,29 @@ export async function printFileUrls(urls: string[]) {
         }).promise
     )
   );
+  const pdfProxies: any[] = [];
+  const failures: unknown[] = [];
+  loaded.forEach((outcome) =>
+    outcome.status === 'fulfilled'
+      ? pdfProxies.push(outcome.value)
+      : failures.push(outcome.reason)
+  );
   try {
-    await printDocuments(pdfProxies);
+    if (failures.length) throw failures[0];
+    const { root, urls: imageUrls } = await renderPrintMarkup(
+      pdfjs,
+      pdfProxies
+    );
+    await openPrintDialog(root, imageUrls);
   } finally {
     // Every page is already an image in the print markup.
-    pdfProxies.forEach((pdfProxy: any) => pdfProxy.destroy());
+    pdfProxies.forEach((pdfProxy) => pdfProxy.destroy());
   }
+}
+
+/** Load pdf.js and resolve to the printer, so a blocked CDN or CSP fails
+ * before the caller commits to anything (e.g. finalizing the envelopes). */
+export async function loadPrinter() {
+  await loadPdfjs();
+  return printFileUrls;
 }
