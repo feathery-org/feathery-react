@@ -15,7 +15,7 @@ import {
   usePptxEditorState,
   usePptxEditorStore
 } from '../state/PptxEditorContext';
-import type { PptxChangeRecord } from '../engine/changes';
+import { REJECT_LABEL, type PptxChangeRecord } from '../engine/changes';
 import type { DeckJSON } from '../core/model/json';
 
 // Tracked-edits panel: the engine's transaction log grouped by slide, newest
@@ -101,9 +101,6 @@ function RecordCard({
       </button>
       <span css={{ fontSize: 11, color: INK_2 }}>
         Slide {slideIndex + 1} · {record.author.label}
-        {record.status === 'rejected' && (
-          <span css={{ color: DEL }}> · rejected</span>
-        )}
       </span>
       {pending && (
         <div css={{ display: 'flex', gap: 6 }}>
@@ -125,14 +122,15 @@ export default function PptxChangesPanel() {
   const state = usePptxEditorState();
   const [conflicts, setConflicts] = useState<Record<string, string>>({});
 
-  // An accepted suggestion is settled, so its card leaves the list; the log
-  // keeps the record for conflict checks.
+  // A settled suggestion leaves the list, along with the reject's own entry;
+  // the log keeps both, and undo brings the suggestion back as pending.
   const log = store.engine.changes();
   const records = useMemo(
     () =>
       log.filter(
         (record) =>
-          !(record.origin === 'assistant' && record.status === 'accepted')
+          record.summary !== REJECT_LABEL &&
+          !(record.origin === 'assistant' && record.status !== 'pending')
       ),
     [log]
   );

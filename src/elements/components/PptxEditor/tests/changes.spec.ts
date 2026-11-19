@@ -76,8 +76,15 @@ describe('tracked edits (engine change log)', () => {
     expect(engine.acceptChange(record.id)).toBe(true);
     expect(engine.changes()[0].status).toBe('accepted');
     expect(engine.pendingChangeCount()).toBe(0);
-    // Accepting is metadata-only: no new history entry.
-    expect(engine.snapshot().undoDepth).toBe(1);
+    // Accepting is its own undo step: undo brings the suggestion back.
+    expect(engine.snapshot().undoDepth).toBe(2);
+    engine.undo();
+    expect(engine.changes()[0].status).toBe('pending');
+    expect(engine.changes()[0].beforeSlides).toBeDefined();
+    engine.redo();
+    expect(engine.changes()[0].status).toBe('accepted');
+    engine.undo();
+    expect(engine.rejectChange(record.id).ok).toBe(true);
     expect(engine.snapshot().revision).toBeGreaterThan(revisionBefore);
   });
 

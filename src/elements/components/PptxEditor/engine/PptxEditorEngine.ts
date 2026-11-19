@@ -63,7 +63,11 @@ import {
 import type { Deck, Shape, Slide } from '../core/model/types';
 import type { OTree } from '../core/opc/xml';
 import type { CommandMeta, EditorCommand, Invalidation } from './commands';
-import { deriveChangeRecord, type PptxChangeRecord } from './changes';
+import {
+  deriveChangeRecord,
+  REJECT_LABEL,
+  type PptxChangeRecord
+} from './changes';
 
 const HISTORY_LIMIT = 100;
 
@@ -187,10 +191,11 @@ export class PptxEditorEngine {
     { before: PptxHistorySnapshot; after: PptxHistorySnapshot }
   >();
 
-  // Suggestions each reject settled, so undoing the reject makes them pending again
-  private rejectedSuggestions = new Map<
+  // Suggestions each accept or reject settled, so undoing it makes them pending again
+  private settledSuggestions = new Map<
     string,
     {
+      status: 'accepted' | 'rejected';
       record: PptxChangeRecord;
       snapshots: { before: PptxHistorySnapshot; after: PptxHistorySnapshot };
     }
@@ -758,12 +763,12 @@ export class PptxEditorEngine {
       this.shelvedRecords.set(undone.transactionId, undone);
       this.changeLog = this.changeLog.filter((record) => record !== undone);
     }
-    const rejected = this.rejectedSuggestions.get(String(entry.id));
-    if (rejected) {
+    const settled = this.settledSuggestions.get(String(entry.id));
+    if (settled) {
       this.changeLog = this.changeLog.map((record) =>
-        record.id === rejected.record.id ? rejected.record : record
+        record.id === settled.record.id ? settled.record : record
       );
-      this.pendingSnapshots.set(rejected.record.id, rejected.snapshots);
+      this.pendingSnapshots.set(settled.record.id, settled.snapshots);
     }
     this.present = entry.before;
     this.revision += 1;
@@ -785,20 +790,20 @@ export class PptxEditorEngine {
       this.shelvedRecords.delete(String(entry.id));
       this.changeLog = [...this.changeLog, shelved];
     }
-    const rejected = this.rejectedSuggestions.get(String(entry.id));
-    if (rejected) {
+    const settled = this.settledSuggestions.get(String(entry.id));
+    if (settled) {
       this.changeLog = this.changeLog.map((record) =>
-        record.id === rejected.record.id
+        record.id === settled.record.id
           ? {
               ...record,
-              status: 'rejected' as const,
+              status: settled.status,
               beforeSlides: undefined,
               beforeSlideRels: undefined,
               changedSlides: undefined
             }
           : record
       );
-      this.pendingSnapshots.delete(rejected.record.id);
+      this.pendingSnapshots.delete(settled.record.id);
     }
     this.present = entry.after;
     this.revision += 1;
@@ -817,7 +822,7 @@ export class PptxEditorEngine {
   private dropRedo(count: number): void {
     for (const entry of this.redoStack.slice(0, count)) {
       const id = String(entry.id);
-      this.rejectedSuggestions.delete(id);
+      this.settledSuggestions.delete(id);
       const shelved = this.shelvedRecords.get(id);
       if (shelved) this.pendingSnapshots.delete(shelved.id);
       this.shelvedRecords.delete(id);
@@ -843,17 +848,27 @@ export class PptxEditorEngine {
       .length;
   }
 
-  /** Accept a pending suggestion: the deck already carries it, only the
-   *  record's status flips. */
+  /** Accept a pending suggestion: the deck already carries it, so only the
+   *  record's status flips, as its own undo step. */
   acceptChange(id: string): boolean {
     const record = this.changeLog.find((candidate) => candidate.id === id);
     if (!record || record.status !== 'pending') return false;
-    // Redo must not replay an undone reject of what is now accepted, or what follows it
-    const rejectAt = this.redoStack.findIndex(
-      (entry) =>
-        this.rejectedSuggestions.get(String(entry.id))?.record.id === id
-    );
-    if (rejectAt >= 0) this.dropRedo(rejectAt + 1);
+    this.discardRedo();
+    const snapshots = this.pendingSnapshots.get(id);
+    if (snapshots && this.present && !this.openTransaction) {
+      const entryId = ++this.sequence;
+      this.pushHistory({
+        id: entryId,
+        label: 'Accept suggestion',
+        before: this.present,
+        after: this.present
+      });
+      this.settledSuggestions.set(String(entryId), {
+        status: 'accepted',
+        record,
+        snapshots
+      });
+    }
     this.changeLog = this.changeLog.map((candidate) =>
       candidate === record
         ? {
@@ -960,18 +975,13 @@ export class PptxEditorEngine {
         };
       });
     }
-    const result = this.commit(
-      'Reject suggestion',
-      invalidations,
-      'change',
-      [],
-      {
-        label: 'Reject suggestion',
-        authorLabel: 'Reject'
-      }
-    );
+    const result = this.commit(REJECT_LABEL, invalidations, 'change', [], {
+      label: REJECT_LABEL,
+      authorLabel: 'Reject'
+    });
     if (result.changed && !this.openTransaction)
-      this.rejectedSuggestions.set(String(this.sequence), {
+      this.settledSuggestions.set(String(this.sequence), {
+        status: 'rejected',
         record,
         snapshots
       });
@@ -1062,7 +1072,7 @@ export class PptxEditorEngine {
     this.changeLog = [];
     this.shelvedRecords.clear();
     this.pendingSnapshots.clear();
-    this.rejectedSuggestions.clear();
+    this.settledSuggestions.clear();
     this.historyRevision += 1;
   }
 
@@ -1075,7 +1085,7 @@ export class PptxEditorEngine {
     this.changeLog = [];
     this.shelvedRecords.clear();
     this.pendingSnapshots.clear();
-    this.rejectedSuggestions.clear();
+    this.settledSuggestions.clear();
     this.deck = null;
     this.present = null;
     this.baseline = null;
@@ -1115,6 +1125,13 @@ export class PptxEditorEngine {
     return this.result(changed, invalidations, createdShapeIds);
   }
 
+  private pushHistory(entry: PptxHistoryEntry): void {
+    const history = [...this.undoStack, entry];
+    for (const dropped of history.slice(0, -HISTORY_LIMIT))
+      this.settledSuggestions.delete(String(dropped.id));
+    this.undoStack = history.slice(-HISTORY_LIMIT);
+  }
+
   private record(
     before: PptxHistorySnapshot,
     after: PptxHistorySnapshot,
@@ -1127,10 +1144,7 @@ export class PptxEditorEngine {
     this.present = after;
     if (sameHistoryDocument(before, after)) return this.result(false, []);
     const entryId = ++this.sequence;
-    const history = [...this.undoStack, { id: entryId, label, before, after }];
-    for (const dropped of history.slice(0, -HISTORY_LIMIT))
-      this.rejectedSuggestions.delete(String(dropped.id));
-    this.undoStack = history.slice(-HISTORY_LIMIT);
+    this.pushHistory({ id: entryId, label, before, after });
     this.discardRedo();
     const changeRecord = deriveChangeRecord({
       transactionId: entryId,

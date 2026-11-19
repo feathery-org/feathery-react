@@ -54,6 +54,33 @@ it('removes a suggestion card once it is accepted', async () => {
   }
 });
 
+it('removes a rejected card, and undo and redo bring it back and away', async () => {
+  const mounted = await mountEditor(<PptxChangesPanel />);
+  const clickButton = (label: string) =>
+    act(async () =>
+      [...mounted.host.querySelectorAll('button')]
+        .find((button) => button.textContent === label)!
+        .click()
+    );
+  const empty = 'Edits you make will be tracked here.';
+  try {
+    await act(async () => mounted.store.loadFile(sampleBytes(), 'sample.pptx'));
+    for (const label of ['Reject', 'Accept']) {
+      await addSlideAs(mounted, 'assistant');
+      await clickButton(label);
+      expect(mounted.host.textContent).toBe(empty);
+
+      await act(async () => mounted.store.undo());
+      expect(mounted.host.textContent).toContain('Accept');
+
+      await act(async () => mounted.store.redo());
+      expect(mounted.host.textContent).toBe(empty);
+    }
+  } finally {
+    await mounted.unmount();
+  }
+});
+
 it("keeps the user's own edits listed", async () => {
   const mounted = await mountEditor(<PptxChangesPanel />);
   try {
