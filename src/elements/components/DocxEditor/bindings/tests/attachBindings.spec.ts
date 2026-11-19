@@ -625,3 +625,31 @@ describe('surviving the editor being torn down mid-event', () => {
     } as unknown as DocumentEditor;
   });
 });
+
+describe('host field values from a document with blank fields', () => {
+  it('reports a blank number as no value and a blank text as empty, so saving clears the form field', () => {
+    const control = (tag: string) => ({
+      contentControlProperties: { tag, type: 'Text' },
+      inlines: [{ text: '' }]
+    });
+    const editor = makeEditor({
+      sections: [
+        {
+          blocks: [
+            {
+              inlines: [
+                control('[[name=premium|type=currency]]'),
+                control('[[name=note]]')
+              ]
+            }
+          ]
+        }
+      ]
+    });
+    const attached = attachBindings(editor as unknown as SyncfusionEditorLike);
+
+    expect(attached.fieldValues()).toEqual({ premium: null, note: '' });
+    attached.dispose();
+    editor.destroy();
+  });
+});

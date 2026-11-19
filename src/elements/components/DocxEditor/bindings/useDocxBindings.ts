@@ -35,7 +35,7 @@ export interface DocxBindingsState {
   blocked: boolean;
   /** Reconcile anything uncommitted; false when the save must not proceed. */
   commitForSave: () => boolean;
-  fieldValues: Record<string, string>;
+  fieldValues: Record<string, string | null>;
 }
 
 const IDLE: DocxBindingsState = {

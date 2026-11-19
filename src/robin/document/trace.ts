@@ -38,8 +38,7 @@ export class TraceBuilder {
         kinds: {},
         scopeIds: 0,
         bulk: 0,
-        formats: 0,
-        dryRun: false
+        formats: 0
       },
       verified: { outcome: 'refused', checks: [], ms: 0 },
       committed: { outcome: 'skipped', seams: [], touched: 0, ms: 0 },
@@ -73,8 +72,7 @@ export class TraceBuilder {
       kinds,
       scopeIds: write.scope.ids.length,
       bulk: write.scope.bulk?.length ?? 0,
-      formats: write.scope.formats?.length ?? 0,
-      dryRun: write.dryRun === true
+      formats: write.scope.formats?.length ?? 0
     };
     return this;
   }

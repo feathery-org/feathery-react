@@ -17,8 +17,7 @@ const write = parseVerbInput('write', {
       target: { find: { kind: 'para' }, total: 3, shape: 's' },
       props: { bold: true }
     }
-  ],
-  dryRun: true
+  ]
 });
 
 describe('trace', () => {
@@ -51,8 +50,7 @@ describe('trace', () => {
         kinds: { insert_after: 2, set: 1 },
         scopeIds: 2,
         bulk: 1,
-        formats: 0,
-        dryRun: true
+        formats: 0
       },
       verified: {
         outcome: 'passed',

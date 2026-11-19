@@ -271,3 +271,28 @@ it('preserves existing references to a field named end', () => {
   expect(result.diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
   expect((result.index.formulas.get('total') as any[])[0].text).toBe('$10.00');
 });
+
+describe('a blank bound number read by position', () => {
+  const table = (total: string) =>
+    tableCc('summary', {
+      rows: [
+        row(['Item', 'Amount'], true),
+        row(['Widget', cc(fieldTag('widget'), 'widget', false, '')]),
+        row(['Gadget', cc(fieldTag('gadget'), 'gadget', false, '$30.00')]),
+        row(['Total', cc(formulaTag('total', total), 'Total', true, '…')])
+      ]
+    });
+
+  it.each([
+    ['B2', '$0.00'],
+    ['sum(B2,B3)', '$30.00'],
+    ['sum(B2:B3)', '$30.00']
+  ])(
+    '%s counts it as 0 without blocking saving',
+    (expr, total) => {
+      const result = applyRules(doc([table(expr)]), {});
+      expect(result.diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+      expect((result.index.formulas.get('total') as any[])[0].text).toBe(total);
+    }
+  );
+});

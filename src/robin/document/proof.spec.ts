@@ -283,6 +283,13 @@ describe('rollback', () => {
     expect(host.serialize()).toBe(A);
   });
 
+  it('leaves nothing to redo after undoing a write back', () => {
+    const host = new ToyHost(A);
+    host.seamEdit('text', (d) => d.body.push(para('x')));
+    rollback(host, A, { undoLimit: 1 });
+    expect(host.canRedo()).toBe(false);
+  });
+
   it('reopens the snapshot when undo cannot get back', () => {
     const host = new ToyHost(A);
     host.open(toyNative(para('replaced')));

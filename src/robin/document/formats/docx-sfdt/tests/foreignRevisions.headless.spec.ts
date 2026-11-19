@@ -147,7 +147,7 @@ async function writes(): Promise<Array<{ name: string; input: any; section?: num
   for (const doomed of [...sections].reverse()) {
     const s = (await read([doomed]))[doomed];
     const input = { intent: 'Remove a section.', scope: { ids: [doomed] }, changes: [{ kind: 'delete', id: doomed, base: s.base }] };
-    if ((await dispatch('write', { ...input, dryRun: true })).ok) {
+    if (await lane.call<boolean>('verifies', input)) {
       out.push({ name: 'section delete', input, section: sections.indexOf(doomed) });
       break;
     }

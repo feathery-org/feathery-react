@@ -291,6 +291,7 @@ export type PreparedWrite =
       outcome: 'verified';
       intended: NormalForm;
       intendedResidue: Residue;
+      copies: Record<string, string>;
       mapping: Record<string, string>;
       touched: string[];
       finalizerScope: FinalizerScope[];
@@ -1073,7 +1074,8 @@ export function prepareWrite(
     after,
     changed: diff.changed,
     removed: diff.removed,
-    created: diff.created
+    created: diff.created,
+    copies: minted.copies
   });
   if (runner.failed) return refused();
 
@@ -1082,6 +1084,7 @@ export function prepareWrite(
     outcome: 'verified',
     intended: working,
     intendedResidue,
+    copies: minted.copies,
     mapping,
     touched,
     finalizerScope,

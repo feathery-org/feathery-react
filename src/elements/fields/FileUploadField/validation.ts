@@ -6,11 +6,18 @@
 export const DEFAULT_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
 export const NUM_FILES_LIMIT = 20;
 
+// Custom file types are stored as bare extensions ("xlsx"), but legacy
+// metadata may carry a leading dot (".xlsx"). Tolerate it so the token is
+// ".xlsx" rather than "..xlsx", which no file would ever match. The public
+// API has also accepted non-string entries like 123, so stringify first.
+export const customFileTypeToken = (customFileType: unknown): string =>
+  `.${String(customFileType).trim().replace(/^\./, '')}`;
+
 export const resolveAllowedFileTypes = (servar: any): string[] => {
   const allowedFileTypes: string[] = [...servar.metadata.file_types];
   if (servar.metadata.custom_file_types)
     allowedFileTypes.push(
-      ...servar.metadata.custom_file_types.map((type: string) => `.${type}`)
+      ...servar.metadata.custom_file_types.map(customFileTypeToken)
     );
   return allowedFileTypes;
 };
