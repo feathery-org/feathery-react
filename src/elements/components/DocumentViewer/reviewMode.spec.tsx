@@ -5,11 +5,13 @@ import DocumentViewer, {
   deferCompletion,
   finalizeOutcome,
   isToolbarActionDisabled,
+  MAX_ATTACHMENT_BYTES,
   needsDraftRefresh,
   recordAttempt,
   ReviewSession
 } from './index';
 import { featheryDoc } from '../../../utils/browser';
+import { DocumentPersistenceError } from '../../../utils/documentPersistence';
 
 // The viewer lazily loads pdf.js via this module; keep it pending so
 // DocumentCanvas just shows its loading skeleton — these tests only care
@@ -759,5 +761,375 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       expect(isToolbarActionDisabled(sent, 'download')).toBe(false);
       expect(isToolbarActionDisabled(sent, 'save')).toBe(false);
     });
+  });
+});
+
+describe('DocumentViewer — packet editing (editor_allow_attachments)', () => {
+  const twoDocs = {
+    ...basePayload,
+    documents: [
+      { ...basePayload.documents[0], name: 'A' },
+      {
+        type: 'form' as const,
+        pdf_url: 'http://x/b.pdf',
+        envelope_id: 'env-2',
+        name: 'B'
+      }
+    ]
+  };
+  const attachment = {
+    type: 'attachment' as const,
+    envelope_id: 'att-1',
+    name: 'bundle',
+    file_name: 'bundle.zip',
+    file_url: 'http://x/bundle.zip',
+    size: 2048
+  };
+  const action = {
+    envelope_action: 'open_in_editor',
+    editor_toolbar_actions: ['download'],
+    editor_allow_attachments: true
+  };
+
+  const renderViewer = (overrides: Record<string, any> = {}) => {
+    const props = {
+      payload: twoDocs,
+      action,
+      setShow: jest.fn(),
+      onComplete: jest.fn(),
+      onFinalize: jest.fn().mockResolvedValue({ files: [] }),
+      onUploadAttachment: jest.fn().mockResolvedValue(attachment),
+      onRemoveAttachment: jest.fn().mockResolvedValue(undefined),
+      ...overrides
+    };
+    render(<DocumentViewer {...props} />);
+    return props;
+  };
+
+  const attach = async (name = 'bundle.zip') => {
+    fireEvent.change(screen.getByTestId('attachment-input'), {
+      target: { files: [new File(['zip'], name)] }
+    });
+    await screen.findByText('Attachment');
+  };
+
+  const finalizedIds = (onFinalize: jest.Mock) =>
+    onFinalize.mock.calls[0][0].envelopes.map((e: any) => e.envelopeId);
+
+  it('offers no packet editing unless the action enables it', () => {
+    renderViewer({ action: { ...action, editor_allow_attachments: false } });
+    expect(
+      screen.queryByRole('button', { name: 'Add attachment' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('offers no packet editing without a way to remove attachments', () => {
+    renderViewer({ onRemoveAttachment: undefined });
+    expect(
+      screen.queryByRole('button', { name: 'Add attachment' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows a restored attachment with no size without a size', () => {
+    renderViewer({
+      payload: {
+        ...twoDocs,
+        documents: [...twoDocs.documents, { ...attachment, size: null }]
+      }
+    });
+    expect(
+      screen.getByText('ZIP file — no preview available')
+    ).toBeInTheDocument();
+  });
+
+  it('shows an unrenderable attachment as a file card and finalizes it in the chosen order', async () => {
+    const { onFinalize, onUploadAttachment } = renderViewer();
+
+    await attach();
+    expect(onUploadAttachment).toHaveBeenCalledWith(expect.any(File));
+    expect(screen.getByText('ZIP file · 2 KB — no preview available'));
+    expect(screen.getByRole('link', { name: 'Download' })).toHaveAttribute(
+      'href',
+      'http://x/bundle.zip'
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Move bundle up' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move A down' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+
+    await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
+    expect(finalizedIds(onFinalize)).toEqual(['att-1', 'env-1', 'env-2']);
+  });
+
+  it('removes an attachment on the backend and drops it from finalize', async () => {
+    const { onFinalize, onRemoveAttachment } = renderViewer();
+
+    await attach();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove bundle' }));
+    await waitFor(() =>
+      expect(screen.queryByText('Attachment')).not.toBeInTheDocument()
+    );
+    expect(onRemoveAttachment).toHaveBeenCalledWith('att-1');
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+
+    await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
+    expect(finalizedIds(onFinalize)).toEqual(['env-1', 'env-2']);
+  });
+
+  it('keeps an attachment the backend failed to remove', async () => {
+    renderViewer({
+      onRemoveAttachment: jest.fn().mockRejectedValue(new Error('Gone wrong'))
+    });
+
+    await attach();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove bundle' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Couldn't remove the attachment: Gone wrong"
+    );
+    expect(screen.getByText('Attachment')).toBeInTheDocument();
+    expect(screen.queryByText('Removed bundle')).not.toBeInTheDocument();
+  });
+
+  it('asks the filler to check their connection when a remove times out', async () => {
+    renderViewer({
+      onRemoveAttachment: jest
+        .fn()
+        .mockRejectedValue(
+          new DocumentPersistenceError('Document request timed out.', 'timeout')
+        )
+    });
+
+    await attach();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove bundle' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Couldn't remove the attachment. Check your connection and try again."
+    );
+  });
+
+  it('reopens with earlier attachments in place and still movable', async () => {
+    const { onFinalize } = renderViewer({
+      payload: {
+        ...twoDocs,
+        documents: [twoDocs.documents[0], attachment, twoDocs.documents[1]]
+      }
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Move bundle down' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+
+    await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
+    expect(finalizedIds(onFinalize)).toEqual(['env-1', 'env-2', 'att-1']);
+  });
+
+  it('removes an attachment restored from an earlier review', async () => {
+    const { onRemoveAttachment } = renderViewer({
+      payload: { ...twoDocs, documents: [...twoDocs.documents, attachment] }
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove bundle' }));
+
+    expect(onRemoveAttachment).toHaveBeenCalledWith('att-1');
+    await waitFor(() =>
+      expect(screen.queryByText('Attachment')).not.toBeInTheDocument()
+    );
+  });
+
+  it('holds the toolbar while a remove is in flight', async () => {
+    let finishRemove = () => {};
+    const { onRemoveAttachment } = renderViewer({
+      payload: { ...twoDocs, documents: [...twoDocs.documents, attachment] },
+      onRemoveAttachment: jest.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishRemove = resolve;
+          })
+      )
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove bundle' }));
+
+    expect(onRemoveAttachment).toHaveBeenCalledWith('att-1');
+    expect(screen.getByRole('button', { name: 'Download' })).toBeDisabled();
+    // Announced only once the backend confirms.
+    expect(screen.queryByText('Removed bundle')).not.toBeInTheDocument();
+    finishRemove();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Download' })).toBeEnabled()
+    );
+    expect(screen.getByText('Removed bundle')).toBeInTheDocument();
+  });
+
+  it('surfaces a failed upload', async () => {
+    renderViewer({
+      onUploadAttachment: jest
+        .fn()
+        .mockRejectedValue(new Error('Attachments can be at most 20MB.'))
+    });
+
+    fireEvent.change(screen.getByTestId('attachment-input'), {
+      target: { files: [new File(['x'], 'big.zip')] }
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Couldn't attach big.zip: Attachments can be at most 20MB."
+    );
+  });
+
+  it('rejects an oversized file without uploading it', async () => {
+    const { onUploadAttachment } = renderViewer();
+    const big = new File(['x'], 'huge.zip');
+    Object.defineProperty(big, 'size', { value: MAX_ATTACHMENT_BYTES + 1 });
+
+    fireEvent.change(screen.getByTestId('attachment-input'), {
+      target: { files: [big] }
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Couldn't attach huge.zip: Attachments can be at most 20MB."
+    );
+    expect(onUploadAttachment).not.toHaveBeenCalled();
+  });
+
+  it('keeps a file dropped outside the documents list from leaving the form', () => {
+    renderViewer();
+    // fireEvent returns false once a handler prevented the default.
+    const files = { dataTransfer: { types: ['Files'] } };
+    expect(fireEvent.dragOver(screen.getByRole('dialog'), files)).toBe(false);
+    expect(fireEvent.drop(screen.getByRole('dialog'), files)).toBe(false);
+    // A dragged link would otherwise load in place of the form.
+    const link = { dataTransfer: { types: ['text/uri-list'] } };
+    expect(fireEvent.drop(screen.getByRole('dialog'), link)).toBe(false);
+    // Dragged text still reaches the PDF's form fields.
+    const field = featheryDoc().createElement('input');
+    screen.getByRole('dialog').appendChild(field);
+    const text = { dataTransfer: { types: ['text/plain'] } };
+    expect(fireEvent.drop(field, text)).toBe(true);
+  });
+
+  it('keeps the packet editable after a native Sign fails', async () => {
+    renderViewer({
+      action: {
+        ...action,
+        editor_toolbar_actions: ['sign'],
+        editor_close_on_action: false
+      },
+      onFinalize: jest.fn().mockRejectedValue(new Error('Signer missing'))
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Signer missing'
+    );
+    expect(
+      screen.getByRole('button', { name: 'Add attachment' })
+    ).toBeEnabled();
+  });
+
+  describe('with editor_close_on_action false', () => {
+    const keepOpen = (toolbarActions: string[]) => ({
+      ...action,
+      editor_toolbar_actions: toolbarActions,
+      sign_method: 'docusign',
+      editor_close_on_action: false
+    });
+    const settle = () =>
+      waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled()
+      );
+
+    it('finalizes the edited packet on a second press', async () => {
+      const { onFinalize } = renderViewer({ action: keepOpen(['download']) });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+      await settle();
+      await attach();
+      fireEvent.click(screen.getByRole('button', { name: 'Move bundle up' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+      await settle();
+
+      expect(
+        onFinalize.mock.calls[1][0].envelopes.map((e: any) => e.envelopeId)
+      ).toEqual(['env-1', 'att-1', 'env-2']);
+    });
+
+    it('keeps the packet editable when the backend refuses a DocuSign press', async () => {
+      renderViewer({
+        action: keepOpen(['sign']),
+        payload: { ...twoDocs, documents: [...twoDocs.documents, attachment] },
+        onFinalize: jest.fn().mockResolvedValue({
+          status: 'error',
+          message: 'Unknown envelope id(s)',
+          rejected: true
+        })
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Sign' }));
+      await settle();
+
+      expect(screen.getByRole('alert')).toHaveTextContent('Unknown envelope');
+      expect(
+        screen.getByRole('button', { name: 'Add attachment' })
+      ).toBeEnabled();
+      expect(
+        screen.getByRole('button', { name: 'Remove bundle' })
+      ).toBeEnabled();
+    });
+
+    it('locks the packet when a DocuSign press may have reached DocuSign', async () => {
+      renderViewer({
+        action: keepOpen(['sign']),
+        onFinalize: jest.fn().mockResolvedValue({
+          status: 'error',
+          message: 'Document finalize took too long...'
+        })
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Sign' }));
+      await settle();
+
+      expect(
+        screen.getByRole('button', { name: 'Add attachment' })
+      ).toBeDisabled();
+    });
+
+    it('locks the packet once DocuSign holds a draft of it', async () => {
+      renderViewer({
+        action: keepOpen(['sign', 'draft']),
+        onFinalize: jest
+          .fn()
+          .mockResolvedValue({ status: 'complete', docusign_status: 'created' })
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Create Draft' }));
+      await settle();
+
+      expect(
+        screen.getByRole('button', { name: 'Add attachment' })
+      ).toBeDisabled();
+      expect(
+        screen.getByRole('button', { name: 'Move A down' })
+      ).toBeDisabled();
+    });
+  });
+
+  it('keeps the files that uploaded when another fails', async () => {
+    const { onFinalize } = renderViewer({
+      onUploadAttachment: jest
+        .fn()
+        .mockRejectedValueOnce(new Error('Upload failed'))
+        .mockResolvedValueOnce(attachment)
+    });
+
+    fireEvent.change(screen.getByTestId('attachment-input'), {
+      target: { files: [new File(['x'], 'bad.zip'), new File(['y'], 'ok.zip')] }
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('bad.zip');
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+    await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
+    expect(finalizedIds(onFinalize)).toEqual(['env-1', 'env-2', 'att-1']);
   });
 });

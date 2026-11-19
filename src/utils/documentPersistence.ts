@@ -69,6 +69,9 @@ export function documentErrorMessage(payload: unknown): string {
   if (typeof payload === 'string') return payload;
   if (Array.isArray(payload))
     return payload.map(documentErrorMessage).join('; ');
+  // DRF's error shape is {message, code}: the code isn't for people.
+  if (payload && typeof (payload as any).message === 'string')
+    return (payload as any).message;
   if (payload && typeof payload === 'object')
     return Object.values(payload)
       .map(documentErrorMessage)

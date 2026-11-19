@@ -903,6 +903,47 @@ describe('IntegrationClient', () => {
       ]);
     });
 
+    it('asks the review generate to restore attachments only when the action allows them', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ documents: [], expires_at: 'x' })
+      });
+      const action = {
+        documents: ['doc1'],
+        envelope_action: 'open_in_editor'
+      };
+
+      await integrationClient.generateEnvelopes({
+        ...action,
+        editor_allow_attachments: true
+      });
+      await integrationClient.generateEnvelopes(action);
+
+      expect(requestBody(0).editor_allow_attachments).toBe(true);
+      expect(requestBody(1)).not.toHaveProperty('editor_allow_attachments');
+    });
+
+    it('marks a builder preview so the backend reads the unpublished gate', async () => {
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ documents: [], expires_at: 'x' })
+      });
+      const action = {
+        documents: ['doc1'],
+        envelope_action: 'open_in_editor',
+        editor_allow_attachments: true
+      };
+
+      await new IntegrationClient('k', undefined, true).generateEnvelopes(
+        action
+      );
+      await new IntegrationClient('k').generateEnvelopes(action);
+
+      expect(requestBody(0).form_draft).toBe(true);
+      expect(requestBody(1)).not.toHaveProperty('form_draft');
+    });
+
     it('surfaces an error response from the review generate endpoint', async () => {
       const formKey = 'test_form_key';
       const integrationClient = new IntegrationClient(formKey);
@@ -1458,6 +1499,31 @@ describe('IntegrationClient', () => {
 
   describe('finalizeEnvelopeReview', () => {
     const baseAction = { form_key: 'test_form_key' };
+
+    it.each([
+      [400, true],
+      [429, true],
+      [500, false]
+    ])(
+      'flags a %s as refused before any send: %s',
+      async (status, rejected) => {
+        global.fetch.mockResolvedValue({
+          ok: false,
+          status,
+          json: jest.fn().mockResolvedValue([{ message: 'No', code: 'x' }])
+        });
+
+        const result = await new IntegrationClient(
+          'test_form_key'
+        ).finalizeEnvelopeReview(baseAction, {
+          envelopes: [{ envelopeId: 'env-1' }],
+          envelopeAction: 'sign'
+        });
+
+        expect(result.status).toBe('error');
+        expect(!!result.rejected).toBe(rejected);
+      }
+    );
 
     it('sends the reviewed envelopes to the finalize endpoint and returns files for download', async () => {
       const formKey = 'test_form_key';
@@ -2093,6 +2159,80 @@ describe('IntegrationClient', () => {
       );
       expect(requestBody().voided_reason).toBeUndefined();
       expect(result).toEqual({ status: 'discarded' });
+    });
+  });
+  describe('uploadReviewAttachment', () => {
+    const uploadedForm = () => global.fetch.mock.calls[0][1].body;
+    const upload = (draft) => {
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 201,
+        json: jest.fn().mockResolvedValue({ envelope_id: 'att-1' })
+      });
+      return new IntegrationClient(
+        'test_form_key',
+        undefined,
+        draft
+      ).uploadReviewAttachment(new File(['x'], 'a.pdf'));
+    };
+
+    it('marks an upload from a builder preview', async () => {
+      await upload(true);
+      expect(uploadedForm().get('form_draft')).toBe('true');
+    });
+
+    it('leaves a live upload unmarked', async () => {
+      await upload(false);
+      expect(uploadedForm().has('form_draft')).toBe(false);
+    });
+  });
+  describe('removeReviewAttachment', () => {
+    const removeWith = (response) => {
+      global.fetch.mockResolvedValue(response);
+      return new IntegrationClient('test_form_key').removeReviewAttachment(
+        'att-1'
+      );
+    };
+
+    it('posts the attachment to the remove endpoint', async () => {
+      await removeWith({ ok: true, status: 204 });
+
+      expect(requestUrl()).toBe(`${API_URL}document/form/attachment/remove/`);
+      expect(requestBody()).toEqual({
+        form_key: 'test_form_key',
+        fuser_key: 'test_user_id',
+        envelope_id: 'att-1'
+      });
+    });
+
+    it('resolves when the backend reports the attachment already removed', async () => {
+      await expect(
+        removeWith({ ok: true, status: 204 })
+      ).resolves.toBeUndefined();
+    });
+
+    it('rejects a 404, which means the wrong form or user', async () => {
+      await expect(
+        removeWith({
+          ok: false,
+          status: 404,
+          json: jest
+            .fn()
+            .mockResolvedValue([{ message: 'Not found.', code: 'not_found' }])
+        })
+      ).rejects.toThrow(/^Not found\.$/);
+    });
+
+    it('rejects when the attachment was already sent', async () => {
+      await expect(
+        removeWith({
+          ok: false,
+          status: 409,
+          json: jest.fn().mockResolvedValue({
+            detail: "This attachment was already sent and can't be removed."
+          })
+        })
+      ).rejects.toThrow('already sent');
     });
   });
 });
