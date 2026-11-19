@@ -15,7 +15,11 @@ import {
 } from './SigningTags';
 import Toolbar, { ToolbarAction } from './Toolbar';
 import { useActivePage, pageKey } from './useActivePage';
-import { useIsNarrowViewport } from './useIsNarrowViewport';
+import {
+  COLLAPSE_BREAKPOINT,
+  useIsNarrowViewport
+} from './useIsNarrowViewport';
+import useElementSize from '../../../hooks/useElementSize';
 import ViewerSidebar from './sidebar';
 import AlertBanner from './AlertBanner';
 import {
@@ -205,24 +209,15 @@ export interface DocumentViewerPayload {
   documents: ViewerDocument[];
   // The packet's DocuSign recipients, named by position in `signing_tags`.
   signers?: SigningRecipient[];
-  // Absent for an embedded viewer: its envelope has no review session to
-  // expire.
+  // Absent embedded: its envelope has no review session to expire.
   expires_at?: string;
 }
 
-interface DocumentViewerProps {
+interface DocumentViewerBaseProps {
   payload: DocumentViewerPayload;
   // The Generate Documents action: `editor_toolbar_actions` configures the
   // toolbar, `editor_read_only` locks the PDFs' form fields.
   action: Record<string, any>;
-  // Renders inline, filling its parent (a Document Editor container), instead
-  // of as a full-screen modal: no portal, no Back, no focus or key trapping,
-  // and nothing closes.
-  embedded?: boolean;
-  setShow?: (show: boolean) => void;
-  // May return the flow it continues, so a kept-open close can recover when
-  // that flow fails.
-  onComplete?: () => void | Promise<unknown>;
   // The toolbar exposes a single Continue action (label varies by
   // `envelope_action`) that calls this to finalize the reviewed envelopes.
   onFinalize?: (params: {
@@ -248,6 +243,24 @@ interface DocumentViewerProps {
   // documents (regenerate, tab switch); null once unmounted.
   onBeforeReplaceReady?: (save: (() => Promise<unknown>) | null) => void;
 }
+
+type DocumentViewerProps = DocumentViewerBaseProps &
+  (
+    | {
+        // Renders inline in a Document Editor container instead of as a
+        // modal: no portal, Back, focus or key trapping, and nothing closes.
+        embedded: true;
+        setShow?: never;
+        onComplete?: never;
+      }
+    | {
+        embedded?: false;
+        setShow: (show: boolean) => void;
+        // May return the flow it continues, so a kept-open close can recover
+        // when that flow fails.
+        onComplete: () => void | Promise<unknown>;
+      }
+  );
 
 export default function DocumentViewer({
   payload,
@@ -334,7 +347,12 @@ export default function DocumentViewer({
     scrollContainerRef,
     pageOrder
   );
-  const isNarrow = useIsNarrowViewport(embedded ? containerRef : undefined);
+  const viewportIsNarrow = useIsNarrowViewport();
+  // Embedded, the viewer's own box decides; unmeasured, it starts collapsed.
+  const { width: embeddedWidth } = useElementSize(containerRef);
+  const isNarrow = embedded
+    ? (embeddedWidth ?? 0) <= COLLAPSE_BREAKPOINT
+    : viewportIsNarrow;
   const pageEntriesRef = useRef(pageEntries);
   pageEntriesRef.current = pageEntries;
   const activeKeyRef = useRef(activeKey);
@@ -375,8 +393,7 @@ export default function DocumentViewer({
   }, []);
 
   useEffect(() => {
-    // An embedded viewer is part of the page: it takes no focus and owns no
-    // keys.
+    // An embedded viewer is part of the page: it takes no focus or keys.
     if (embedded) return undefined;
     // Restore focus to whatever was focused before the viewer opened when it
     // closes, so keyboard/SR users don't get dropped onto <body>.
@@ -446,9 +463,13 @@ export default function DocumentViewer({
   // Docs whose pdf.js storage changed since the last save (modified flag).
   // pdf.js also writes storage while rendering, so this alone isn't an edit.
   const dirtyDocs = useRef<Set<string>>(new Set());
-  // Docs the filler edited since the last save. Only these are saved, and
+  // Docs the filler edited since the last save; only these are saved, and
   // they alone drive the host's leave prompt.
   const editedDocs = useRef<Set<string>>(new Set());
+  // Per-doc edit count, so a save settles only the edits it captured.
+  const editCounts = useRef<Record<string, number>>({});
+  // The running save, which a later caller waits on rather than overlapping.
+  const pendingSave = useRef<Promise<void> | null>(null);
   // Read by the once-bound storage callbacks below.
   const onDirtyChangeRef = useRef(onDirtyChange);
   onDirtyChangeRef.current = onDirtyChange;
@@ -485,52 +506,69 @@ export default function DocumentViewer({
   }, []);
 
   // Write each edited document's field values into its PDF (pdf.js
-  // saveDocument serializes annotationStorage into the AcroForm) and persist
-  // it to the envelope, so every finalize outcome acts on what the filler sees.
-  const saveEditedDocuments = async () => {
-    if (!onSaveEnvelopeFile || readOnly) return;
+  // saveDocument serializes annotationStorage) and persist it to the envelope.
+  const saveDocuments = async (
+    persist: NonNullable<typeof onSaveEnvelopeFile>
+  ) => {
     for (const doc of payload.documents) {
-      if (!doc.envelope_id || !editedDocs.current.has(doc.pdf_url)) continue;
-      const pdfProxy = loadedDocs.current[doc.pdf_url];
+      const url = doc.pdf_url;
+      if (!doc.envelope_id || !editedDocs.current.has(url)) continue;
+      const pdfProxy = loadedDocs.current[url];
       if (!pdfProxy) continue;
-      // An edit that never reached storage (typed then reverted) has nothing
-      // to save, but is settled all the same.
-      if (dirtyDocs.current.has(doc.pdf_url)) {
+      const captured = editCounts.current[url] ?? 0;
+      // An edit event that left storage unchanged has nothing to save.
+      if (dirtyDocs.current.has(url)) {
         try {
           const bytes = await pdfProxy.saveDocument();
-          await onSaveEnvelopeFile(
+          await persist(
             doc.envelope_id,
             new Blob([bytes], { type: 'application/pdf' })
           );
         } catch (e) {
-          // saveDocument() resets the modified flag even when it rejects, so
-          // re-mark the doc for the retry to re-save it.
-          dirtyDocs.current.add(doc.pdf_url);
-          onDirtyChangeRef.current?.(true);
+          // saveDocument() resets the modified flag even when it rejects.
+          dirtyDocs.current.add(url);
           throw e;
         }
       }
-      editedDocs.current.delete(doc.pdf_url);
+      if ((editCounts.current[url] ?? 0) === captured) {
+        editedDocs.current.delete(url);
+      } else {
+        // Edited mid-save, which the reset flag now hides: save it next time.
+        dirtyDocs.current.add(url);
+      }
     }
-    onDirtyChangeRef.current?.(editedDocs.current.size > 0);
   };
 
-  // The host re-saves through this before replacing the documents, so its
-  // regenerate or tab switch doesn't drop edits (and aborts if the save fails).
+  const saveEditedDocuments = async () => {
+    if (!onSaveEnvelopeFile || readOnly) return;
+    const previous = pendingSave.current;
+    const save = (async () => {
+      await previous?.catch(() => undefined);
+      await saveDocuments(onSaveEnvelopeFile);
+    })();
+    pendingSave.current = save;
+    try {
+      await save;
+    } finally {
+      if (pendingSave.current === save) pendingSave.current = null;
+      onDirtyChangeRef.current?.(editedDocs.current.size > 0);
+    }
+  };
+
+  // The host saves through this before replacing the documents (regenerate or
+  // tab switch), and aborts the replace if the save fails.
   const saveEditedDocumentsRef = useRef(saveEditedDocuments);
   saveEditedDocumentsRef.current = saveEditedDocuments;
   useEffect(() => {
     onBeforeReplaceReady?.(() => saveEditedDocumentsRef.current());
-    return () => {
-      onBeforeReplaceReady?.(null);
-      // Unsaved edits die with this viewer; don't leave the host's leave
-      // prompt guarding them.
-      onDirtyChangeRef.current?.(false);
-    };
+    return () => onBeforeReplaceReady?.(null);
   }, [onBeforeReplaceReady]);
+  // Unsaved edits die with this viewer, so release the host's leave prompt.
+  useEffect(() => () => onDirtyChangeRef.current?.(false), []);
 
   const onUserEdit = useCallback((pdfUrl: string) => {
     editedDocs.current.add(pdfUrl);
+    editCounts.current[pdfUrl] = (editCounts.current[pdfUrl] ?? 0) + 1;
     setSession((s) => ({ ...s, editRevision: s.editRevision + 1 }));
     onDirtyChangeRef.current?.(true);
   }, []);
@@ -552,13 +590,8 @@ export default function DocumentViewer({
     el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth' });
   }, []);
 
-  // The toolbar is configured on the action: `editor_toolbar_actions` lists
-  // which outcomes the filler may choose. Each button finalizes with its own
-  // envelope action, so one editor session can offer e.g. Sign and Download.
-  // An unconfigured editor still gets a way forward: Continue finalizes with
-  // `fill`, which just returns the generated files and resumes the flow.
-  // Embedded, nothing is left to resume, so the same button reads Save: the
-  // edits are persisted before any finalize runs.
+  // Each `editor_toolbar_actions` button finalizes with its own action. With
+  // none, Continue (Save when embedded, after persisting edits) uses `fill`.
   const configuredToolbarActions: EditorToolbarAction[] = (
     action.editor_toolbar_actions ?? []
   ).filter((a: string) =>
@@ -707,7 +740,15 @@ export default function DocumentViewer({
     return (
       <div
         ref={containerRef}
-        css={{ ...surfaceCss, width: '100%', height: '100%', minHeight: 0 }}
+        css={{
+          ...surfaceCss,
+          width: '100%',
+          height: '100%',
+          minHeight: 0,
+          // Keeps the sidebar drawer's z-index inside the container.
+          position: 'relative',
+          isolation: 'isolate'
+        }}
       >
         {content}
       </div>

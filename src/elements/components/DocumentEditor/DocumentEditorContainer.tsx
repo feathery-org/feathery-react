@@ -509,11 +509,8 @@ export default function DocumentEditorContainer({
     async (draft: boolean) => {
       if (!envelope) return;
       let finalized: Record<string, any> | undefined;
-      // Both backends need a PDF carrying signature fields, and generation
-      // skipped that conversion to keep the docx editable. One-way: this draft
-      // stops being editable. Throws so nothing is sent unfinalized. It's also
-      // what hands back the signer to open as. A PDF needs no conversion, but
-      // its signer rows were held back at generation too.
+      // Builds the signer rows generation held back (and converts a docx to
+      // PDF). One-way, and throws so nothing is sent unfinalized.
       if (
         (envelope.type === 'docx' || envelope.type === 'pdf') &&
         !envelope.signed
@@ -732,8 +729,8 @@ export default function DocumentEditorContainer({
     },
     [runSigningAction, fireReviewAction, targetAction, writeBackFields]
   );
-  // Create Draft needs DocuSign (as in containerToolbarOutcomes). Once
-  // finalized this session the document is out: read-only, Sign kept to retry.
+  // Create Draft needs DocuSign, as in containerToolbarOutcomes. Once
+  // finalized the document is read-only, with Sign kept to retry a send.
   const pdfAction = useMemo(() => {
     const base = targetAction ?? {};
     const toolbar: string[] = base.editor_toolbar_actions ?? [];
@@ -742,9 +739,9 @@ export default function DocumentEditorContainer({
       editor_toolbar_actions: toolbar.filter(
         (a) => a !== 'draft' || base.sign_method === 'docusign'
       ),
-      ...(finalized ? { editor_read_only: true } : {})
+      editor_read_only: readOnly
     };
-  }, [targetAction, finalized]);
+  }, [targetAction, readOnly]);
   const pdfPayload = useMemo<DocumentViewerPayload | null>(
     () =>
       envelopeId && sourceUrl

@@ -9,7 +9,7 @@ import DocumentViewer, {
   recordAttempt,
   ReviewSession
 } from './index';
-import { featheryDoc } from '../../../utils/browser';
+import { featheryDoc, featheryWindow } from '../../../utils/browser';
 
 // The viewer lazily loads pdf.js via this module; keep it pending so
 // DocumentCanvas just shows its loading skeleton — these tests only care
@@ -527,6 +527,7 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       fireEvent.click(button('Back'));
 
       expect(onComplete).toHaveBeenCalledTimes(1);
+      expect(setShow).not.toHaveBeenCalled();
     });
   });
 
@@ -544,9 +545,40 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
       expect(screen.queryByText('Review Your Forms')).toBeNull();
       expect(container.firstChild).toBeTruthy();
-      expect(container.hasAttribute('inert')).toBe(false);
+      // The overlay makes the page behind it inert; inline, nothing is.
+      expect(featheryDoc().querySelector('[inert]')).toBeNull();
       // No review session to expire.
       expect(screen.queryByText(/session has expired/)).toBeNull();
+    });
+
+    it('collapses the sidebar by its own width, not the window', () => {
+      const rect = jest
+        .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+        .mockReturnValue({ width: 600, height: 800 } as DOMRect);
+      // A wide window must not expand the sidebar inside a narrow container.
+      const win = featheryWindow() as any;
+      const matchMedia = win.matchMedia;
+      win.matchMedia = jest.fn().mockReturnValue({
+        matches: false,
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn()
+      }) as any;
+      try {
+        render(
+          <DocumentViewer
+            embedded
+            payload={{ documents: basePayload.documents }}
+            action={{}}
+          />
+        );
+
+        expect(
+          screen.getByRole('button', { name: 'Show sidebar' })
+        ).toBeInTheDocument();
+      } finally {
+        win.matchMedia = matchMedia;
+        rect.mockRestore();
+      }
     });
 
     it('offers Save, not Continue, for an unconfigured toolbar', async () => {
@@ -576,7 +608,8 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
           embedded
           payload={{ documents: basePayload.documents }}
           action={{}}
-          setShow={setShow}
+          // A host that passes one anyway must still never be closed.
+          {...({ setShow } as any)}
         />
       );
 

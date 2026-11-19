@@ -218,7 +218,7 @@ it('destroys loaded documents on unmount and when an attachment is removed', asy
   }));
   loadPdfjs.mockResolvedValue({
     getDocument,
-    AnnotationMode: { ENABLE_FORMS: 2, ENABLE: 1 },
+    AnnotationMode: { ENABLE_FORMS: 2, ENABLE: 1, ENABLE_STORAGE: 3 },
     AnnotationLayer: class {
       render() {
         return Promise.resolve();
@@ -241,4 +241,48 @@ it('destroys loaded documents on unmount and when an attachment is removed', asy
   unmount();
   await waitFor(() => expect(destroy).toHaveBeenCalledTimes(2));
   expect(cleanup).toHaveBeenCalled();
+});
+
+it('paints a read-only page from storage, keeping the values the filler entered', async () => {
+  const getContext = jest
+    .spyOn(HTMLCanvasElement.prototype, 'getContext')
+    .mockReturnValue({} as any);
+  const renderPage = jest.fn(() => ({
+    promise: Promise.resolve(),
+    cancel: () => undefined
+  }));
+  const page = {
+    getViewport: () => ({
+      width: 600,
+      height: 800,
+      scale: 1,
+      clone: () => ({ width: 600, height: 800, scale: 1 })
+    }),
+    getAnnotations: async () => [],
+    render: renderPage
+  };
+  loadPdfjs.mockResolvedValue({
+    getDocument: () => ({
+      promise: Promise.resolve({
+        numPages: 1,
+        annotationStorage: { getAll: () => ({}) },
+        getPage: async () => page
+      })
+    }),
+    AnnotationMode: { ENABLE: 1, ENABLE_FORMS: 2, ENABLE_STORAGE: 3 },
+    AnnotationLayer: class {
+      render() {
+        return Promise.resolve();
+      }
+    }
+  });
+
+  render(<DocumentCanvas {...baseProps} readOnly />);
+
+  await waitFor(() =>
+    expect(renderPage).toHaveBeenCalledWith(
+      expect.objectContaining({ annotationMode: 3 })
+    )
+  );
+  getContext.mockRestore();
 });

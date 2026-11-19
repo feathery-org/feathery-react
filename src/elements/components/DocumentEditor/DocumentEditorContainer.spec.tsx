@@ -2,6 +2,7 @@ import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { fieldValues, initState } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
+import * as browser from '../../../utils/browser';
 import { featheryWindow } from '../../../utils/browser';
 import { setFormInternalState } from '../../../utils/internalState';
 import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
@@ -251,10 +252,10 @@ const mockFinalizeEnvelope = jest.fn();
 const mockGetCurrentEnvelope = jest.fn().mockResolvedValue({});
 const mockFinalizeEnvelopeReview = jest.fn();
 const mockSaveEnvelopeFile = jest.fn().mockResolvedValue({});
-const mockSubmitCustom = jest.fn().mockResolvedValue(undefined);
 const mockRestoreEnvelopeVersion = jest
   .fn()
   .mockResolvedValue({ id: 'e', file: 'restored.docx', editor_file: null });
+const mockSubmitCustom = jest.fn().mockResolvedValue({});
 jest.mock('../../../utils/featheryClient', () => ({
   __esModule: true,
   API_URL: 'https://api.test/',
@@ -340,10 +341,7 @@ describe('DocumentEditorContainer lifecycle', () => {
 
   describe('dirty state tracking', () => {
     beforeEach(() => _clearDocxDirtyRegistry());
-    afterEach(() => {
-      _clearDocxDirtyRegistry();
-      delete (initState as any).sdkKey;
-    });
+    afterEach(() => _clearDocxDirtyRegistry());
 
     const url = 'https://example.com/document-container-a.docx';
 
@@ -1245,7 +1243,28 @@ describe('DocumentEditorContainer signing outcomes', () => {
     afterEach(() => {
       _clearDocxDirtyRegistry();
       delete (initState as any).sdkKey;
+      delete fieldValues.saved_doc;
     });
+
+    const regenerate = () =>
+      act(async () => {
+        featheryWindow().dispatchEvent(
+          new CustomEvent('feathery-docx-editor-refresh', {
+            detail: {
+              containerId: CONTAINER,
+              documents: [`document-${CONTAINER}`],
+              envelopes: [
+                {
+                  id: 'replacement',
+                  document: `document-${CONTAINER}`,
+                  file: 'https://x/replacement.pdf',
+                  type: 'pdf'
+                }
+              ]
+            }
+          })
+        );
+      });
 
     it('opens in the embedded PDF viewer without polling', async () => {
       seedPdf();
@@ -1292,9 +1311,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
     });
 
     it('saves edits to the envelope and the saved file to the field', async () => {
-      mockSaveEnvelopeFile
-        .mockReset()
-        .mockResolvedValue({ file: 'https://x/edited.pdf' });
+      mockSaveEnvelopeFile.mockClear().mockResolvedValueOnce({
+        file: 'https://x/edited.pdf'
+      });
       // Writing the field rerenders every form, which needs an SDK key.
       initState.sdkKey = 'sdk-key';
       seedPdf({
@@ -1341,25 +1360,11 @@ describe('DocumentEditorContainer signing outcomes', () => {
       );
       mockPdfBeforeReplace.mockClear();
 
-      await act(async () => {
-        featheryWindow().dispatchEvent(
-          new CustomEvent('feathery-docx-editor-refresh', {
-            detail: {
-              containerId: CONTAINER,
-              documents: [`document-${CONTAINER}`],
-              envelopes: [
-                {
-                  id: 'replacement',
-                  document: `document-${CONTAINER}`,
-                  file: 'https://x/replacement.pdf',
-                  type: 'pdf'
-                }
-              ]
-            }
-          })
-        );
-      });
+      await regenerate();
 
+      await waitFor(() =>
+        expect(getByTestId('pdf-viewer:https://x/replacement.pdf')).toBeTruthy()
+      );
       expect(mockPdfBeforeReplace).toHaveBeenCalledTimes(1);
     });
 
@@ -1369,41 +1374,115 @@ describe('DocumentEditorContainer signing outcomes', () => {
       await waitFor(() =>
         expect(getByTestId(`pdf-viewer:${PDF}`)).toBeTruthy()
       );
-      mockPdfBeforeReplace.mockRejectedValueOnce(new Error('save failed'));
+      mockPdfBeforeReplace.mockClear();
+      let failSave: (error: Error) => void = () => undefined;
+      mockPdfBeforeReplace.mockReturnValueOnce(
+        new Promise((resolve, reject) => {
+          failSave = reject;
+        })
+      );
 
-      await act(async () => {
-        featheryWindow().dispatchEvent(
-          new CustomEvent('feathery-docx-editor-refresh', {
-            detail: {
-              containerId: CONTAINER,
-              documents: [`document-${CONTAINER}`],
-              envelopes: [
-                {
-                  id: 'replacement',
-                  document: `document-${CONTAINER}`,
-                  file: 'https://x/replacement.pdf',
-                  type: 'pdf'
-                }
-              ]
-            }
-          })
-        );
-      });
+      await regenerate();
+      expect(mockPdfBeforeReplace).toHaveBeenCalledTimes(1);
+      // The swap waits on the save, so its failure is what keeps the document.
+      await act(async () => failSave(new Error('save failed')));
 
       expect(getByTestId(`pdf-viewer:${PDF}`)).toBeTruthy();
       expect(queryByTestId('pdf-viewer:https://x/replacement.pdf')).toBeNull();
     });
 
-    it('offers Create Draft only for DocuSign', async () => {
-      seedPdf({ editor_toolbar_actions: ['draft', 'download'] });
+    it.each([
+      ['feathery', 'sign'],
+      ['docusign', 'sign,draft']
+    ])(
+      'offers Create Draft only for DocuSign (%s)',
+      async (method, toolbar) => {
+        seedPdf({
+          sign_method: method,
+          editor_toolbar_actions: ['sign', 'draft']
+        });
+        const { getByTestId } = mount();
+
+        await waitFor(() =>
+          expect(getByTestId(`pdf-viewer:${PDF}`)).toHaveAttribute(
+            'data-toolbar',
+            toolbar
+          )
+        );
+      }
+    );
+
+    it('saves the current file to the field and fires the review logic', async () => {
+      const runDocumentReviewLogic = jest.fn();
+      setFormInternalState('form-1', {
+        showEnvelopeOutcome,
+        runDocumentReviewLogic
+      });
+      initState.sdkKey = 'sdk-key';
+      seedPdf({
+        editor_toolbar_actions: ['save'],
+        save_document_field_key: 'saved_doc'
+      });
       const { getByTestId } = mount();
+      await waitFor(() => expect(getByTestId('pdf-save')).toBeTruthy());
+
+      await act(async () => {
+        getByTestId('pdf-save').click();
+      });
+
+      expect(mockSubmitCustom).toHaveBeenCalledWith({ saved_doc: PDF });
+      await waitFor(() => expect(runDocumentReviewLogic).toHaveBeenCalled());
+      expect(runDocumentReviewLogic.mock.calls[0][0].action).toBe('save');
+    });
+
+    it('downloads the current file and fires the review logic', async () => {
+      const download = jest
+        .spyOn(browser, 'downloadAllFileUrls')
+        .mockResolvedValue(undefined as any);
+      const runDocumentReviewLogic = jest.fn();
+      setFormInternalState('form-1', {
+        showEnvelopeOutcome,
+        runDocumentReviewLogic
+      });
+      seedPdf({ editor_toolbar_actions: ['download'] });
+      const { getByTestId } = mount();
+      await waitFor(() => expect(getByTestId('pdf-download')).toBeTruthy());
+
+      await act(async () => {
+        getByTestId('pdf-download').click();
+      });
+
+      await waitFor(() => expect(runDocumentReviewLogic).toHaveBeenCalled());
+      expect(download).toHaveBeenCalledWith([PDF]);
+      expect(runDocumentReviewLogic.mock.calls[0][0].action).toBe('download');
+      download.mockRestore();
+    });
+
+    it('turns read-only once finalized, keeping Sign to retry the send', async () => {
+      mockFinalizeEnvelope.mockResolvedValue({
+        id: `envelope-${CONTAINER}`,
+        file: PDF,
+        type: 'pdf',
+        signed: false,
+        signer_id: null,
+        invited: false
+      });
+      seedPdf();
+      const { getByTestId } = mount();
+      await waitFor(() => expect(getByTestId('pdf-sign')).toBeTruthy());
+
+      await act(async () => {
+        getByTestId('pdf-sign').click();
+      });
 
       await waitFor(() =>
         expect(getByTestId(`pdf-viewer:${PDF}`)).toHaveAttribute(
-          'data-toolbar',
-          'download'
+          'data-read-only',
+          'true'
         )
       );
+      const viewer = getByTestId(`pdf-viewer:${PDF}`);
+      expect(viewer).toHaveAttribute('data-toolbar', 'sign');
     });
 
     it('shows read-only when finalized in an earlier session', async () => {

@@ -416,9 +416,9 @@ function PdfPage({
             // layer below, seeded from each field's /V. The default (ENABLE)
             // would paint them onto the canvas too, doubling prefilled values
             // under the inputs. A read-only page skips the form layer, so the
-            // widget appearances have to come from the canvas instead.
+            // canvas paints the widgets, from storage to keep the filler's values.
             annotationMode: readOnly
-              ? pdfjs.AnnotationMode.ENABLE
+              ? pdfjs.AnnotationMode.ENABLE_STORAGE
               : pdfjs.AnnotationMode.ENABLE_FORMS
           });
           try {

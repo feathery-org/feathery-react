@@ -9,10 +9,8 @@ import {
 import DocumentViewer from './index';
 import { featheryDoc } from '../../../utils/browser';
 
-// Fillable-field persistence: the viewer renders the PDF's own AcroForm
-// widgets (DocumentCanvas), and any edits — tracked through pdf.js's
-// annotationStorage modified flag — must be saved back to the envelope
-// before finalize runs, so every outcome acts on the edited file.
+// Fillable-field persistence: the filler's edits to the PDF's own AcroForm
+// widgets are saved to the envelope before finalize runs.
 
 jest.mock('./pdfjsLoader', () => ({
   loadPdfjs: jest.fn(),
@@ -83,7 +81,7 @@ const setupPdfjs = (proxies: Record<string, any>) => {
     getDocument: ({ url }: { url: string }) => ({
       promise: Promise.resolve(proxies[url])
     }),
-    AnnotationMode: { ENABLE: 1, ENABLE_FORMS: 2 },
+    AnnotationMode: { ENABLE: 1, ENABLE_FORMS: 2, ENABLE_STORAGE: 3 },
     AnnotationLayer
   });
 };
@@ -169,7 +167,7 @@ it('does not save a document that only pdf.js wrote while rendering', async () =
   expect(onDirtyChange).not.toHaveBeenCalledWith(true);
 });
 
-it('clears the dirty state for an edit that never reached storage', async () => {
+it('clears the dirty state for an edit event that left storage unchanged', async () => {
   const proxyA = makePdfProxy();
   const proxyB = makePdfProxy();
   const onDirtyChange = jest.fn();
@@ -179,7 +177,7 @@ it('clears the dirty state for an edit that never reached storage', async () => 
   );
   await waitForLoad(proxyA, proxyB);
 
-  // Typed then reverted: an input event, but storage ends unchanged.
+  // A change event the widget's storage listener never saw.
   await waitFor(() => expect(widgetOf('http://x/a.pdf')).not.toBeNull());
   fireEvent.change(widgetOf('http://x/a.pdf') as Element);
   expect(onDirtyChange).toHaveBeenLastCalledWith(true);
@@ -309,6 +307,42 @@ it('hands the host a save that rejects and stays dirty when it fails', async () 
   expect(onDirtyChange).toHaveBeenLastCalledWith(true);
 
   await beforeReplace();
+  expect(onSaveEnvelopeFile).toHaveBeenCalledTimes(2);
+  expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+});
+
+it('queues a second save behind the first and keeps an edit made mid-save', async () => {
+  const proxyA = makePdfProxy();
+  const proxyB = makePdfProxy();
+  let beforeReplace: () => Promise<unknown> = async () => undefined;
+  const onDirtyChange = jest.fn();
+  const { onSaveEnvelopeFile } = renderViewer(
+    { 'http://x/a.pdf': proxyA, 'http://x/b.pdf': proxyB },
+    {
+      onDirtyChange,
+      onBeforeReplaceReady: (save: any) => {
+        if (save) beforeReplace = save;
+      }
+    }
+  );
+  await waitForLoad(proxyA, proxyB);
+  await editDocument('http://x/a.pdf');
+  let finishUpload: () => void = () => undefined;
+  onSaveEnvelopeFile.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishUpload = () => resolve({ id: 'env-1' });
+      })
+  );
+
+  const first = beforeReplace();
+  await waitFor(() => expect(onSaveEnvelopeFile).toHaveBeenCalledTimes(1));
+  // pdf.js already flagged the doc modified, so this edit fires no storage hook.
+  fireEvent.change(widgetOf('http://x/a.pdf') as Element);
+  const second = beforeReplace();
+  finishUpload();
+  await Promise.all([first, second]);
+
   expect(onSaveEnvelopeFile).toHaveBeenCalledTimes(2);
   expect(onDirtyChange).toHaveBeenLastCalledWith(false);
 });
