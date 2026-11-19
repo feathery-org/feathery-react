@@ -59,7 +59,11 @@ export default function PageThumbnails({
                 ref={(el) => {
                   buttonRefs.current[key] = el;
                 }}
-                aria-label={`Go to page ${pageNumber}`}
+                aria-label={
+                  doc.pdf_url
+                    ? `Go to page ${pageNumber}`
+                    : `Go to ${documentName(doc)}`
+                }
                 aria-current={isActive ? 'true' : undefined}
                 onClick={() => onNavigate(url, pageIndex)}
                 css={{

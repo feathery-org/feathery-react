@@ -425,3 +425,88 @@ it.each([
     );
   }
 );
+
+describe('the review screen with attachments allowed', () => {
+  const action = {
+    documents: ['tpl-1'],
+    envelope_action: 'open_in_editor',
+    editor_toolbar_actions: ['download'],
+    editor_allow_attachments: true
+  };
+  const packet = (name: string, expiresAt: string) => ({
+    documents: [
+      { type: 'form', pdf_url: 'http://x/a.pdf', envelope_id: 'env-1', name },
+      {
+        type: 'attachment',
+        envelope_id: 'att-1',
+        name: 'bundle',
+        file_name: 'bundle.zip',
+        file_url: 'http://x/bundle.zip'
+      }
+    ],
+    expires_at: expiresAt
+  });
+
+  const openReview = async (id: string) => {
+    render(<JSForm formId='f1' _internalId={id} />);
+    await screen.findByTestId('btn');
+    const state = (setFormInternalState as jest.Mock).mock.calls.find(
+      ([formId, values]) => formId === id && values.generateEnvelopeFlow
+    )[1];
+    state.client.generateEnvelopes = jest
+      .fn()
+      .mockResolvedValue(packet('First', '2999-01-01T00:00:00Z'));
+    state.client.uploadReviewAttachment = jest.fn().mockResolvedValue({
+      type: 'attachment',
+      envelope_id: 'att-2',
+      name: 'notes',
+      file_name: 'notes.zip',
+      file_url: 'http://x/notes.zip'
+    });
+    state.client.removeReviewAttachment = jest.fn().mockResolvedValue(undefined);
+    await act(async () => {
+      state.generateEnvelopeFlow!(action);
+    });
+    await screen.findByRole('button', { name: 'Add attachment' });
+    return state;
+  };
+
+  it('uploads and removes attachments through the client', async () => {
+    const state = await openReview('attachments-wiring');
+
+    fireEvent.change(screen.getByTestId('attachment-input'), {
+      target: { files: [new File(['x'], 'notes.zip')] }
+    });
+    await screen.findByRole('button', { name: 'Remove notes' });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove bundle' }));
+
+    await waitFor(() =>
+      expect(state.client.removeReviewAttachment).toHaveBeenCalledWith('att-1')
+    );
+    expect(state.client.uploadReviewAttachment).toHaveBeenCalledWith(
+      expect.any(File)
+    );
+  });
+
+  it('starts a new packet with its own documents', async () => {
+    const state = await openReview('attachments-new-packet');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove bundle' }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'Remove bundle' })
+      ).not.toBeInTheDocument()
+    );
+
+    state.client.generateEnvelopes.mockResolvedValue(
+      packet('Second', '2999-01-02T00:00:00Z')
+    );
+    await act(async () => {
+      state.generateEnvelopeFlow!(action);
+    });
+
+    expect(await screen.findByRole('button', { name: 'Second' })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Remove bundle' })
+    ).toBeInTheDocument();
+  });
+});

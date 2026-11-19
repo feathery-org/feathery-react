@@ -919,9 +919,16 @@ describe('IntegrationClient', () => {
         editor_allow_attachments: true
       });
       await integrationClient.generateEnvelopes(action);
+      // A container editor never offers attachments, whatever the flag says.
+      await integrationClient.generateEnvelopes({
+        ...action,
+        editor_mode: 'container-1',
+        editor_allow_attachments: true
+      });
 
       expect(requestBody(0).editor_allow_attachments).toBe(true);
       expect(requestBody(1)).not.toHaveProperty('editor_allow_attachments');
+      expect(requestBody(2)).not.toHaveProperty('editor_allow_attachments');
     });
 
     it('marks a builder preview so the backend reads the unpublished gate', async () => {
@@ -1501,16 +1508,18 @@ describe('IntegrationClient', () => {
     const baseAction = { form_key: 'test_form_key' };
 
     it.each([
-      [400, true],
-      [429, true],
-      [500, false]
+      [400, 'x', true],
+      [429, 'x', true],
+      [408, 'x', false],
+      [400, 'finalize_failed', false],
+      [500, 'x', false]
     ])(
-      'flags a %s as refused before any send: %s',
-      async (status, rejected) => {
+      'flags a %s (%s) as refused before any send: %s',
+      async (status, code, rejected) => {
         global.fetch.mockResolvedValue({
           ok: false,
           status,
-          json: jest.fn().mockResolvedValue([{ message: 'No', code: 'x' }])
+          json: jest.fn().mockResolvedValue([{ message: 'No', code }])
         });
 
         const result = await new IntegrationClient(
@@ -1521,6 +1530,42 @@ describe('IntegrationClient', () => {
         });
 
         expect(result.status).toBe('error');
+        expect(!!result.rejected).toBe(rejected);
+      }
+    );
+
+    it.each([
+      ['x', true],
+      ['finalize_failed', false]
+    ])(
+      'flags an async finalize the poll reports as failed with %s as refused: %s',
+      async (code, rejected) => {
+        const integrationClient = new IntegrationClient('test_form_key');
+        integrationClient.FINALIZE_CHECK_INTERVAL = 1;
+        integrationClient.FINALIZE_MAX_TIME = 20;
+        global.fetch
+          .mockResolvedValueOnce({
+            ok: true,
+            status: 201,
+            json: jest.fn().mockResolvedValue({})
+          })
+          .mockResolvedValueOnce({
+            ok: false,
+            status: 400,
+            json: jest
+              .fn()
+              .mockResolvedValue([
+                { message: 'An attachment was removed.', code }
+              ])
+          });
+
+        const result = await integrationClient.finalizeEnvelopeReview(
+          { ...baseAction, run_async: true },
+          { envelopes: [{ envelopeId: 'env-1' }], envelopeAction: 'sign' }
+        );
+
+        expect(result.status).toBe('error');
+        expect(result.message).toBe('An attachment was removed.');
         expect(!!result.rejected).toBe(rejected);
       }
     );
@@ -2184,6 +2229,32 @@ describe('IntegrationClient', () => {
     it('leaves a live upload unmarked', async () => {
       await upload(false);
       expect(uploadedForm().has('form_draft')).toBe(false);
+    });
+
+    it('rejects a response that names no envelope', async () => {
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({})
+      });
+
+      await expect(
+        new IntegrationClient('test_form_key').uploadReviewAttachment(
+          new File(['x'], 'a.pdf')
+        )
+      ).rejects.toThrow('Upload failed');
+    });
+
+    it('asks the filler to check their connection when the upload cannot reach the server', async () => {
+      global.fetch.mockRejectedValue(new TypeError('Failed to fetch'));
+
+      await expect(
+        new IntegrationClient('test_form_key').uploadReviewAttachment(
+          new File(['x'], 'a.pdf')
+        )
+      ).rejects.toThrow(
+        'The upload failed. Check your connection and try again.'
+      );
     });
   });
   describe('removeReviewAttachment', () => {

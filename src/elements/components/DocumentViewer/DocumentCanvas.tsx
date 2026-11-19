@@ -113,9 +113,12 @@ export default function DocumentCanvas({
             }).promise
         )
         .then((pdfProxy: any) => {
-          // Superseded while loading (remount/unmount): this proxy will never
-          // be rendered, so destroy it rather than leaking it.
-          if (generationRef.current !== generation) {
+          // Superseded while loading (remount/unmount, or the attachment was
+          // removed): it will never be rendered, so destroy it, not leak it.
+          if (
+            generationRef.current !== generation ||
+            !loadedRef.current.has(pdfUrl)
+          ) {
             destroyDoc(pdfProxy);
             return;
           }

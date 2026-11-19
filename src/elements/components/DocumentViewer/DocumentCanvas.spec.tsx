@@ -242,3 +242,29 @@ it('destroys loaded documents on unmount and when an attachment is removed', asy
   await waitFor(() => expect(destroy).toHaveBeenCalledTimes(2));
   expect(cleanup).toHaveBeenCalled();
 });
+
+it('destroys a document removed while it was still loading', async () => {
+  const destroy = jest.fn();
+  let finishLoad: (proxy: any) => void = () => {};
+  loadPdfjs.mockResolvedValue({
+    getDocument: () => ({
+      promise: new Promise((resolve) => {
+        finishLoad = resolve;
+      })
+    })
+  });
+  const docA = { type: 'form' as const, pdf_url: 'http://x/a.pdf' };
+  const onDocLoad = jest.fn();
+
+  const { rerender } = render(
+    <DocumentCanvas {...baseProps} onDocLoad={onDocLoad} documents={[docA]} />
+  );
+  await waitFor(() => expect(loadPdfjs).toHaveBeenCalled());
+  rerender(
+    <DocumentCanvas {...baseProps} onDocLoad={onDocLoad} documents={[]} />
+  );
+  finishLoad({ numPages: 1, destroy });
+
+  await waitFor(() => expect(destroy).toHaveBeenCalledTimes(1));
+  expect(onDocLoad).not.toHaveBeenCalled();
+});
