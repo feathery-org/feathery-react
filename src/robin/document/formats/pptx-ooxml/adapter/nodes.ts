@@ -1,5 +1,5 @@
 import type { NfNode } from '../../../tree';
-import { clone } from '../../../tree';
+import { canonicalJson, clone } from '../../../tree';
 import { szToPt } from '../../../../../elements/components/PptxEditor/core/model/units';
 import {
   child,
@@ -110,8 +110,24 @@ function ownRunFormat(rPr: ONode | undefined): Record<string, unknown> {
   return out;
 }
 
-export const linkOf = (run: ONode) =>
-  child(child(run, 'a:rPr') ?? {}, 'a:hlinkClick');
+// A click link or an action alone puts a run in a link
+export const linkOf = (run: ONode) => {
+  const rPr = child(run, 'a:rPr') ?? {};
+  return child(rPr, 'a:hlinkClick') ?? child(rPr, 'a:hlinkMouseOver');
+};
+
+// Runs share a link by its relationship, an action alone by its own tag
+export const linkKey = (hlink: ONode) =>
+  (tagOf(hlink) === 'a:hlinkClick' && getAttr(hlink, 'r:id')) ||
+  canonicalJson(hlink);
+
+function linkTarget(hlink: ONode, links?: Record<string, string>): string {
+  const relationship = getAttr(hlink, 'r:id');
+  const target = relationship
+    ? links?.[relationship] ?? relationship
+    : getAttr(hlink, 'action') ?? '';
+  return tagOf(hlink) === 'a:hlinkMouseOver' ? `on hover: ${target}` : target;
+}
 
 export function runText(node: ONode): string {
   if (tagOf(node) === 'a:br') return '\n';
@@ -156,20 +172,19 @@ function readParagraph(
     .forEach((native, r) => {
       const run = readRun(native, `${id}r${r}`, read);
       const hlink = linkOf(native);
-      const relationship = hlink && getAttr(hlink, 'r:id');
-      if (!hlink || !relationship) {
+      if (!hlink) {
         link = linked = undefined;
         runs.push(run);
         return;
       }
-      if (!link || linked !== relationship) {
+      if (!link || linked !== linkKey(hlink)) {
         link = {
           id: `${id}l${r}`,
           kind: 'link',
-          target: read.links?.[relationship] ?? relationship,
+          target: linkTarget(hlink, read.links),
           runs: []
         };
-        linked = relationship;
+        linked = linkKey(hlink);
         read.residue[link.id] = clone(hlink);
         runs.push(link);
       }

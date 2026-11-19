@@ -1,5 +1,7 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
-import { createHost } from '../index';
+import { PptxEditorEngine } from '../../../../../elements/components/PptxEditor/engine/PptxEditorEngine';
+import { conformanceProblems } from '../../../pack';
+import { createHost, pptxPack } from '../index';
 import { serializeDeck } from '../native';
 import { fixture, openDeck, type WriteResult } from './harness';
 
@@ -102,7 +104,11 @@ describe('PowerPoint text', () => {
     const firstRun = (node: any): any =>
       node.kind === 'run'
         ? node
-        : [...(node.shapes ?? []), ...(node.paragraphs ?? []), ...(node.runs ?? [])]
+        : [
+            ...(node.shapes ?? []),
+            ...(node.paragraphs ?? []),
+            ...(node.runs ?? [])
+          ]
             .map(firstRun)
             .find(Boolean);
     const run = groups.map((id) => firstRun(deck.read(id))).find(Boolean);
@@ -112,7 +118,12 @@ describe('PowerPoint text', () => {
         intent: 'Rename the grouped label.',
         scope: { ids: [run.id] },
         changes: [
-          { kind: 'replace', id: run.id, base: deck.read(run.id).base, node: { ...deck.read(run.id), text: 'Renamed' } }
+          {
+            kind: 'replace',
+            id: run.id,
+            base: deck.read(run.id).base,
+            node: { ...deck.read(run.id), text: 'Renamed' }
+          }
         ]
       })
     );
@@ -121,7 +132,10 @@ describe('PowerPoint text', () => {
 
   it('bolds part of a run from a find hit, splitting it', () => {
     const deck = openDeck();
-    const hit = deck.find('Name')[0] as { id: string; span: { start: number; end: number } };
+    const hit = deck.find('Name')[0] as {
+      id: string;
+      span: { start: number; end: number };
+    };
     expectCard(
       deck.write({
         intent: 'Bold the word Name.',
@@ -177,16 +191,54 @@ describe('PowerPoint text', () => {
     expect(deck.read(run).underline).toBe(false);
   });
 
+  it.each([
+    ['no fill', '<a:noFill/>'],
+    [
+      'a gradient',
+      '<a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="00FF00"/></a:gs></a:gsLst></a:gradFill>'
+    ]
+  ])('colours text that had %s', (_, fill) => {
+    const files = unzipSync(fixture('marketing-parity.pptx'));
+    const slidePath = 'ppt/slides/slide1.xml';
+    files[slidePath] = strToU8(
+      strFromU8(files[slidePath]).replace(
+        '<a:rPr lang="en"/><a:t>Company Name',
+        `<a:rPr lang="en">${fill}</a:rPr><a:t>Company Name`
+      )
+    );
+    const deck = openDeck('marketing-parity.pptx', zipSync(files));
+    const { run, paragraph } = subtitle(deck);
+    expectCard(
+      deck.write({
+        intent: 'Colour the subtitle.',
+        scope: { ids: [paragraph] },
+        changes: [
+          {
+            kind: 'set',
+            target: { ids: [run], shape: { [run]: deck.read(run).shape } },
+            props: { color: '#FF00AA' }
+          }
+        ]
+      })
+    );
+    expect(deck.read(run).color).toBe('#FF00AA');
+  });
+
   it('reports formatting the layout gives a run as inherited', () => {
     const deck = openDeck();
     const { run } = subtitle(deck);
     const node = (
       deck.call('read', { ids: [run], properties: true }) as {
-        nodes: Array<{ properties: Record<string, { value: unknown; source: string }> }>;
+        nodes: Array<{
+          properties: Record<string, { value: unknown; source: string }>;
+        }>;
       }
     ).nodes[0];
     expect(node.properties.size).toEqual({ value: 12, source: 'container' });
-    expect(node.properties.underline).toEqual({ value: null, source: 'default' });
+    expect(node.properties.underline).toEqual({
+      value: null,
+      source: 'default'
+    });
   });
 
   it('keeps a heading its own formatting when its wording is rewritten', () => {
@@ -199,16 +251,20 @@ describe('PowerPoint text', () => {
       })
     );
     const [run] = deck.read(heading).runs as Array<Record<string, unknown>>;
-    expect(run).toEqual(expect.objectContaining({ text: 'Main obstacles', bold: true }));
+    expect(run).toEqual(
+      expect.objectContaining({ text: 'Main obstacles', bold: true })
+    );
   });
 
   it('leaves new text in an empty title to the formatting its layout gives it', () => {
     const deck = openDeck('sample.pptx');
     const outline = (deck.call('outline', {}) as { lines: string }).lines;
     const slide = outline.split('\n')[8].trim().split(' ')[0];
-    const title = (deck.read(slide).shapes as Array<Record<string, unknown>>).find(
-      (shape) => shape.placeholder === 'title'
-    ) as { paragraphs: Array<{ id: string }> };
+    const title = (
+      deck.read(slide).shapes as Array<Record<string, unknown>>
+    ).find((shape) => shape.placeholder === 'title') as {
+      paragraphs: Array<{ id: string }>;
+    };
     const paragraph = title.paragraphs[0].id;
     expectCard(
       replaceParagraph(deck, paragraph, {
@@ -254,7 +310,10 @@ describe('PowerPoint text', () => {
         changes: [
           {
             kind: 'set',
-            target: { ids: [footer], shape: { [footer]: deck.read(footer).shape } },
+            target: {
+              ids: [footer],
+              shape: { [footer]: deck.read(footer).shape }
+            },
             props: { bold: true }
           }
         ]
@@ -269,13 +328,24 @@ describe('PowerPoint text', () => {
     const original = JSON.parse(serializeDeck(deck.engine)).slides;
     const { run } = subtitle(deck);
     const rename = (text: string, turnId: string) => {
-      const paragraph = deck.find(text === 'Acme' ? 'Company Name' : 'Acme', turnId)[0].id;
-      const id = (deck.read(paragraph, turnId).runs as Array<{ id: string }>)[0].id;
+      const paragraph = deck.find(
+        text === 'Acme' ? 'Company Name' : 'Acme',
+        turnId
+      )[0].id;
+      const id = (deck.read(paragraph, turnId).runs as Array<{ id: string }>)[0]
+        .id;
       return deck.write(
         {
           intent: 'Rename the client.',
           scope: { ids: [id] },
-          changes: [{ kind: 'replace', id, base: deck.read(id, turnId).base, node: { text } }]
+          changes: [
+            {
+              kind: 'replace',
+              id,
+              base: deck.read(id, turnId).base,
+              node: { text }
+            }
+          ]
         },
         turnId
       );
@@ -297,7 +367,10 @@ describe('PowerPoint text', () => {
     expect(result).toEqual(
       expect.objectContaining({
         ok: false,
-        refusal: expect.objectContaining({ invariant: 'limits', read: ['limits'] })
+        refusal: expect.objectContaining({
+          invariant: 'limits',
+          read: ['limits']
+        })
       })
     );
     expect(deck.pending()).toHaveLength(0);
@@ -323,10 +396,7 @@ describe('PowerPoint text', () => {
       const relationship = (id: string, target: string) =>
         `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${target}" TargetMode="External"/>`;
       files[slidePath] = strToU8(
-        strFromU8(files[slidePath]).replace(
-          run('Company Name'),
-          subtitle
-        )
+        strFromU8(files[slidePath]).replace(run('Company Name'), subtitle)
       );
       files[rels] = strToU8(
         strFromU8(files[rels]).replace(
@@ -334,9 +404,10 @@ describe('PowerPoint text', () => {
           `${relationship('rIdA', A)}${relationship('rIdB', B)}</Relationships>`
         )
       );
-      const deck = openDeck('marketing-parity.pptx', zipSync(files));
+      const bytes = zipSync(files);
+      const deck = openDeck('marketing-parity.pptx', bytes);
       const paragraph = deck.find(text)[0].id;
-      return { deck, paragraph, node: deck.read(paragraph) };
+      return { deck, paragraph, node: deck.read(paragraph), bytes };
     };
     type Node = Record<string, any>;
     const savedSlide = (deck: ReturnType<typeof openDeck>) =>
@@ -354,7 +425,22 @@ describe('PowerPoint text', () => {
           xml.match(/<a:t>(.*?)<\/a:t>/)?.[1] ?? '',
           xml.match(/hlinkClick r:id="(\w+)"/)?.[1] ?? null
         ])
-        .filter(([text]) => /Visit|Docs|Help|^Do$|^cs!?$|draft/.test(String(text)));
+        .filter(([text]) =>
+          /Visit|Docs|Help|^Do$|^cs!?$|draft/.test(String(text))
+        );
+
+    it('rebuilds two tooltips on one link exactly', () => {
+      const { bytes } = linkedDeck(
+        run('Visit ') +
+          runWith('Docs', '<a:hlinkClick r:id="rIdA" tooltip="one"/>') +
+          runWith('Help', '<a:hlinkClick r:id="rIdA" tooltip="two"/>')
+      );
+      const engine = new PptxEditorEngine();
+      engine.load(bytes);
+      expect(
+        conformanceProblems(pptxPack, { deck: serializeDeck(engine) })
+      ).toEqual([]);
+    });
 
     it('reads linked text as a link holding its runs, with where it goes', () => {
       const { node } = linkedDeck();
@@ -471,7 +557,10 @@ describe('PowerPoint text', () => {
                 paragraphs: [
                   {
                     ...first,
-                    runs: [visit, { ...a, runs: [{ ...a.runs[0], text: 'Do' }] }]
+                    runs: [
+                      visit,
+                      { ...a, runs: [{ ...a.runs[0], text: 'Do' }] }
+                    ]
                   },
                   { runs: [{ text: 'cs' }] }
                 ]
@@ -513,9 +602,10 @@ describe('PowerPoint text', () => {
         ['Help', 'rIdB']
       ]);
       expect(
-        (deck.read(paragraph).runs as Node[])[1].runs.map(
-          (inner: Node) => [inner.text, inner.bold]
-        )
+        (deck.read(paragraph).runs as Node[])[1].runs.map((inner: Node) => [
+          inner.text,
+          inner.bold
+        ])
       ).toEqual([
         ['Do', undefined],
         ['cs', true]
@@ -523,9 +613,21 @@ describe('PowerPoint text', () => {
     });
 
     it.each([
-      ['two tooltips on one link', '<a:hlinkClick r:id="rIdA" tooltip="one"/>', '<a:hlinkClick r:id="rIdA" tooltip="two"/>'],
-      ['a hover-only link', '<a:hlinkMouseOver r:id="rIdA"/>', '<a:hlinkMouseOver r:id="rIdB"/>'],
-      ['a click action with no target', '<a:hlinkClick r:id="" action="ppaction://hlinkshowjump?jump=nextslide"/>', '<a:hlinkClick r:id="" action="ppaction://hlinkshowjump?jump=lastslide"/>']
+      [
+        'two tooltips on one link',
+        '<a:hlinkClick r:id="rIdA" tooltip="one"/>',
+        '<a:hlinkClick r:id="rIdA" tooltip="two"/>'
+      ],
+      [
+        'a hover-only link',
+        '<a:hlinkMouseOver r:id="rIdA"/>',
+        '<a:hlinkMouseOver r:id="rIdB"/>'
+      ],
+      [
+        'a click action with no target',
+        '<a:hlinkClick r:id="" action="ppaction://hlinkshowjump?jump=nextslide"/>',
+        '<a:hlinkClick r:id="" action="ppaction://hlinkshowjump?jump=lastslide"/>'
+      ]
     ])('keeps %s on runs it leaves where they were', (_, docs, help) => {
       const { deck, paragraph, node } = linkedDeck(
         run('Visit ') + runWith('Docs', docs) + runWith('Help', help)
@@ -542,9 +644,95 @@ describe('PowerPoint text', () => {
       );
     });
 
+    describe.each([
+      ['a hover action', '<a:hlinkMouseOver r:id="rIdA"/>', `on hover: ${A}`],
+      [
+        'a click action with no target',
+        '<a:hlinkClick r:id="" action="ppaction://hlinkshowjump?jump=nextslide"/>',
+        'ppaction://hlinkshowjump?jump=nextslide'
+      ]
+    ])('a run with %s', (_, action, target) => {
+      const savedRun = (deck: ReturnType<typeof openDeck>, text: string) =>
+        savedSlide(deck)
+          .match(/<a:r>.*?<\/a:r>/g)!
+          .find((xml) => xml.includes(`<a:t>${text}</a:t>`));
+
+      it('reads as a link holding it', () => {
+        const { node } = linkedDeck(
+          run('Visit ') + runWith('Docs', action) + run('Help', 'rIdB')
+        );
+        expect(
+          (node.runs as Node[]).map((child) =>
+            child.kind === 'link'
+              ? [child.target, child.runs.map((inner: Node) => inner.text)]
+              : child.text
+          )
+        ).toEqual(['Visit ', [target, ['Docs']], [B, ['Help']]]);
+      });
+
+      it('keeps the action on both pieces when part of it is bolded', () => {
+        const { deck, paragraph } = linkedDeck(
+          run('Visit ') + runWith('Docs', action) + run('Help', 'rIdB')
+        );
+        expectCard(
+          deck.write({
+            intent: 'Bold cs.',
+            scope: { ids: [paragraph] },
+            changes: [
+              {
+                kind: 'set',
+                target: {
+                  id: paragraph,
+                  shape: deck.read(paragraph).shape,
+                  match: { text: 'cs', span: { start: 8, end: 10 } }
+                },
+                props: { bold: true }
+              }
+            ]
+          })
+        );
+        expect(savedRun(deck, 'Do')).toContain(action);
+        expect(savedRun(deck, 'cs')).toContain(action);
+      });
+
+      it('does not give the action to new text beside it', () => {
+        const { deck, paragraph, node } = linkedDeck(
+          run('Visit ') + runWith('Docs', action) + run('Help', 'rIdB')
+        );
+        const [visit, docs, help] = node.runs as Node[];
+        expectCard(
+          replaceParagraph(deck, paragraph, {
+            ...node,
+            runs: [visit, docs, { text: ' now' }, help]
+          })
+        );
+        expect(savedRun(deck, 'Docs')).toContain(action);
+        expect(savedRun(deck, ' now')).not.toContain(action);
+      });
+    });
+
     it.each([
-      ['into', (visit: Node, a: Node, b: Node) => [{ ...a, runs: [visit, ...a.runs] }, b], [['Visit ', 'rIdA'], ['Docs', 'rIdA'], ['Help', 'rIdB']]],
-      ['out of', (visit: Node, a: Node, b: Node) => [visit, ...a.runs, b], [['Visit ', null], ['Docs', null], ['Help', 'rIdB']]]
+      [
+        'into',
+        (visit: Node, a: Node, b: Node) => [
+          { ...a, runs: [visit, ...a.runs] },
+          b
+        ],
+        [
+          ['Visit ', 'rIdA'],
+          ['Docs', 'rIdA'],
+          ['Help', 'rIdB']
+        ]
+      ],
+      [
+        'out of',
+        (visit: Node, a: Node, b: Node) => [visit, ...a.runs, b],
+        [
+          ['Visit ', null],
+          ['Docs', null],
+          ['Help', 'rIdB']
+        ]
+      ]
     ])('moves existing text %s a link', (_, runs, saved) => {
       const { deck, paragraph, node } = linkedDeck();
       const [visit, a, b] = node.runs as Node[];
@@ -560,7 +748,9 @@ describe('PowerPoint text', () => {
         'Docs and Help'
       );
       const [docs, , help] = node.runs as Node[];
-      expectCard(replaceParagraph(deck, paragraph, { ...node, runs: [docs, help] }));
+      expectCard(
+        replaceParagraph(deck, paragraph, { ...node, runs: [docs, help] })
+      );
       expect(savedRuns(deck)).toEqual([
         ['Docs', 'rIdA'],
         ['Help', 'rIdA']
@@ -573,12 +763,18 @@ describe('PowerPoint text', () => {
       expectCard(
         replaceParagraph(deck, paragraph, {
           ...node,
-          runs: [visit, { ...a, runs: [...a.runs, { text: '\n' }, { text: 'more' }] }, b]
+          runs: [
+            visit,
+            { ...a, runs: [...a.runs, { text: '\n' }, { text: 'more' }] },
+            b
+          ]
         })
       );
       expect(
         (deck.read(paragraph).runs as Node[]).map((child) =>
-          child.kind === 'link' ? child.runs.map((inner: Node) => inner.text) : child.text
+          child.kind === 'link'
+            ? child.runs.map((inner: Node) => inner.text)
+            : child.text
         )
       ).toEqual(['Visit ', ['Docs', '\n', 'more'], ['Help']]);
     });
@@ -605,18 +801,42 @@ describe('PowerPoint text', () => {
     it('reports the formatting linked text takes from the layout', () => {
       const { deck, node } = linkedDeck();
       const [, a] = node.runs as Node[];
-      const read = deck.call('read', { ids: [a.runs[0].id], properties: true }) as {
-        nodes: Array<{ properties: Record<string, { value: unknown; source: string }> }>;
+      const read = deck.call('read', {
+        ids: [a.runs[0].id],
+        properties: true
+      }) as {
+        nodes: Array<{
+          properties: Record<string, { value: unknown; source: string }>;
+        }>;
       };
-      expect(read.nodes[0].properties.size).toEqual({ value: 12, source: 'container' });
+      expect(read.nodes[0].properties.size).toEqual({
+        value: 12,
+        source: 'container'
+      });
     });
 
     it.each([
-      ['adding a link', (node: Node) => [...node.runs, { kind: 'link', target: A, runs: [{ text: ' more' }] }]],
-      ['changing where a link goes', (node: Node) => node.runs.map((child: Node) => (child.kind === 'link' ? { ...child, target: 'https://c.example.com' } : child))]
+      [
+        'adding a link',
+        (node: Node) => [
+          ...node.runs,
+          { kind: 'link', target: A, runs: [{ text: ' more' }] }
+        ]
+      ],
+      [
+        'changing where a link goes',
+        (node: Node) =>
+          node.runs.map((child: Node) =>
+            child.kind === 'link'
+              ? { ...child, target: 'https://c.example.com' }
+              : child
+          )
+      ]
     ])('refuses %s', (_, runs) => {
       const { deck, paragraph, node } = linkedDeck();
-      expect(replaceParagraph(deck, paragraph, { ...node, runs: runs(node) })).toEqual(
+      expect(
+        replaceParagraph(deck, paragraph, { ...node, runs: runs(node) })
+      ).toEqual(
         expect.objectContaining({
           ok: false,
           refusal: expect.objectContaining({ invariant: 'limits' })
@@ -798,7 +1018,9 @@ describe('PowerPoint slide number fields', () => {
       })
     );
     const runs = runsOf(deck.read(paragraph));
-    expect(runs.filter((run) => run.kind === 'run').every((run) => run.bold)).toBe(true);
+    expect(
+      runs.filter((run) => run.kind === 'run').every((run) => run.bold)
+    ).toBe(true);
     expect(runs.find((run) => run.kind === 'field')?.bold).toBeUndefined();
   });
 

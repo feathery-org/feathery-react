@@ -1,10 +1,5 @@
 import type { Residue } from '../../../pack';
-import {
-  canonicalJson,
-  clone,
-  type NfNode,
-  type NormalForm
-} from '../../../tree';
+import { clone, type NfNode, type NormalForm } from '../../../tree';
 import {
   buildXml,
   child,
@@ -21,7 +16,7 @@ import {
   type InheritedFormat,
   type PendingSuggestion
 } from '../native';
-import { isSlot, linkOf, runText } from './nodes';
+import { isSlot, linkKey, linkOf, runText } from './nodes';
 import { DECK_ID, spTreeOf, type Pending } from './toNormalForm';
 
 const isLive = (node: NfNode) =>
@@ -58,7 +53,9 @@ const LINK_TAGS = ['a:hlinkClick', 'a:hlinkMouseOver'];
 
 /** A run's own link set to the link it sits in, or none */
 function linkRun(node: ONode, hlink: ONode | undefined): void {
-  if (canonicalJson(linkOf(node)) === canonicalJson(hlink)) return;
+  const own = linkOf(node);
+  // A run already in the link it sits in keeps its own link tags
+  if (own && hlink ? linkKey(own) === linkKey(hlink) : !own === !hlink) return;
   let rPr = child(node, 'a:rPr');
   if (!rPr) {
     rPr = el('a:rPr');

@@ -789,7 +789,13 @@ export class PptxEditorEngine {
     if (rejected) {
       this.changeLog = this.changeLog.map((record) =>
         record.id === rejected.record.id
-          ? { ...record, status: 'rejected' as const, beforeSlides: undefined }
+          ? {
+              ...record,
+              status: 'rejected' as const,
+              beforeSlides: undefined,
+              beforeSlideRels: undefined,
+              changedSlides: undefined
+            }
           : record
       );
       this.pendingSnapshots.delete(rejected.record.id);
@@ -804,12 +810,19 @@ export class PptxEditorEngine {
 
   /** Drop what undo set aside, so nothing undone can come back */
   discardRedo(): void {
-    for (const entry of this.redoStack)
-      this.rejectedSuggestions.delete(String(entry.id));
-    this.redoStack = [];
-    for (const shelved of this.shelvedRecords.values())
-      this.pendingSnapshots.delete(shelved.id);
-    this.shelvedRecords.clear();
+    this.dropRedo(this.redoStack.length);
+  }
+
+  // Drop the redo entries that would replay last, with what they set aside
+  private dropRedo(count: number): void {
+    for (const entry of this.redoStack.slice(0, count)) {
+      const id = String(entry.id);
+      this.rejectedSuggestions.delete(id);
+      const shelved = this.shelvedRecords.get(id);
+      if (shelved) this.pendingSnapshots.delete(shelved.id);
+      this.shelvedRecords.delete(id);
+    }
+    this.redoStack = this.redoStack.slice(count);
   }
 
   canUndo(): boolean {
@@ -835,17 +848,21 @@ export class PptxEditorEngine {
   acceptChange(id: string): boolean {
     const record = this.changeLog.find((candidate) => candidate.id === id);
     if (!record || record.status !== 'pending') return false;
-    // Redo must not replay an undone reject of what is now accepted
-    if (
-      this.redoStack.some(
-        (entry) =>
-          this.rejectedSuggestions.get(String(entry.id))?.record.id === id
-      )
-    )
-      this.discardRedo();
+    // Redo must not replay an undone reject of what is now accepted, or what follows it
+    const rejectAt = this.redoStack.findIndex(
+      (entry) =>
+        this.rejectedSuggestions.get(String(entry.id))?.record.id === id
+    );
+    if (rejectAt >= 0) this.dropRedo(rejectAt + 1);
     this.changeLog = this.changeLog.map((candidate) =>
       candidate === record
-        ? { ...candidate, status: 'accepted' as const, beforeSlides: undefined }
+        ? {
+            ...candidate,
+            status: 'accepted' as const,
+            beforeSlides: undefined,
+            beforeSlideRels: undefined,
+            changedSlides: undefined
+          }
         : candidate
     );
     this.pendingSnapshots.delete(id);
@@ -960,7 +977,13 @@ export class PptxEditorEngine {
       });
     this.changeLog = this.changeLog.map((candidate) =>
       candidate.id === id
-        ? { ...candidate, status: 'rejected' as const, beforeSlides: undefined }
+        ? {
+            ...candidate,
+            status: 'rejected' as const,
+            beforeSlides: undefined,
+            beforeSlideRels: undefined,
+            changedSlides: undefined
+          }
         : candidate
     );
     this.pendingSnapshots.delete(id);

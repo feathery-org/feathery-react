@@ -372,7 +372,11 @@ export class PptxEditorStore {
 
   acceptChange = (id: string): boolean => {
     const accepted = this.engine.acceptChange(id);
-    if (accepted) this.set({ rev: this.state.rev + 1 });
+    if (accepted)
+      this.set({
+        rev: this.state.rev + 1,
+        ...historyFields(this.engine.snapshot())
+      });
     return accepted;
   };
 

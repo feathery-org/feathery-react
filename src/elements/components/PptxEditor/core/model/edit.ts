@@ -556,7 +556,7 @@ function setRunLink(runNode: ONode, from: ONode | undefined): void {
   kids.splice(0, kids.length, ...kept);
 }
 
-const FILLS = [
+export const FILLS = [
   'a:noFill',
   'a:solidFill',
   'a:gradFill',

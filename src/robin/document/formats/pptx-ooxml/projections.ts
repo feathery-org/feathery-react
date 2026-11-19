@@ -1,3 +1,4 @@
+import { FILLS } from '../../../../elements/components/PptxEditor/core/model/edit';
 import type { Normalization } from '../../pack';
 import {
   clone,
@@ -72,12 +73,7 @@ export function othersOf(pending: unknown, turnId: string): unknown {
 
 const RUN_ATTRIBUTES = ['@_b', '@_i', '@_u', '@_strike', '@_sz'];
 // A run's link tags follow the link it sits in
-const RUN_CHILDREN = [
-  'a:solidFill',
-  'a:latin',
-  'a:hlinkClick',
-  'a:hlinkMouseOver'
-];
+const RUN_CHILDREN = [...FILLS, 'a:latin', 'a:hlinkClick', 'a:hlinkMouseOver'];
 const PARAGRAPH_ATTRIBUTES = ['@_algn', '@_lvl'];
 
 const tagOf = (node: Record<string, unknown>) =>

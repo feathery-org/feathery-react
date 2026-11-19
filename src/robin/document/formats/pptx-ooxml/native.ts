@@ -139,9 +139,9 @@ function linkTargets(
   xml: string
 ): Record<string, string> | null {
   const named = new Set(
-    [...xml.matchAll(/<a:hlinkClick\b[^>]*\br:id="([^"]+)"/g)].map(
-      (match) => match[1]
-    )
+    [
+      ...xml.matchAll(/<a:hlink(?:Click|MouseOver)\b[^>]*\br:id="([^"]+)"/g)
+    ].map((match) => match[1])
   );
   if (!named.size) return null;
   return Object.fromEntries(

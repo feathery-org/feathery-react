@@ -586,6 +586,41 @@ describe('PowerPoint suggestions beside the person\'s own edits', () => {
     ).toBe('accepted');
   });
 
+  it("keeps redo of the person's slide added before an undone reject of what is now accepted", () => {
+    const deck = openDeck();
+    const count = slidesOf(deck).length;
+    renameSubtitle(deck);
+    deck.store.addSlide(count, slidesOf(deck)[0].path);
+    expect(deck.store.rejectChange(deck.pending()[0].id).ok).toBe(true);
+    deck.store.undo();
+    deck.store.undo();
+    expect(deck.store.acceptChange(deck.pending()[0].id)).toBe(true);
+    expect(deck.store.getState().redoStack).toHaveLength(1);
+    deck.store.redo();
+    expect(slidesOf(deck)).toHaveLength(count + 1);
+    expect(deck.engine.canRedo()).toBe(false);
+    expect(rejectsKept(deck)).toBe(0);
+  });
+
+  it('lets go of the slides a suggestion kept once it is accepted or rejected', () => {
+    const deck = openDeck();
+    expectCard(copyFirstSlide(deck, 'turn-0001'));
+    expectCard(copyFirstSlide(deck, 'turn-0002'));
+    const [accepted, rejected] = deck.pending().map((record) => record.id);
+    const kept = (id: string) => {
+      const record = deck.engine.changes().find((each) => each.id === id)!;
+      return [record.beforeSlides, record.beforeSlideRels, record.changedSlides];
+    };
+    expect(deck.engine.acceptChange(accepted)).toBe(true);
+    expect(kept(accepted)).toEqual([undefined, undefined, undefined]);
+    expect(deck.engine.rejectChange(rejected).ok).toBe(true);
+    expect(kept(rejected)).toEqual([undefined, undefined, undefined]);
+    deck.store.undo();
+    expect(kept(rejected)[1]).toBeDefined();
+    deck.store.redo();
+    expect(kept(rejected)).toEqual([undefined, undefined, undefined]);
+  });
+
   it('forgets a reject once its undo step is discarded or leaves history', () => {
     const undone = openDeck();
     renameSubtitle(undone);
