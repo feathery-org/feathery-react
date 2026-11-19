@@ -88,11 +88,15 @@ export function textOperations(
             }))
           : [{ run, link: null }]
     );
-  // A run left in the link it was in keeps its own link tags
-  const linkWrite = (run: NfNode, link: string | null) =>
-    linkOf.get(origin(run.id)) === link
+  // A run left in the link it was in keeps its own link tags, a new run those of the run it continues
+  const linkWrite = (run: NfNode, link: string | null, at?: Location) => {
+    const own = linkOf.has(origin(run.id))
+      ? origin(run.id)
+      : at && runAt(before, at)?.id;
+    return own !== undefined && linkOf.get(own) === link
       ? {}
       : { link: link === null ? null : starts.get(link) ?? null };
+  };
   const paragraphs: RichPara[] = paragraphsOf(after).map((paragraph, p) => {
     const source = sources.paragraphs[p];
     const from = source === undefined ? undefined : paragraphAt(before, source);
@@ -112,7 +116,7 @@ export function textOperations(
         return {
           text: String(run.text),
           ...(at ? { source: at, styleChanged: false } : {}),
-          ...linkWrite(run, link)
+          ...linkWrite(run, link, at)
         };
       })
     };

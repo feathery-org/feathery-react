@@ -442,6 +442,37 @@ describe('PowerPoint text', () => {
       ).toEqual([]);
     });
 
+    it('keeps a split piece on the tags of the run it was cut from', () => {
+      const second =
+        '<a:hlinkClick r:id="rIdA" tooltip="two"/><a:hlinkMouseOver r:id="rIdB"/>';
+      const { deck, paragraph } = linkedDeck(
+        run('Visit ') +
+          runWith('Docs', '<a:hlinkClick r:id="rIdA" tooltip="one"/>') +
+          runWith('Help', second)
+      );
+      expectCard(
+        deck.write({
+          intent: 'Bold lp.',
+          scope: { ids: [paragraph] },
+          changes: [
+            {
+              kind: 'set',
+              target: {
+                id: paragraph,
+                shape: deck.read(paragraph).shape,
+                match: { text: 'lp', span: { start: 12, end: 14 } }
+              },
+              props: { bold: true }
+            }
+          ]
+        })
+      );
+      const piece = savedSlide(deck)
+        .match(/<a:r>.*?<\/a:r>/g)!
+        .find((xml) => xml.includes('<a:t>lp</a:t>'));
+      expect(piece).toContain(second);
+    });
+
     it('reads linked text as a link holding its runs, with where it goes', () => {
       const { node } = linkedDeck();
       expect(
