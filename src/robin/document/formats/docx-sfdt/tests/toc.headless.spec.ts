@@ -217,7 +217,7 @@ describe.each(SHAPES)('a table of contents is refreshed by the editor after ever
     for (const h of headings) {
       const unit = await headingUnit(h);
       const change = { intent: 'Remove it.', scope: { ids: [unit.id] }, changes: [{ kind: 'delete', id: unit.id, base: unit.node.base }] };
-      if ((await dispatch('write', { ...change, dryRun: true })).ok) {
+      if (await lane.call<boolean>('verifies', change)) {
         const heading = unit.node.kind === 'section' ? unit.node.blocks[0] : unit.node;
         return { unit, text: clean(textRuns(heading).map((x: any) => x.text).join('')) };
       }

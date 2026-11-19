@@ -140,6 +140,23 @@ describe('composeTracked', () => {
     const [paragraph] = occurrences(tracked, id);
     expect(paragraph.pending).toEqual({ mark: { kind: 'Insertion', author: 'Robin', group: 'X' } });
   });
+
+  it('a deleted field is tracked whole, so accepting leaves no field markers behind (Hilb footer page numbers)', () => {
+    let holder: NfNode | undefined;
+    walk(s.view.nf.root, docxTree, ({ node }) => {
+      if (!holder && arr<NfNode>(node.inlines).some((i) => i.kind === 'field')) holder = node;
+    });
+    expect(holder).toBeDefined();
+    const before = arr<NfNode>(holder?.inlines).length;
+    const intended = JSON.parse(JSON.stringify(s.view.nf)) as NormalForm;
+    const [cleared] = occurrences(intended, (holder as NfNode).id);
+    cleared.inlines = [];
+    const { tracked } = composeTracked(s.view, intended, 't');
+    const [accepted] = occurrences(accept(tracked), (holder as NfNode).id);
+    const [rejected] = occurrences(reject(tracked), (holder as NfNode).id);
+    expect(arr<NfNode>(accepted.inlines)).toEqual([]);
+    expect(arr<NfNode>(rejected.inlines)).toHaveLength(before);
+  });
 });
 
 describe('composeTracked: moving text still pending in an earlier card', () => {

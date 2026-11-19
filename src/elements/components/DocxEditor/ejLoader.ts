@@ -47,7 +47,7 @@ function loadAccentOverride(): void {
 }
 
 // A conversion that never completes must not strand the editor in `loading`.
-const DOCUMENT_LOAD_TIMEOUT_MS = 20000;
+const DOCUMENT_LOAD_TIMEOUT_MS = 90000;
 
 /** Resolves true on `documentChange`, the only real "laid out" signal (it
  *  fires after open() resolves); no event means a failed load. */

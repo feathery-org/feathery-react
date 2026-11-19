@@ -554,6 +554,9 @@ export class ToyHost implements EditorHost {
     this.undoStack.push(this.native);
     this.native = next;
   }
+  discardRedo(): void {
+    this.redoStack = [];
+  }
   readOnly(): boolean {
     return this.locked;
   }

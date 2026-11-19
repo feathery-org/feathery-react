@@ -41,6 +41,23 @@ function resolvePath(sourcePart: string, target: string): string {
   return stack.join('/');
 }
 
+/** The relationships a part's _rels tree declares */
+export function relationshipsOf(rels: OTree, sourcePart: string): RelEntry[] {
+  return children(root(rels), 'Relationship').map((rel) => {
+    const id = getAttr(rel, 'Id') || '';
+    const type = getAttr(rel, 'Type') || '';
+    const target = getAttr(rel, 'Target') || '';
+    const mode = getAttr(rel, 'TargetMode');
+    const external = mode === 'External';
+    return {
+      id,
+      type,
+      target: external ? target : resolvePath(sourcePart, target),
+      external
+    };
+  });
+}
+
 function relsPathFor(part: string): string {
   const idx = part.lastIndexOf('/');
   const dir = part.slice(0, idx);
@@ -103,20 +120,7 @@ export class OPCPackage {
   rels(sourcePart: string): RelEntry[] {
     const relsPath = relsPathFor(sourcePart);
     if (!this.parts.text.has(relsPath)) return [];
-    const r = root(this.tree(relsPath));
-    return children(r, 'Relationship').map((rel) => {
-      const id = getAttr(rel, 'Id') || '';
-      const type = getAttr(rel, 'Type') || '';
-      const target = getAttr(rel, 'Target') || '';
-      const mode = getAttr(rel, 'TargetMode');
-      const external = mode === 'External';
-      return {
-        id,
-        type,
-        target: external ? target : resolvePath(sourcePart, target),
-        external
-      };
-    });
+    return relationshipsOf(this.tree(relsPath), sourcePart);
   }
 
   relTarget(sourcePart: string, id: string): string | undefined {

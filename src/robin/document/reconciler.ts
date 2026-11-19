@@ -41,6 +41,7 @@ export interface ReconcileInput {
   derived?: readonly string[];
   before: { view: DocumentView; residue: Residue; native: string };
   intended: { view: DocumentView; residue: Residue };
+  copies?: Readonly<Record<string, string>>;
   /**
    * Give the adapter's fresh read-back engine ids, continuing the intended document's: the proof
    * compares node by node, residue included.
@@ -137,6 +138,7 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
       intended: intended.view,
       beforeResidue: before.residue,
       intendedResidue: intended.residue,
+      copies: input.copies,
       beforeNative: before.native,
       ...(input.title
         ? { card: { title: input.title, intent: input.intent } }

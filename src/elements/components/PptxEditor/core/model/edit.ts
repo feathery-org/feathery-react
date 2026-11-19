@@ -256,6 +256,7 @@ export interface RichRun {
   font?: string;
   source?: { paragraph: number; run: number };
   styleChanged?: boolean;
+  link?: { paragraph: number; run: number } | null;
 }
 export interface RichPara {
   align?: 'l' | 'ctr' | 'r' | 'just';
@@ -344,12 +345,16 @@ export function setShapeRichText(
     const runs = para.runs.length ? para.runs : [{ text: '' }];
     for (const r of runs) {
       const source = r.source && origRuns[r.source.paragraph]?.[r.source.run];
+      const linkFrom = r.link
+        ? origRuns[r.link.paragraph]?.[r.link.run]?.node
+        : undefined;
       if (r.break) {
-        pKids.push(
+        const br =
           source && tagOf(source.node) === 'a:br'
             ? deepClone(source.node)
-            : el('a:br')
-        );
+            : el('a:br');
+        if (r.link !== undefined) setRunLink(br, linkFrom);
+        pKids.push(br);
         continue;
       }
       const runNode = source ? deepClone(source.node) : el('a:r');
@@ -357,10 +362,10 @@ export function setShapeRichText(
         const rPr = child(runNode, 'a:rPr') || el('a:rPr', { lang: 'en-US' });
         if (!child(runNode, 'a:rPr')) childrenOf(runNode).unshift(rPr);
         applyRunStyle(rPr, {
-          bold: !!r.bold,
-          italic: !!r.italic,
-          underline: !!r.underline,
-          strike: !!r.strike,
+          bold: r.bold,
+          italic: r.italic,
+          underline: r.underline,
+          strike: r.strike,
           sizePt: r.sizePt,
           color: r.color,
           highlight: r.highlight ?? null,
@@ -368,6 +373,7 @@ export function setShapeRichText(
           font: r.font
         });
       }
+      if (r.link !== undefined) setRunLink(runNode, linkFrom);
       const t = child(runNode, 'a:t') || el('a:t');
       if (!child(runNode, 'a:t')) childrenOf(runNode).push(t);
       childrenOf(t).splice(0, childrenOf(t).length, textNode(r.text));
@@ -531,39 +537,93 @@ function ensureRPr(runNode: ONode): ONode {
   return rPr;
 }
 
+const LINK_TAGS = ['a:hlinkClick', 'a:hlinkMouseOver'];
+const linksOf = (runNode: ONode | undefined) =>
+  childrenOf(child(runNode ?? {}, 'a:rPr') ?? {}).filter((kid) =>
+    LINK_TAGS.includes(tagOf(kid) || '')
+  );
+
+/** Give a run the link of another run, or no link when there is none to copy */
+function setRunLink(runNode: ONode, from: ONode | undefined): void {
+  const links = linksOf(from);
+  if (JSON.stringify(linksOf(runNode)) === JSON.stringify(links)) return;
+  const kids = childrenOf(ensureRPr(runNode));
+  const kept = kids.filter((kid) => !LINK_TAGS.includes(tagOf(kid) || ''));
+  const at = kept.findIndex((kid) =>
+    ['a:rtl', 'a:extLst'].includes(tagOf(kid) || '')
+  );
+  kept.splice(at < 0 ? kept.length : at, 0, ...links.map(deepClone));
+  kids.splice(0, kids.length, ...kept);
+}
+
+export const FILLS = [
+  'a:noFill',
+  'a:solidFill',
+  'a:gradFill',
+  'a:blipFill',
+  'a:pattFill',
+  'a:grpFill'
+];
+// The order a:rPr children must keep, a fill being one choice
+const RUN_PROPERTY_ORDER = [
+  ['a:ln'],
+  FILLS,
+  ['a:effectLst', 'a:effectDag'],
+  ['a:highlight'],
+  ['a:uLnTx', 'a:uLn'],
+  ['a:uFillTx', 'a:uFill'],
+  ['a:latin'],
+  ['a:ea'],
+  ['a:cs'],
+  ['a:sym'],
+  ['a:hlinkClick'],
+  ['a:hlinkMouseOver'],
+  ['a:rtl'],
+  ['a:extLst']
+];
+const runPropertyRank = (node: ONode) =>
+  RUN_PROPERTY_ORDER.findIndex((tags) => tags.includes(tagOf(node) || ''));
+
+/** Put a run property in its place, replacing the ones it stands for */
+function putRunProperty(rPr: ONode, replaces: string[], node?: ONode): void {
+  const kids = childrenOf(rPr);
+  const kept = kids.filter((kid) => !replaces.includes(tagOf(kid) || ''));
+  if (node) {
+    const at = kept.findIndex(
+      (kid) => runPropertyRank(kid) > runPropertyRank(node)
+    );
+    kept.splice(at < 0 ? kept.length : at, 0, node);
+  }
+  kids.splice(0, kids.length, ...kept);
+}
+
 function applyRunStyle(rPr: ONode, s: TextStyle): void {
   const bool = (name: string, v: boolean) => setAttr(rPr, name, v ? '1' : '0');
   if (s.bold !== undefined) bool('b', s.bold);
   if (s.italic !== undefined) bool('i', s.italic);
   if (s.underline !== undefined)
-    s.underline ? setAttr(rPr, 'u', 'sng') : removeAttr(rPr, 'u');
+    setAttr(rPr, 'u', s.underline ? 'sng' : 'none');
   if (s.strike !== undefined)
     setAttr(rPr, 'strike', s.strike ? 'sngStrike' : 'noStrike');
   if (s.sizePt !== undefined) setAttr(rPr, 'sz', String(ptToSz(s.sizePt)));
-  if (s.color !== undefined) {
-    const color = s.color.replace('#', '').toUpperCase();
-    let fill = child(rPr, 'a:solidFill');
-    if (!fill) {
-      fill = el('a:solidFill', undefined, [el('a:srgbClr', { val: color })]);
-      childrenOf(rPr).unshift(fill);
-    } else {
-      childrenOf(fill).splice(
-        0,
-        childrenOf(fill).length,
-        el('a:srgbClr', { val: color })
-      );
-    }
-  }
-  if (s.highlight !== undefined) {
-    const existing = child(rPr, 'a:highlight');
-    if (existing) childrenOf(rPr).splice(childrenOf(rPr).indexOf(existing), 1);
-    if (s.highlight)
-      childrenOf(rPr).push(
-        el('a:highlight', undefined, [
-          el('a:srgbClr', { val: s.highlight.replace('#', '').toUpperCase() })
-        ])
-      );
-  }
+  if (s.color !== undefined)
+    putRunProperty(
+      rPr,
+      FILLS,
+      el('a:solidFill', undefined, [
+        el('a:srgbClr', { val: s.color.replace('#', '').toUpperCase() })
+      ])
+    );
+  if (s.highlight !== undefined)
+    putRunProperty(
+      rPr,
+      ['a:highlight'],
+      s.highlight
+        ? el('a:highlight', undefined, [
+            el('a:srgbClr', { val: s.highlight.replace('#', '').toUpperCase() })
+          ])
+        : undefined
+    );
   if (s.baselinePct !== undefined) {
     if (s.baselinePct)
       setAttr(rPr, 'baseline', String(Math.round(s.baselinePct * 1000)));
@@ -571,7 +631,7 @@ function applyRunStyle(rPr: ONode, s: TextStyle): void {
   }
   if (s.font !== undefined) {
     const latin = child(rPr, 'a:latin');
-    if (!latin) childrenOf(rPr).push(el('a:latin', { typeface: s.font }));
+    if (!latin) putRunProperty(rPr, [], el('a:latin', { typeface: s.font }));
     else setAttr(latin, 'typeface', s.font);
   }
 }

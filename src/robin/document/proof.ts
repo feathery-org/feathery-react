@@ -371,7 +371,8 @@ export function rollback(
     host.undo();
     steps += 1;
     const now = host.serialize();
-    if (now === beforeNative)
+    if (now === beforeNative) {
+      host.discardRedo?.();
       return {
         byteEqual: true,
         exact: true,
@@ -379,7 +380,9 @@ export function rollback(
         via: 'editor-undo',
         undoSteps: steps
       };
-    if (equivalent(now))
+    }
+    if (equivalent(now)) {
+      host.discardRedo?.();
       return {
         byteEqual: false,
         exact: layoutOnly(now),
@@ -387,6 +390,7 @@ export function rollback(
         via: 'editor-undo',
         undoSteps: steps
       };
+    }
   }
   host.open(beforeNative);
   // the editor may lay a reopened document out again (cell widths, measured on the rig): the

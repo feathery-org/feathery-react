@@ -295,6 +295,45 @@ describe('tracked edits (engine change log)', () => {
     expect(engine.snapshot().document).toEqual(suggested);
   });
 
+  it('drops characters XML cannot hold from written text', () => {
+    const engine = loadedEngine();
+    const { slide, shape } = firstTextShape(engine);
+    engine.execute({
+      type: 'replace-rich-text',
+      slideId: slide.path,
+      shapeId: shape.id,
+      paragraphs: [{ runs: [{ text: 'a\u0001b\u000bc' }] }]
+    });
+    const raw = JSON.stringify(engine.readDeck()!.slides.find((s) => s.path === slide.path)!.raw);
+    expect(raw).toContain('abc');
+    expect(raw).not.toMatch(/\\u000[1b]/);
+  });
+
+  it('brings a rejected suggestion back as pending on undo, and rejects it again on redo', () => {
+    const engine = loadedEngine();
+    const { slide, shape } = firstTextShape(engine);
+    const before = engine.snapshot().document;
+    engine.transaction({ origin: 'assistant', authorId: 'turn-7' }, () => {
+      engine.execute({
+        type: 'format-text',
+        slideId: slide.path,
+        shapeId: shape.id,
+        style: { bold: true }
+      });
+    });
+    const id = engine.changes()[0].id;
+    const status = () => engine.changes().find((record) => record.id === id)?.status;
+    expect(engine.rejectChange(id).ok).toBe(true);
+
+    engine.undo();
+    expect(status()).toBe('pending');
+    engine.redo();
+    expect(status()).toBe('rejected');
+    engine.undo();
+    expect(engine.rejectChange(id).ok).toBe(true);
+    expect(engine.snapshot().document).toEqual(before);
+  });
+
   it('gives a pending record its target slide XML from before the change, and none to accepted ones', () => {
     const engine = loadedEngine();
     const { slide, shape } = firstTextShape(engine);

@@ -11,6 +11,7 @@
 
 import { convertTemplateTokens } from './core/templateImport';
 import { hasBlockingErrors } from './core/engine';
+import { isNumericType } from './core/valueTypes';
 import { Diagnostic, SfdtDocument } from './core/sfdtTypes';
 import {
   ControllerEvent,
@@ -52,7 +53,7 @@ export interface BindingsOptions {
    */
   convertTokensOnOpen?: boolean;
   /** Committed document-level field values, after every reconcile. */
-  onFieldValues?: (values: Record<string, string>) => void;
+  onFieldValues?: (values: Record<string, string | null>) => void;
   /** Diagnostics after every reconcile, including the ones that block saving. */
   onDiagnostics?: (diagnostics: Diagnostic[]) => void;
   /**
@@ -94,7 +95,7 @@ export interface AttachedBindings {
    */
   commitForSave(): boolean;
   diagnostics(): Diagnostic[];
-  fieldValues(): Record<string, string>;
+  fieldValues(): Record<string, string | null>;
   /** Diagnostics from the one-time token conversion, if it ran. */
   importDiagnostics: Diagnostic[];
   dispose(): void;
@@ -108,16 +109,19 @@ type EventfulEditor = SyncfusionEditorLike & {
   ) => void;
 };
 
-/** Document-level field values, one per binding name. */
+/** Document-level field values, one per binding name, a blank number as no value */
 function collectFieldValues(
   controller: ReconciliationController
-): Record<string, string> {
-  const out: Record<string, string> = {};
+): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
   const { index, values } = controller;
   if (!index || !values) return out;
   for (const [name, occurrences] of index.fields) {
     const known = occurrences.find((occurrence) => values.has(occurrence.key));
-    if (known) out[name] = values.get(known.key) as string;
+    if (!known) continue;
+    const value = values.get(known.key) as string;
+    out[name] =
+      value === '' && isNumericType(known.def.fieldType) ? null : value;
   }
   return out;
 }

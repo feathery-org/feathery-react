@@ -187,6 +187,15 @@ export class PptxEditorEngine {
     { before: PptxHistorySnapshot; after: PptxHistorySnapshot }
   >();
 
+  // Suggestions each reject settled, so undoing the reject makes them pending again
+  private rejectedSuggestions = new Map<
+    string,
+    {
+      record: PptxChangeRecord;
+      snapshots: { before: PptxHistorySnapshot; after: PptxHistorySnapshot };
+    }
+  >();
+
   private openTransaction: OpenTransaction | null = null;
 
   constructor(deck: Deck | null = null) {
@@ -233,6 +242,7 @@ export class PptxEditorEngine {
       throw new Error('Reopening a deck with a different set of slides');
 
     for (const slide of slides) deck.pkg.setXmlPart(slide.path, slide.raw);
+    deck.slides = [];
     rebuildSlides(deck);
     this.adopt(deck);
   }
@@ -748,6 +758,13 @@ export class PptxEditorEngine {
       this.shelvedRecords.set(undone.transactionId, undone);
       this.changeLog = this.changeLog.filter((record) => record !== undone);
     }
+    const rejected = this.rejectedSuggestions.get(String(entry.id));
+    if (rejected) {
+      this.changeLog = this.changeLog.map((record) =>
+        record.id === rejected.record.id ? rejected.record : record
+      );
+      this.pendingSnapshots.set(rejected.record.id, rejected.snapshots);
+    }
     this.present = entry.before;
     this.revision += 1;
     this.historyRevision += 1;
@@ -768,12 +785,44 @@ export class PptxEditorEngine {
       this.shelvedRecords.delete(String(entry.id));
       this.changeLog = [...this.changeLog, shelved];
     }
+    const rejected = this.rejectedSuggestions.get(String(entry.id));
+    if (rejected) {
+      this.changeLog = this.changeLog.map((record) =>
+        record.id === rejected.record.id
+          ? {
+              ...record,
+              status: 'rejected' as const,
+              beforeSlides: undefined,
+              beforeSlideRels: undefined,
+              changedSlides: undefined
+            }
+          : record
+      );
+      this.pendingSnapshots.delete(rejected.record.id);
+    }
     this.present = entry.after;
     this.revision += 1;
     this.historyRevision += 1;
     const result = this.result(true, historyInvalidations(restored));
     this.emit('redo', result);
     return result;
+  }
+
+  /** Drop what undo set aside, so nothing undone can come back */
+  discardRedo(): void {
+    this.dropRedo(this.redoStack.length);
+  }
+
+  // Drop the redo entries that would replay last, with what they set aside
+  private dropRedo(count: number): void {
+    for (const entry of this.redoStack.slice(0, count)) {
+      const id = String(entry.id);
+      this.rejectedSuggestions.delete(id);
+      const shelved = this.shelvedRecords.get(id);
+      if (shelved) this.pendingSnapshots.delete(shelved.id);
+      this.shelvedRecords.delete(id);
+    }
+    this.redoStack = this.redoStack.slice(count);
   }
 
   canUndo(): boolean {
@@ -799,9 +848,21 @@ export class PptxEditorEngine {
   acceptChange(id: string): boolean {
     const record = this.changeLog.find((candidate) => candidate.id === id);
     if (!record || record.status !== 'pending') return false;
+    // Redo must not replay an undone reject of what is now accepted, or what follows it
+    const rejectAt = this.redoStack.findIndex(
+      (entry) =>
+        this.rejectedSuggestions.get(String(entry.id))?.record.id === id
+    );
+    if (rejectAt >= 0) this.dropRedo(rejectAt + 1);
     this.changeLog = this.changeLog.map((candidate) =>
       candidate === record
-        ? { ...candidate, status: 'accepted' as const, beforeSlides: undefined }
+        ? {
+            ...candidate,
+            status: 'accepted' as const,
+            beforeSlides: undefined,
+            beforeSlideRels: undefined,
+            changedSlides: undefined
+          }
         : candidate
     );
     this.pendingSnapshots.delete(id);
@@ -909,9 +970,20 @@ export class PptxEditorEngine {
         authorLabel: 'Reject'
       }
     );
+    if (result.changed && !this.openTransaction)
+      this.rejectedSuggestions.set(String(this.sequence), {
+        record,
+        snapshots
+      });
     this.changeLog = this.changeLog.map((candidate) =>
       candidate.id === id
-        ? { ...candidate, status: 'rejected' as const, beforeSlides: undefined }
+        ? {
+            ...candidate,
+            status: 'rejected' as const,
+            beforeSlides: undefined,
+            beforeSlideRels: undefined,
+            changedSlides: undefined
+          }
         : candidate
     );
     this.pendingSnapshots.delete(id);
@@ -990,6 +1062,7 @@ export class PptxEditorEngine {
     this.changeLog = [];
     this.shelvedRecords.clear();
     this.pendingSnapshots.clear();
+    this.rejectedSuggestions.clear();
     this.historyRevision += 1;
   }
 
@@ -1002,6 +1075,7 @@ export class PptxEditorEngine {
     this.changeLog = [];
     this.shelvedRecords.clear();
     this.pendingSnapshots.clear();
+    this.rejectedSuggestions.clear();
     this.deck = null;
     this.present = null;
     this.baseline = null;
@@ -1053,15 +1127,11 @@ export class PptxEditorEngine {
     this.present = after;
     if (sameHistoryDocument(before, after)) return this.result(false, []);
     const entryId = ++this.sequence;
-    this.undoStack = [
-      ...this.undoStack,
-      { id: entryId, label, before, after }
-    ].slice(-HISTORY_LIMIT);
-    this.redoStack = [];
-    // Redo is gone, so records shelved by undo can never come back.
-    for (const shelved of this.shelvedRecords.values())
-      this.pendingSnapshots.delete(shelved.id);
-    this.shelvedRecords.clear();
+    const history = [...this.undoStack, { id: entryId, label, before, after }];
+    for (const dropped of history.slice(0, -HISTORY_LIMIT))
+      this.rejectedSuggestions.delete(String(dropped.id));
+    this.undoStack = history.slice(-HISTORY_LIMIT);
+    this.discardRedo();
     const changeRecord = deriveChangeRecord({
       transactionId: entryId,
       label,
@@ -1073,6 +1143,8 @@ export class PptxEditorEngine {
     if (changeRecord.status === 'pending') {
       this.pendingSnapshots.set(changeRecord.id, { before, after });
       changeRecord.beforeSlides = slidesBefore(changeRecord, before);
+      changeRecord.changedSlides = [...slidesChangedBetween(before, after)];
+      changeRecord.beforeSlideRels = before.manifest.slideRels;
     }
     this.changeLog = [...this.changeLog, changeRecord];
     this.revision += 1;
