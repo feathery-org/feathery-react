@@ -42,7 +42,7 @@ import urllib.request
 import uuid
 import xml.etree.ElementTree as ET
 
-TOOL_VERSION = "1.5.1"
+TOOL_VERSION = "1.5.2"
 
 REGION = "us-west-1"
 ACCOUNT_ID = "737208625848"
@@ -108,10 +108,12 @@ WORKLOAD_REGIONS = (
     "ca-central-1",
     "us-west-1",
 )
-# How far a release folder's name may differ from the LastModified time S3
-# records for its first object. Both come from AWS's clock; the first PUT can
-# take five 60 s attempts plus 15 s of backoff (about 5.25 minutes).
-FOLDER_TIME_TOLERANCE = datetime.timedelta(minutes=10)
+# How far each file's LastModified may be from its release folder's name.
+# Both come from AWS's clock. `file` writes the three files one after another,
+# and each PUT can take five 60 s attempts plus 15 s of backoff (5.25 minutes),
+# so a slow but genuine filing can finish 15.75 minutes after the folder time.
+# A backdated or later-completed folder is off by hours or days.
+FOLDER_TIME_TOLERANCE = datetime.timedelta(minutes=20)
 RETRYABLE_STATUS = (429, 500, 502, 503, 504)
 THROTTLING_CODES = (b"Throttling", b"SlowDown", b"RequestLimitExceeded", b"TooMany")
 
