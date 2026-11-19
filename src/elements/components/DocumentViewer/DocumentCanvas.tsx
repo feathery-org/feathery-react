@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import { keyframes } from '@emotion/react';
 import { ViewerDocument } from './index';
 import TextLayerStyles from './TextLayerStyles';
@@ -10,13 +16,19 @@ import { secondaryButtonCss } from './buttonStyles';
 import { AlertIcon } from './icons';
 import { featheryWindow } from '../../../utils/browser';
 import { scopeReviewAnnotations } from './fieldIsolation';
+import { SigningRecipient, SigningTag, SigningTagLayer } from './SigningTags';
 
 const PAGE_GAP = 24;
 // US Letter aspect for loading placeholders; actual pages size themselves.
 const SKELETON_ASPECT = '8.5 / 11';
 
+const NO_SIGNERS: SigningRecipient[] = [];
+
 interface DocumentCanvasProps {
   documents: ViewerDocument[];
+  // The packet's DocuSign recipients, which each document's signing tags name
+  // by position.
+  signers?: SigningRecipient[];
   pageWidth: number;
   onDocLoad: (pdfUrl: string, pdfProxy: any) => void;
   // Fires when the filler edits a form widget. pdf.js writes widget values on
@@ -48,6 +60,7 @@ const shimmer = keyframes({
 
 export default function DocumentCanvas({
   documents,
+  signers = NO_SIGNERS,
   pageWidth,
   onDocLoad,
   onUserEdit,
@@ -255,6 +268,8 @@ export default function DocumentCanvas({
             key={doc.pdf_url}
             pdfProxy={state.pdfProxy}
             pdfUrl={doc.pdf_url}
+            signingTags={doc.signing_tags}
+            signers={signers}
             pageWidth={pageWidth}
             registerPageRef={registerPageRef}
             inputLocked={inputLocked}
@@ -269,6 +284,8 @@ export default function DocumentCanvas({
 interface DocumentPagesProps {
   pdfProxy: any;
   pdfUrl: string;
+  signingTags?: SigningTag[];
+  signers: SigningRecipient[];
   pageWidth: number;
   registerPageRef: (
     pdfUrl: string,
@@ -282,12 +299,21 @@ interface DocumentPagesProps {
 function DocumentPages({
   pdfProxy,
   pdfUrl,
+  signingTags,
+  signers,
   pageWidth,
   registerPageRef,
   inputLocked,
   readOnly
 }: DocumentPagesProps) {
   const numPages: number = pdfProxy.numPages ?? 0;
+  const tagsByPage = useMemo(() => {
+    const byPage: Record<number, SigningTag[]> = {};
+    (signingTags ?? []).forEach((tag) => {
+      byPage[tag.page] = [...(byPage[tag.page] ?? []), tag];
+    });
+    return byPage;
+  }, [signingTags]);
   return (
     <>
       {Array.from({ length: numPages }, (_, pageIndex) => (
@@ -298,6 +324,8 @@ function DocumentPages({
           <PdfPage
             pdfProxy={pdfProxy}
             pageNumber={pageIndex + 1}
+            signingTags={tagsByPage[pageIndex]}
+            signers={signers}
             pageWidth={pageWidth}
             inputLocked={inputLocked}
             readOnly={readOnly}
@@ -311,6 +339,8 @@ function DocumentPages({
 interface PdfPageProps {
   pdfProxy: any;
   pageNumber: number;
+  signingTags?: SigningTag[];
+  signers: SigningRecipient[];
   pageWidth: number;
   inputLocked: boolean;
   readOnly: boolean;
@@ -319,6 +349,8 @@ interface PdfPageProps {
 function PdfPage({
   pdfProxy,
   pageNumber,
+  signingTags,
+  signers,
   pageWidth,
   inputLocked,
   readOnly
@@ -326,6 +358,9 @@ function PdfPage({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textLayerRef = useRef<HTMLDivElement | null>(null);
   const annotationDivRef = useRef<HTMLDivElement | null>(null);
+  // CSS pixels per pdf point once the page is measured, which is what places
+  // the signing tags; 0 until then.
+  const [pointScale, setPointScale] = useState(0);
 
   // `inert` blocks clicks, typing and focus on the widgets (blurring one
   // that's focused), so nothing can be edited while a save is in flight.
@@ -350,6 +385,7 @@ function PdfPage({
       const unscaledViewport = page.getViewport({ scale: 1 });
       const scale = pageWidth / unscaledViewport.width;
       const viewport = page.getViewport({ scale });
+      setPointScale(scale);
 
       const canvas = canvasRef.current;
       if (canvas) {
@@ -500,6 +536,13 @@ function PdfPage({
       />
       <div ref={textLayerRef} className='textLayer' />
       <div ref={annotationDivRef} className='annotationLayer' />
+      {!!signingTags?.length && pointScale > 0 && (
+        <SigningTagLayer
+          tags={signingTags}
+          signers={signers}
+          scale={pointScale}
+        />
+      )}
     </div>
   );
 }

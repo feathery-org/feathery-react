@@ -89,6 +89,32 @@ it('clears only the former container when generation falls back to PDF overlay',
   );
 });
 
+it('sends the clicked button as the source element', async () => {
+  const id = 'source-element';
+  render(<JSForm formId='f1' _internalId={id} />);
+  await screen.findByTestId('btn');
+  const state = (setFormInternalState as jest.Mock).mock.calls.find(
+    ([formId, values]) => formId === id && values.generateEnvelopeFlow
+  )[1];
+  state.client.generateEnvelopes = jest
+    .fn()
+    .mockResolvedValue({ docusign_envelope_id: 'ds-1', status: 'sent' });
+  GridMod._spies.actions = [
+    {
+      type: ACTION_GENERATE_ENVELOPES,
+      documents: ['tpl-1'],
+      envelope_action: 'sign',
+      sign_method: 'docusign'
+    }
+  ];
+  fireEvent.click(screen.getByTestId('btn'));
+  await waitFor(() =>
+    expect(state.client.generateEnvelopes).toHaveBeenCalledWith(
+      expect.objectContaining({ source_element_id: 'b1' })
+    )
+  );
+});
+
 const toastSpies = () =>
   jest.requireMock('../components/ActionToast/useEnvelopeGenerationToast')
     ._spies;

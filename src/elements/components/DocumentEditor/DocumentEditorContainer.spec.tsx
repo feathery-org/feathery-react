@@ -504,6 +504,7 @@ describe('DocumentEditorContainer signing outcomes', () => {
             id: 'step-0',
             buttons: [
               {
+                id: 'generate-button',
                 properties: {
                   actions: [
                     {
@@ -734,6 +735,8 @@ describe('DocumentEditorContainer signing outcomes', () => {
     await waitFor(() => expect(mockFinalizeEnvelopeReview).toHaveBeenCalled());
     const [action, params] = mockFinalizeEnvelopeReview.mock.calls[0];
     expect(action.sign_method).toBe('docusign');
+    // The backend reads this button's signer phone mapping for SMS.
+    expect(action.source_element_id).toBe('generate-button');
     expect(params).toEqual({
       envelopes: [{ envelopeId: `envelope-${CONTAINER}` }],
       envelopeAction: 'sign',
