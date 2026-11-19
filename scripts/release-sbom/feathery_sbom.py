@@ -42,7 +42,7 @@ import urllib.request
 import uuid
 import xml.etree.ElementTree as ET
 
-TOOL_VERSION = "1.5.0"
+TOOL_VERSION = "1.5.1"
 
 REGION = "us-west-1"
 ACCOUNT_ID = "737208625848"
@@ -430,7 +430,8 @@ def signer_credentials(component, action):
         raise SbomError(
             f"could not assume {SIGNER_ROLE_ARN} for {component} with {base.source} "
             f"credentials ({status}). Each release path may sign only its own "
-            "components, and laptop signers are listed in security/release-sbom. "
+            "components. Laptop signers are listed in operator_user_names in "
+            "feathery-terraform security/release-sbom/main.tf; ask Faizal to be added. "
             f"{data.decode(errors='replace')[:300]}"
         )
     return _sts_credentials(data, base.source + " -> signer")
@@ -1212,13 +1213,21 @@ def _releases(credentials, root, service):
             *(int(match.group(g)) for g in ("Y", "m", "d", "H", "M", "S")),
             tzinfo=datetime.timezone.utc,
         )
-        written = keys.get(folder + SBOM_FILE)
-        if written is None or abs(written - moment) > FOLDER_TIME_TOLERANCE:
+        # Every file, not only the first: a folder whose build.json arrived
+        # later (a filing that died after its first PUT, finished days after)
+        # must not be trusted from the earlier folder time.
+        written = {name: keys.get(folder + name) for name in FILES}
+        late = [
+            f"{name} at {iso(at) if at else 'never'}"
+            for name, at in written.items()
+            if at is None or abs(at - moment) > FOLDER_TIME_TOLERANCE
+        ]
+        if late:
             rejected.append(
                 {
                     "folder": folder,
-                    "reason": f"folder time {iso(moment)} but S3 recorded the "
-                    f"write at {iso(written) if written else 'no time'}",
+                    "reason": f"folder time {iso(moment)} but S3 recorded "
+                    + ", ".join(late),
                 }
             )
             continue
