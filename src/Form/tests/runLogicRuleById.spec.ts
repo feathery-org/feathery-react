@@ -1,5 +1,6 @@
 import { runLogicRuleById } from '../logic';
 import internalState from '../../utils/internalState';
+import { compileSharedCode } from '../sharedCode';
 
 // Stub the form-context providers so rules run against a lightweight
 // `feathery` object - we're exercising runLogicRuleById's resolution, params
@@ -23,7 +24,7 @@ const seed = (over: Record<string, any> = {}) => {
     client: {},
     logicRules: [],
     fields: {},
-    extractedSharedCodeInfo: [],
+    sharedCodeModules: {},
     connectorFields: {},
     ...over
   } as any;
@@ -51,7 +52,12 @@ describe('runLogicRuleById - resolution', () => {
   it('fails closed on a server_side rule instead of running its absent code', async () => {
     seed({
       logicRules: [
-        { id: 's1', name: 'Server Rule', trigger_event: 'tool', server_side: true }
+        {
+          id: 's1',
+          name: 'Server Rule',
+          trigger_event: 'tool',
+          server_side: true
+        }
       ]
     });
     const res = await runLogicRuleById('s1', {}, FORM);
@@ -83,6 +89,25 @@ describe('runLogicRuleById - resolution', () => {
 });
 
 describe('runLogicRuleById - client-side path', () => {
+  it('resolves shared code imports from the form state', async () => {
+    seed({
+      sharedCodeModules: compileSharedCode([
+        { key: 'Helpers', code: 'export const double = (n) => n * 2;' } as any
+      ]),
+      logicRules: [
+        {
+          id: 'sc',
+          name: 'Shared',
+          trigger_event: 'tool',
+          server_side: false,
+          code: "import { double } from 'Helpers';\nreturn double(21);"
+        }
+      ]
+    });
+    const res = await runLogicRuleById('sc', {}, FORM);
+    expect(res).toMatchObject({ ok: true, result: 42 });
+  });
+
   it('exposes tool inputs as feathery.params and applies the published phone-number rule shape', async () => {
     seed({
       fields: { myField: { value: 'old' } },
