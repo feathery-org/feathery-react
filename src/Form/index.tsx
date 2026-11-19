@@ -302,12 +302,18 @@ import {
   STEP_EVENT_SUBMIT
 } from '../utils/stepEvents';
 
-// Loaded on demand like the viewer itself, to keep it out of the main bundle.
-const printFinalizedFiles = async (files?: string[]) => {
-  const { printFileUrls } = await import(
-    '../elements/components/DocumentViewer/print'
-  );
-  await printFileUrls(files ?? []);
+// Loaded on demand like the viewer itself, to keep it out of the main bundle,
+// and before finalize: a blocked load must fail before anything is finalized,
+// or each retry would finalize (and with merge_docs, merge) the packet again.
+// Resolves null when the print code or pdf.js can't load.
+const loadPrinter = () =>
+  import('../elements/components/DocumentViewer/print')
+    .then((module) => module.loadPrinter())
+    .catch(() => null);
+
+const PRINT_LOAD_ERROR = {
+  status: 'error',
+  message: 'Unable to load printing. Please try again.'
 };
 
 const DocumentViewer = React.lazy(
@@ -1644,6 +1650,8 @@ function Form({
                   refreshDraft,
                   completes
                 }: any) => {
+                  const printFiles = print ? await loadPrinter() : null;
+                  if (print && !printFiles) return PRINT_LOAD_ERROR;
                   const result = await client.finalizeEnvelopeReview(action, {
                     envelopes,
                     envelopeAction,
@@ -1656,7 +1664,7 @@ function Form({
                   if (result.status === 'error') return result;
                   // Print finalizes as a download, then prints the files
                   // instead of saving them.
-                  if (print) await printFinalizedFiles(result.files);
+                  if (printFiles) await printFiles(result.files ?? []);
                   else await runEnvelopeAction(result, envelopeAction, draft);
                   await runDocumentReviewLogic(
                     buildDocumentReviewTrigger({
@@ -3852,6 +3860,8 @@ function Form({
                 print: boolean;
                 refreshDraft: boolean;
               }) => {
+                const printFiles = print ? await loadPrinter() : null;
+                if (print && !printFiles) return PRINT_LOAD_ERROR;
                 const result = await client.finalizeEnvelopeReview(action, {
                   envelopes,
                   envelopeAction,
@@ -3871,7 +3881,7 @@ function Form({
                 if (result.status === 'error') return result;
                 // Print finalizes as a download, then prints the files
                 // instead of saving them.
-                if (print) await printFinalizedFiles(result.files);
+                if (printFiles) await printFiles(result.files ?? []);
                 else await runEnvelopeAction(result, envelopeAction, draft);
                 await runDocumentReviewLogic(
                   buildDocumentReviewTrigger({
