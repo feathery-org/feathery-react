@@ -22,6 +22,10 @@ const NODE_MODULES = 'node_modules/';
 
 function run(command, args, options) {
   const result = spawnSync(command, args, { stdio: 'inherit', ...options });
+  // Set when the child never ran, for example ENOENT or a timeout.
+  if (result.error) {
+    throw new Error(`could not run ${command}: ${result.error.message}`);
+  }
   if (result.status !== 0) {
     throw new Error(`${path.basename(command)} ${args[0]} failed`);
   }
@@ -228,4 +232,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { consumerPackages, scanLayout };
+module.exports = { consumerPackages, run, scanLayout };

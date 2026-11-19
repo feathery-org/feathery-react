@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { packageRoot, record } = require('./bundled-packages.cjs');
-const { consumerPackages, scanLayout } = require('./sign.cjs');
+const { consumerPackages, run, scanLayout } = require('./sign.cjs');
 
 describe('packageRoot', () => {
   it('finds unscoped, scoped and nested packages', () => {
@@ -176,5 +176,19 @@ describe('scanLayout', () => {
         directory: 'bundled/@babel/runtime@7.20.6/node_modules/@babel/runtime'
       }
     ]);
+  });
+});
+
+describe('run', () => {
+  it('names the cause when the command cannot start', () => {
+    expect(() => run('release-sbom-missing-command', ['script.py'])).toThrow(
+      'could not run release-sbom-missing-command: spawnSync release-sbom-missing-command ENOENT'
+    );
+  });
+
+  it('names the command when it exits non-zero', () => {
+    expect(() => run(process.execPath, ['-e', 'process.exit(3)'])).toThrow(
+      'node -e failed'
+    );
   });
 });
