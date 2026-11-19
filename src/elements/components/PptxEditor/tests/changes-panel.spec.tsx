@@ -20,3 +20,48 @@ it('lists an added slide under that slide, not the first one', async () => {
     await mounted.unmount();
   }
 });
+
+const addSlideAs = (
+  mounted: Awaited<ReturnType<typeof mountEditor>>,
+  origin: 'assistant' | 'editor'
+) =>
+  act(async () => {
+    mounted.store.transaction({ origin }, () =>
+      mounted.store.engine.execute({
+        type: 'add-slide',
+        atIndex: mounted.store.getState().deck!.slides.length
+      })
+    );
+  });
+
+it('removes a suggestion card once it is accepted', async () => {
+  const mounted = await mountEditor(<PptxChangesPanel />);
+  try {
+    await act(async () => mounted.store.loadFile(sampleBytes(), 'sample.pptx'));
+    await addSlideAs(mounted, 'assistant');
+    const accept = [...mounted.host.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Accept'
+    )!;
+
+    await act(async () => accept.click());
+
+    expect(mounted.host.textContent).not.toContain('assistant');
+    expect(mounted.host.textContent).toContain(
+      'Edits you make will be tracked here.'
+    );
+  } finally {
+    await mounted.unmount();
+  }
+});
+
+it("keeps the user's own edits listed", async () => {
+  const mounted = await mountEditor(<PptxChangesPanel />);
+  try {
+    await act(async () => mounted.store.loadFile(sampleBytes(), 'sample.pptx'));
+    await addSlideAs(mounted, 'editor');
+
+    expect(mounted.host.textContent).toContain('· user');
+  } finally {
+    await mounted.unmount();
+  }
+});

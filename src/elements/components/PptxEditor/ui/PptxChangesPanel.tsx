@@ -125,7 +125,17 @@ export default function PptxChangesPanel() {
   const state = usePptxEditorState();
   const [conflicts, setConflicts] = useState<Record<string, string>>({});
 
-  const records = store.engine.changes();
+  // An accepted suggestion is settled, so its card leaves the list; the log
+  // keeps the record for conflict checks.
+  const log = store.engine.changes();
+  const records = useMemo(
+    () =>
+      log.filter(
+        (record) =>
+          !(record.origin === 'assistant' && record.status === 'accepted')
+      ),
+    [log]
+  );
   const groups = useMemo(() => {
     const deck = state.deck;
     if (!deck) return [];
