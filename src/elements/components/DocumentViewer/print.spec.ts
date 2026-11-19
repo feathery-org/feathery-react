@@ -1,4 +1,4 @@
-import { printFileUrls } from './print';
+import { loadPrinter, printFileUrls } from './print';
 import { loadPdfjs } from './pdfjsLoader';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
 
@@ -93,6 +93,23 @@ describe('printFileUrls', () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:page');
   });
 
+  it('removes the print markup on a timer when afterprint never fires', async () => {
+    const setTimeoutSpy = jest.spyOn(featheryWindow(), 'setTimeout');
+    mockDocuments({ 'a.pdf': makeProxy(1) });
+    await printFileUrls(['a.pdf']);
+    expect(featheryDoc().querySelector(rootSelector)).not.toBeNull();
+
+    const [fallback] = setTimeoutSpy.mock.calls.find(
+      ([, delay]) => delay === 60000
+    ) as [() => void, number];
+    fallback();
+
+    expect(featheryDoc().querySelector(rootSelector)).toBeNull();
+    // A late afterprint after the fallback is a no-op.
+    featheryWindow().dispatchEvent(new Event('afterprint'));
+    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+  });
+
   it('cleans up and rethrows when a page fails to render', async () => {
     const proxy = makeProxy(1);
     proxy.render.mockReturnValue({
@@ -110,5 +127,17 @@ describe('printFileUrls', () => {
   it('does nothing without files', async () => {
     await printFileUrls([]);
     expect(featheryWindow().print).not.toHaveBeenCalled();
+  });
+});
+
+describe('loadPrinter', () => {
+  it('resolves the printer once pdf.js loads', async () => {
+    (loadPdfjs as jest.Mock).mockResolvedValue({});
+    await expect(loadPrinter()).resolves.toBe(printFileUrls);
+  });
+
+  it('rejects when pdf.js is blocked', async () => {
+    (loadPdfjs as jest.Mock).mockRejectedValue(new Error('blocked'));
+    await expect(loadPrinter()).rejects.toThrow('blocked');
   });
 });

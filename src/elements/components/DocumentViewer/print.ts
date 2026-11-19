@@ -6,6 +6,10 @@ import { featheryDoc, featheryWindow } from '../../../utils/browser';
 const PRINT_DPI = 150;
 const PRINT_SCALE = PRINT_DPI / 72;
 const PRINT_ROOT_CLASS = 'fthry-review-print-root';
+// Fallback cleanup for when afterprint never fires: a sandboxed iframe without
+// allow-modals turns print() into a silent no-op. Browsers print from a
+// snapshot, so removing the markup while the dialog is open is safe.
+const PRINT_MARKUP_LIFETIME = 60000;
 
 // While printing, only the rendered pages show. The review modal itself is a
 // body-level portal, so hiding every other body child hides it too.
@@ -74,7 +78,11 @@ async function printDocuments(pdfProxies: any[]) {
   style.textContent = PRINT_CSS;
   root.appendChild(style);
 
+  let cleanedUp = false;
   const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    win.removeEventListener('afterprint', cleanup);
     root.remove();
     urls.forEach((url) => URL.revokeObjectURL(url));
   };
@@ -103,7 +111,16 @@ async function printDocuments(pdfProxies: any[]) {
   }
 
   win.addEventListener('afterprint', cleanup, { once: true });
+  // Whichever runs second is a no-op.
+  win.setTimeout(cleanup, PRINT_MARKUP_LIFETIME);
   win.print();
+}
+
+/** Load pdf.js and resolve to the printer, so a blocked CDN or CSP fails
+ * before the caller commits to anything (e.g. finalizing the envelopes). */
+export async function loadPrinter() {
+  await loadPdfjs();
+  return printFileUrls;
 }
 
 /** Print the PDFs at `urls` (a finalized review's files) in one dialog,
