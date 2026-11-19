@@ -71,7 +71,13 @@ export function othersOf(pending: unknown, turnId: string): unknown {
 }
 
 const RUN_ATTRIBUTES = ['@_b', '@_i', '@_u', '@_strike', '@_sz'];
-const RUN_CHILDREN = ['a:solidFill', 'a:latin'];
+// A run's link tags follow the link it sits in
+const RUN_CHILDREN = [
+  'a:solidFill',
+  'a:latin',
+  'a:hlinkClick',
+  'a:hlinkMouseOver'
+];
 const PARAGRAPH_ATTRIBUTES = ['@_algn', '@_lvl'];
 
 const tagOf = (node: Record<string, unknown>) =>
@@ -142,6 +148,41 @@ const isEmptyRun = (run: NfNode): boolean =>
   run.kind === 'link'
     ? (run.runs as NfNode[]).every(isEmptyRun)
     : run.kind === 'run' && run.text === '';
+
+const joinsLink = (run: NfNode, i: number, runs: NfNode[]) =>
+  run.kind === 'link' &&
+  runs[i - 1]?.kind === 'link' &&
+  runs[i - 1].target === run.target;
+
+const hasJoinedLinks = (node: NfNode) =>
+  node.kind === 'paragraph' &&
+  Array.isArray(node.runs) &&
+  (node.runs as NfNode[]).some(joinsLink);
+
+/** Two links side by side to one place read back as one link */
+export const adjacentLinks: Normalization = {
+  name: 'adjacent-links',
+  apply(nf) {
+    let found = false;
+    walk(nf.root, pptxTree, ({ node }) => {
+      if (hasJoinedLinks(node)) found = true;
+    });
+    if (!found) return nf;
+    const out = clone(nf);
+    walk(out.root, pptxTree, ({ node }) => {
+      if (!hasJoinedLinks(node)) return;
+      const runs: NfNode[] = [];
+      (node.runs as NfNode[]).forEach((run, i, all) => {
+        const link = runs[runs.length - 1];
+        if (joinsLink(run, i, all))
+          link.runs = [...(link.runs as NfNode[]), ...(run.runs as NfNode[])];
+        else runs.push(run);
+      });
+      node.runs = runs;
+    });
+    return out;
+  }
+};
 
 /** What a paragraph takes from the layout is read from the deck, never written */
 export const inheritedFormat: Normalization = {

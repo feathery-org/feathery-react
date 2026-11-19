@@ -506,6 +506,11 @@ export function planDeck(
     });
   }
   const target = afterSlides.flatMap((slide) => keyOf.get(slide) ?? []);
+  if (!target.length)
+    refuse(
+      intended.nf.root.id,
+      'would be left with no slides: a deck keeps at least one slide'
+    );
   operations.push(...moves(order, target));
   return { operations, cannot };
 }

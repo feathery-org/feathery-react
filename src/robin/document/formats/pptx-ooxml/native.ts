@@ -7,6 +7,10 @@ import type {
   Slide
 } from '../../../../elements/components/PptxEditor/core/model/types';
 import {
+  relationshipsOf,
+  type RelEntry
+} from '../../../../elements/components/PptxEditor/core/opc/package';
+import {
   buildXml,
   parseXml
 } from '../../../../elements/components/PptxEditor/core/opc/xml';
@@ -14,7 +18,10 @@ import {
 export interface PendingSuggestion {
   by: string;
   beforeSlides: Record<string, string>;
+  changed: Record<string, string[] | null>;
   beforeOrder?: string[];
+  afterOrder?: string[];
+  links?: Record<string, Record<string, string>>;
 }
 
 /** The run formatting each shape's paragraphs take from the layout and master, by shape id and level */
@@ -43,8 +50,14 @@ export function writeNative(native: DeckNative): string {
       ...(inherited ? { inherited } : {}),
       ...(links ? { links } : {})
     })),
-    pending: native.pending.map(({ by, beforeSlides, beforeOrder }) =>
-      beforeOrder ? { by, beforeSlides, beforeOrder } : { by, beforeSlides }
+    pending: native.pending.map(
+      ({ by, beforeSlides, changed, beforeOrder, afterOrder, links }) => ({
+        by,
+        beforeSlides,
+        changed,
+        ...(beforeOrder ? { beforeOrder, afterOrder } : {}),
+        ...(links ? { links } : {})
+      })
     )
   });
 }
@@ -64,27 +77,51 @@ export function serializeDeck(engine: PptxEditorEngine): string {
       const beforeDeck = deckWide
         ? ((record.before as Record<string, DeckJSON>)['*'] as DeckJSON)
         : undefined;
+      const afterDeck = deckWide
+        ? ((record.after as Record<string, DeckJSON>)['*'] as DeckJSON)
+        : undefined;
+      // The slides it changed in place, narrowed to the shapes it names
+      const changed: Record<string, string[] | null> = {};
+      if (deckWide)
+        for (const path of record.changedSlides ?? []) changed[path] = null;
+      else
+        for (const { slideId, shapeId } of record.targets)
+          changed[slideId] =
+            shapeId && changed[slideId] !== null
+              ? [...(changed[slideId] ?? []), shapeId]
+              : null;
+      const beforeSlides = Object.fromEntries(
+        Object.entries(record.beforeSlides ?? {}).map(([path, raw]) => [
+          path,
+          buildXml(raw)
+        ])
+      );
+      // A removed slide's links are known only from the relationships it had
+      const links = Object.fromEntries(
+        Object.entries(beforeSlides).flatMap(([path, xml]) => {
+          const rels = record.beforeSlideRels?.[path];
+          const targets = rels && linkTargets(relationshipsOf(rels, path), xml);
+          return targets ? [[path, targets]] : [];
+        })
+      );
       return {
         by: record.author.id ?? record.id,
-        beforeSlides: Object.fromEntries(
-          Object.entries(record.beforeSlides ?? {}).map(([path, raw]) => [
-            path,
-            buildXml(raw)
-          ])
-        ),
-        ...(beforeDeck
-          ? { beforeOrder: beforeDeck.slides.map((slide) => slide.path) }
-          : {})
+        beforeSlides,
+        changed,
+        ...(beforeDeck && afterDeck
+          ? {
+              beforeOrder: beforeDeck.slides.map((slide) => slide.path),
+              afterOrder: afterDeck.slides.map((slide) => slide.path)
+            }
+          : {}),
+        ...(Object.keys(links).length ? { links } : {})
       };
     });
   return writeNative({
     slides: deck.slides.map((slide) => {
       const inherited = inheritedFormat(deck, slide);
       const xml = buildXml(slide.raw);
-      const links = linkTargets(deck, slide.path, [
-        xml,
-        ...pending.flatMap(({ beforeSlides }) => beforeSlides[slide.path] ?? [])
-      ]);
+      const links = linkTargets(deck.pkg.rels(slide.path), xml);
       return {
         path: slide.path,
         xml,
@@ -98,21 +135,17 @@ export function serializeDeck(engine: PptxEditorEngine): string {
 
 /** Where each link on a slide goes, by the relationship its runs name */
 function linkTargets(
-  deck: Deck,
-  path: string,
-  xmls: string[]
+  relationships: RelEntry[],
+  xml: string
 ): Record<string, string> | null {
   const named = new Set(
-    xmls.flatMap((xml) =>
-      [...xml.matchAll(/<a:hlinkClick\b[^>]*\br:id="([^"]+)"/g)].map(
-        (match) => match[1]
-      )
+    [...xml.matchAll(/<a:hlinkClick\b[^>]*\br:id="([^"]+)"/g)].map(
+      (match) => match[1]
     )
   );
   if (!named.size) return null;
   return Object.fromEntries(
-    deck.pkg
-      .rels(path)
+    relationships
       .filter((relationship) => named.has(relationship.id))
       .map((relationship) => [relationship.id, relationship.target])
   );

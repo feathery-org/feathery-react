@@ -469,6 +469,21 @@ const cases: Array<[string, boolean, string, (deck: Deck) => WriteResult]> = [
     'marketing-parity.pptx',
     (d) =>
       insertAfter(d, slides(d)[0], slides(d)[0], { kind: 'slide', shapes: [] })
+  ],
+  [
+    'every slide removed',
+    false,
+    'marketing-parity.pptx',
+    (d) =>
+      d.write({
+        intent: 'Remove every slide.',
+        scope: { ids: slides(d) },
+        changes: slides(d).map((id) => ({
+          kind: 'delete',
+          id,
+          base: d.read(id).base
+        }))
+      })
   ]
 ];
 

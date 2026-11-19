@@ -29,4 +29,30 @@ describe('PowerPoint outline, pages and selection', () => {
       expect.objectContaining({ text: 'Company Name' })
     );
   });
+
+  it('describes a shape Robin renamed by its suggested text only', () => {
+    const deck = openDeck();
+    const run = (deck.read(deck.find('Company Name')[0].id).runs as any)[0];
+    deck.write({
+      intent: 'Rename the company.',
+      scope: { ids: [run.id] },
+      changes: [
+        {
+          kind: 'replace',
+          id: run.id,
+          base: deck.read(run.id).base,
+          node: { ...run, text: 'Acme' }
+        }
+      ]
+    });
+    const subtitle = deck.engine
+      .readDeck()!
+      .slides[0].shapes.find((shape) =>
+        shape.text?.paragraphs.some((p) => p.runs.some((r) => r.text === 'Acme'))
+      )!;
+    deck.store.selectMany([subtitle.id]);
+    expect(deck.session.descriptor().selection).toEqual(
+      expect.objectContaining({ text: 'Acme' })
+    );
+  });
 });

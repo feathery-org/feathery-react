@@ -71,8 +71,9 @@ export function effective(
   view: DocumentView
 ): Record<string, EffectiveProperty> {
   const specs = schemaFor(node.kind) ?? [];
-  const paragraph =
-    node.kind === 'paragraph' ? node : view.placement(node.id)?.parent;
+  let paragraph: NfNode | null | undefined = node;
+  while (paragraph && paragraph.kind !== 'paragraph')
+    paragraph = view.placement(paragraph.id)?.parent;
   const inherited =
     (paragraph?.inherited as Record<string, unknown> | undefined) ?? {};
   const out: Record<string, EffectiveProperty> = {};

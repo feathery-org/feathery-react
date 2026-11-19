@@ -516,6 +516,156 @@ describe('PowerPoint structure', () => {
   });
 });
 
+describe('PowerPoint suggestions beside the person\'s own edits', () => {
+  const copyFirstSlide = (deck: ReturnType<typeof openDeck>, turnId: string) => {
+    const [first] = slides(deck);
+    return deck.write(
+      {
+        intent: 'Copy the title slide.',
+        scope: { ids: [first] },
+        changes: [
+          { kind: 'insert_after', anchor: first, node: deck.read(first, turnId) }
+        ]
+      },
+      turnId
+    );
+  };
+  const renameSubtitle = (deck: ReturnType<typeof openDeck>) => {
+    const run = (deck.read(deck.find('Company Name')[0].id).runs as any)[0];
+    expectCard(
+      deck.write({
+        intent: 'Rename the company.',
+        scope: { ids: [run.id] },
+        changes: [
+          {
+            kind: 'replace',
+            id: run.id,
+            base: deck.read(run.id).base as string,
+            node: { ...run, text: 'Acme' }
+          }
+        ]
+      })
+    );
+  };
+  const italicSubtitle = (
+    deck: ReturnType<typeof openDeck>,
+    text: string,
+    italic: boolean
+  ) => {
+    const [slide] = slidesOf(deck);
+    const shape = deck.engine
+      .readDeck()!
+      .slides[0].shapes.find((candidate) =>
+        candidate.text?.paragraphs.some((p) =>
+          p.runs.some((r) => r.text === text)
+        )
+      )!;
+    deck.engine.execute({
+      type: 'format-text',
+      slideId: slide.path,
+      shapeId: shape.id,
+      style: { italic }
+    });
+  };
+  const rejectsKept = (deck: ReturnType<typeof openDeck>) =>
+    (deck.engine as unknown as { rejectedSuggestions: Map<string, unknown> })
+      .rejectedSuggestions.size;
+
+  it('keeps an accepted slide copy when redo would replay its undone reject', () => {
+    const deck = openDeck();
+    const count = slidesOf(deck).length;
+    expectCard(copyFirstSlide(deck, 'turn-0001'));
+    deck.call('resolve', { cards: ['turn-0001'], accept: false }, 'turn-0002');
+    deck.store.undo();
+    deck.call('resolve', { cards: ['turn-0001'], accept: true }, 'turn-0002');
+    deck.store.redo();
+    expect(slidesOf(deck)).toHaveLength(count + 1);
+    expect(
+      deck.engine.changes().find((record) => record.author.id === 'turn-0001')
+        ?.status
+    ).toBe('accepted');
+  });
+
+  it('forgets a reject once its undo step is discarded or leaves history', () => {
+    const undone = openDeck();
+    renameSubtitle(undone);
+    expect(undone.engine.rejectChange(undone.pending()[0].id).ok).toBe(true);
+    undone.store.undo();
+    italicSubtitle(undone, 'Acme', true);
+    expect(rejectsKept(undone)).toBe(0);
+
+    const aged = openDeck();
+    renameSubtitle(aged);
+    expect(aged.engine.rejectChange(aged.pending()[0].id).ok).toBe(true);
+    for (let i = 0; i < 100; i++)
+      italicSubtitle(aged, 'Company Name', i % 2 === 0);
+    expect(rejectsKept(aged)).toBe(0);
+  }, 60000);
+
+  it("lets Robin copy a slide the person added after Robin's own copy", () => {
+    const deck = openDeck();
+    expectCard(copyFirstSlide(deck, 'turn-1'));
+    deck.store.addSlide(slidesOf(deck).length, slidesOf(deck)[2].path);
+    const added = slides(deck).slice(-1)[0];
+    expect(deck.read(added, 'turn-2').pending).toBeUndefined();
+    expectCard(
+      deck.write(
+        {
+          intent: 'Copy the new slide.',
+          scope: { ids: [added] },
+          changes: [
+            {
+              kind: 'insert_after',
+              anchor: added,
+              node: deck.read(added, 'turn-2')
+            }
+          ]
+        },
+        'turn-2'
+      )
+    );
+  });
+
+  it('marks a shape Robin renamed in the same write that copied its slide', () => {
+    const deck = openDeck();
+    const [first] = slides(deck);
+    const run = (deck.read(deck.find('Company Name')[0].id).runs as any)[0];
+    expectCard(
+      deck.write({
+        intent: 'Copy the title slide and rename the company.',
+        scope: { ids: [first, run.id] },
+        changes: [
+          { kind: 'insert_after', anchor: first, node: deck.read(first) },
+          {
+            kind: 'replace',
+            id: run.id,
+            base: deck.read(run.id).base as string,
+            node: { ...run, text: 'Acme' }
+          }
+        ]
+      })
+    );
+    const renamed = deck.find('Acme', 'turn-2')[0].within[0];
+    expect(deck.read(renamed, 'turn-2').pending).toEqual({
+      insertion: 'turn-1'
+    });
+  });
+
+  it("does not mark the person's new shape as part of Robin's edit on that slide", () => {
+    const deck = openDeck();
+    renameSubtitle(deck);
+    const [slide] = slidesOf(deck);
+    deck.engine.execute({
+      type: 'insert-shape',
+      slideId: slide.path,
+      shape: { kind: 'text-box', x: 0, y: 0, cx: 914400, cy: 457200 }
+    });
+    const [first] = slides(deck);
+    const shapes = deck.read(first, 'turn-2').shapes as Array<{ id: string }>;
+    expect(deck.read(shapes.slice(-1)[0].id, 'turn-2').pending).toBeUndefined();
+  });
+});
+
 describe('PowerPoint shapes sharing an id on one slide', () => {
   const openSharing = () => {
     const files = unzipSync(fixture('marketing-parity.pptx'));

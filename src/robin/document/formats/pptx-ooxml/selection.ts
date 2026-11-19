@@ -54,7 +54,11 @@ export function selectionOf(
   if (!slide || !shapes?.length) return null;
   const paragraphs: NfNode[] = [];
   walk(slide, pptxTree, ({ node }) => {
-    if (node.shapeId !== undefined && shapes.includes(String(node.shapeId)))
+    if (
+      node.shapeId !== undefined &&
+      shapes.includes(String(node.shapeId)) &&
+      !(node.pending as Pending | undefined)?.deletion
+    )
       paragraphs.push(...paragraphsIn(node));
   });
   const unique = [...new Set(paragraphs)];

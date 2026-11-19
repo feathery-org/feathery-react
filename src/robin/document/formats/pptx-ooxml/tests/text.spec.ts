@@ -148,6 +148,35 @@ describe('PowerPoint text', () => {
     ]);
   });
 
+  it('takes the underline off underlined text', () => {
+    const files = unzipSync(fixture('marketing-parity.pptx'));
+    const slidePath = 'ppt/slides/slide1.xml';
+    files[slidePath] = strToU8(
+      strFromU8(files[slidePath]).replace(
+        '<a:rPr lang="en"/><a:t>Company Name',
+        '<a:rPr lang="en" u="sng"/><a:t>Company Name'
+      )
+    );
+    const deck = openDeck('marketing-parity.pptx', zipSync(files));
+    const { run } = subtitle(deck);
+    expect(deck.read(run).underline).toBe(true);
+    expectCard(
+      deck.write({
+        intent: 'Remove the underline.',
+        scope: { ids: [run] },
+        changes: [
+          {
+            kind: 'replace',
+            id: run,
+            base: deck.read(run).base,
+            node: { ...deck.read(run), underline: false }
+          }
+        ]
+      })
+    );
+    expect(deck.read(run).underline).toBe(false);
+  });
+
   it('reports formatting the layout gives a run as inherited', () => {
     const deck = openDeck();
     const { run } = subtitle(deck);
@@ -282,8 +311,13 @@ describe('PowerPoint text', () => {
       `<a:r><a:rPr lang="en"${
         link ? `><a:hlinkClick r:id="${link}"/></a:rPr>` : '/>'
       }<a:t>${text}</a:t></a:r>`;
+    const runWith = (text: string, tags: string) =>
+      `<a:r><a:rPr lang="en">${tags}</a:rPr><a:t>${text}</a:t></a:r>`;
     // "Visit " plain, "Docs" linked to A, "Help" linked to B
-    const linkedDeck = () => {
+    const linkedDeck = (
+      subtitle = run('Visit ') + run('Docs', 'rIdA') + run('Help', 'rIdB'),
+      text = 'Visit DocsHelp'
+    ) => {
       const files = unzipSync(fixture('marketing-parity.pptx'));
       const rels = 'ppt/slides/_rels/slide1.xml.rels';
       const relationship = (id: string, target: string) =>
@@ -291,7 +325,7 @@ describe('PowerPoint text', () => {
       files[slidePath] = strToU8(
         strFromU8(files[slidePath]).replace(
           run('Company Name'),
-          run('Visit ') + run('Docs', 'rIdA') + run('Help', 'rIdB')
+          subtitle
         )
       );
       files[rels] = strToU8(
@@ -301,20 +335,21 @@ describe('PowerPoint text', () => {
         )
       );
       const deck = openDeck('marketing-parity.pptx', zipSync(files));
-      const paragraph = deck.find('Visit DocsHelp')[0].id;
+      const paragraph = deck.find(text)[0].id;
       return { deck, paragraph, node: deck.read(paragraph) };
     };
     type Node = Record<string, any>;
-    // Each run of the deck's subtitle as saved: its text and the link it carries
-    const savedRuns = (deck: ReturnType<typeof openDeck>) =>
+    const savedSlide = (deck: ReturnType<typeof openDeck>) =>
       (
         JSON.parse(serializeDeck(deck.engine)).slides as Array<{
           path: string;
           xml: string;
         }>
-      )
-        .find((part) => part.path === slidePath)!
-        .xml.match(/<a:r>.*?<\/a:r>/g)!
+      ).find((part) => part.path === slidePath)!.xml;
+    // Each run of the deck's subtitle as saved: its text and the link it carries
+    const savedRuns = (deck: ReturnType<typeof openDeck>) =>
+      savedSlide(deck)
+        .match(/<a:r>.*?<\/a:r>/g)!
         .map((xml) => [
           xml.match(/<a:t>(.*?)<\/a:t>/)?.[1] ?? '',
           xml.match(/hlinkClick r:id="(\w+)"/)?.[1] ?? null
@@ -485,6 +520,95 @@ describe('PowerPoint text', () => {
         ['Do', undefined],
         ['cs', true]
       ]);
+    });
+
+    it.each([
+      ['two tooltips on one link', '<a:hlinkClick r:id="rIdA" tooltip="one"/>', '<a:hlinkClick r:id="rIdA" tooltip="two"/>'],
+      ['a hover-only link', '<a:hlinkMouseOver r:id="rIdA"/>', '<a:hlinkMouseOver r:id="rIdB"/>'],
+      ['a click action with no target', '<a:hlinkClick r:id="" action="ppaction://hlinkshowjump?jump=nextslide"/>', '<a:hlinkClick r:id="" action="ppaction://hlinkshowjump?jump=lastslide"/>']
+    ])('keeps %s on runs it leaves where they were', (_, docs, help) => {
+      const { deck, paragraph, node } = linkedDeck(
+        run('Visit ') + runWith('Docs', docs) + runWith('Help', help)
+      );
+      const [visit, ...rest] = node.runs as Node[];
+      expectCard(
+        replaceParagraph(deck, paragraph, {
+          ...node,
+          runs: [{ ...visit, text: 'See ' }, ...rest]
+        })
+      );
+      expect(savedSlide(deck)).toContain(
+        `<a:t>See </a:t></a:r>${runWith('Docs', docs)}${runWith('Help', help)}`
+      );
+    });
+
+    it.each([
+      ['into', (visit: Node, a: Node, b: Node) => [{ ...a, runs: [visit, ...a.runs] }, b], [['Visit ', 'rIdA'], ['Docs', 'rIdA'], ['Help', 'rIdB']]],
+      ['out of', (visit: Node, a: Node, b: Node) => [visit, ...a.runs, b], [['Visit ', null], ['Docs', null], ['Help', 'rIdB']]]
+    ])('moves existing text %s a link', (_, runs, saved) => {
+      const { deck, paragraph, node } = linkedDeck();
+      const [visit, a, b] = node.runs as Node[];
+      expectCard(
+        replaceParagraph(deck, paragraph, { ...node, runs: runs(visit, a, b) })
+      );
+      expect(savedRuns(deck)).toEqual(saved);
+    });
+
+    it('removes the text between two links to one place', () => {
+      const { deck, paragraph, node } = linkedDeck(
+        run('Docs', 'rIdA') + run(' and ') + run('Help', 'rIdA'),
+        'Docs and Help'
+      );
+      const [docs, , help] = node.runs as Node[];
+      expectCard(replaceParagraph(deck, paragraph, { ...node, runs: [docs, help] }));
+      expect(savedRuns(deck)).toEqual([
+        ['Docs', 'rIdA'],
+        ['Help', 'rIdA']
+      ]);
+    });
+
+    it('keeps a line break inside a link in it', () => {
+      const { deck, paragraph, node } = linkedDeck();
+      const [visit, a, b] = node.runs as Node[];
+      expectCard(
+        replaceParagraph(deck, paragraph, {
+          ...node,
+          runs: [visit, { ...a, runs: [...a.runs, { text: '\n' }, { text: 'more' }] }, b]
+        })
+      );
+      expect(
+        (deck.read(paragraph).runs as Node[]).map((child) =>
+          child.kind === 'link' ? child.runs.map((inner: Node) => inner.text) : child.text
+        )
+      ).toEqual(['Visit ', ['Docs', '\n', 'more'], ['Help']]);
+    });
+
+    it('removes the slide a link is on and brings it back on reject', () => {
+      const { deck } = linkedDeck();
+      const slide = deck.find('Visit DocsHelp')[0].within[1];
+      expectCard(
+        deck.write({
+          intent: 'Drop the title slide.',
+          scope: { ids: [slide] },
+          changes: [{ kind: 'delete', id: slide, base: deck.read(slide).base }]
+        })
+      );
+      for (const record of deck.pending().reverse())
+        expect(deck.engine.rejectChange(record.id).ok).toBe(true);
+      expect(savedRuns(deck)).toEqual([
+        ['Visit ', null],
+        ['Docs', 'rIdA'],
+        ['Help', 'rIdB']
+      ]);
+    });
+
+    it('reports the formatting linked text takes from the layout', () => {
+      const { deck, node } = linkedDeck();
+      const [, a] = node.runs as Node[];
+      const read = deck.call('read', { ids: [a.runs[0].id], properties: true }) as {
+        nodes: Array<{ properties: Record<string, { value: unknown; source: string }> }>;
+      };
+      expect(read.nodes[0].properties.size).toEqual({ value: 12, source: 'container' });
     });
 
     it.each([

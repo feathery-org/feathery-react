@@ -43,17 +43,24 @@ function styleChange(
   return Object.keys(style).length ? style : null;
 }
 
-/** Where each link of the shape starts, the run the editor copies the link from */
-function linkStarts(shape: NfNode): Map<string, Location> {
+/** Where each link of the shape starts, the run the editor copies the link from, and the link each run sits in */
+function linkLayout(shape: NfNode): {
+  starts: Map<string, Location>;
+  linkOf: Map<string, string | null>;
+} {
   const starts = new Map<string, Location>();
+  const linkOf = new Map<string, string | null>();
   paragraphsOf(shape).forEach((paragraph, p) => {
     let r = 0;
     for (const run of paragraph.runs as NfNode[]) {
+      const inner = run.kind === 'link' ? (run.runs as NfNode[]) : [run];
       if (run.kind === 'link') starts.set(run.id, { paragraph: p, run: r });
-      r += run.kind === 'link' ? (run.runs as NfNode[]).length : 1;
+      for (const leaf of inner)
+        linkOf.set(leaf.id, run.kind === 'link' ? run.id : null);
+      r += inner.length;
     }
   });
-  return starts;
+  return { starts, linkOf };
 }
 
 /** New text as the editor's own edits, then the formatting of each run that differs from what it continues */
@@ -69,17 +76,23 @@ export function textOperations(
   )
     return [];
   const sources = textSources(before, after, origin);
-  const starts = linkStarts(before);
+  const { starts, linkOf } = linkLayout(before);
   // Each run with the link it sits in, none when it is outside every link
   const linked = (paragraph: NfNode) =>
-    (paragraph.runs as NfNode[]).flatMap((run) =>
-      run.kind === 'link'
-        ? (run.runs as NfNode[]).map((inner) => ({
-            run: inner,
-            link: starts.get(origin(run.id)) ?? null
-          }))
-        : [{ run, link: null }]
+    (paragraph.runs as NfNode[]).flatMap(
+      (run): Array<{ run: NfNode; link: string | null }> =>
+        run.kind === 'link'
+          ? (run.runs as NfNode[]).map((inner) => ({
+              run: inner,
+              link: origin(run.id)
+            }))
+          : [{ run, link: null }]
     );
+  // A run left in the link it was in keeps its own link tags
+  const linkWrite = (run: NfNode, link: string | null) =>
+    linkOf.get(origin(run.id)) === link
+      ? {}
+      : { link: link === null ? null : starts.get(link) ?? null };
   const paragraphs: RichPara[] = paragraphsOf(after).map((paragraph, p) => {
     const source = sources.paragraphs[p];
     const from = source === undefined ? undefined : paragraphAt(before, source);
@@ -88,13 +101,18 @@ export function textOperations(
       runs: linked(paragraph).map(({ run, link }, r) => {
         if (run.kind === 'break') {
           const own = breakLocation(before, origin(run.id));
-          return { text: '', break: true, ...(own ? { source: own } : {}) };
+          return {
+            text: '',
+            break: true,
+            ...(own ? { source: own } : {}),
+            ...linkWrite(run, link)
+          };
         }
         const at = sources.runs[p][r];
         return {
           text: String(run.text),
           ...(at ? { source: at, styleChanged: false } : {}),
-          link
+          ...linkWrite(run, link)
         };
       })
     };

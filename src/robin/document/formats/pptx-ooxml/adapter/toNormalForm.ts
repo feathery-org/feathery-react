@@ -107,8 +107,7 @@ interface SlideState {
 function markPending(
   slides: NfNode[],
   pending: PendingSuggestion[],
-  read: ReadNodes,
-  links: Record<string, Record<string, string> | undefined>
+  read: ReadNodes
 ): void {
   let state: SlideState[] = slides.map((slide) => ({
     path: String(slide.path),
@@ -116,18 +115,15 @@ function markPending(
     shapes: [...(slide.shapes as NfNode[])]
   }));
   for (let i = pending.length - 1; i >= 0; i--) {
-    const { by, beforeSlides, beforeOrder } = pending[i];
+    const { by, beforeSlides, changed, beforeOrder, afterOrder, links } =
+      pending[i];
     const earlier = new Map<string, SlideState>();
-    const stays = beforeOrder
-      ? unmoved(
-          state.map((slide) => slide.path),
-          beforeOrder
-        )
-      : null;
+    const stays =
+      beforeOrder && afterOrder ? unmoved(afterOrder, beforeOrder) : null;
 
     for (const [path, xml] of Object.entries(beforeSlides)) {
       const tree = parseXml(xml);
-      read.links = links[path];
+      read.links = links?.[path];
       const after = state.find((slide) => slide.path === path);
       if (!after || (stays && !stays.has(path))) {
         if (after) mark(after.node, 'insertion', by);
@@ -140,6 +136,8 @@ function markPending(
         });
         continue;
       }
+      if (!(path in changed)) continue;
+      const only = changed[path];
       const list = after.node.shapes as NfNode[];
       const shapesBefore: NfNode[] = [];
       const matched = new Set<NfNode>();
@@ -149,13 +147,16 @@ function markPending(
           (shape) => shape.shapeId === shapeId && !matched.has(shape)
         );
         if (current) matched.add(current);
+        const touched = !only || only.includes(shapeId);
         if (
           current &&
-          canonicalJson(read.sources.get(current)) === canonicalJson(node)
+          (!touched ||
+            canonicalJson(read.sources.get(current)) === canonicalJson(node))
         ) {
           shapesBefore.push(current);
           continue;
         }
+        if (!touched) continue;
         const twin = readShape(node, `${after.node.id}#${shapeId}~${i}`, read);
         mark(twin, 'deletion', by);
         if (current) {
@@ -165,16 +166,21 @@ function markPending(
         shapesBefore.push(twin);
       }
       for (const shape of after.shapes)
-        if (!matched.has(shape)) mark(shape, 'insertion', by);
+        if (
+          !matched.has(shape) &&
+          (!only || only.includes(String(shape.shapeId)))
+        )
+          mark(shape, 'insertion', by);
       earlier.set(path, { path, node: after.node, shapes: shapesBefore });
     }
 
-    if (!beforeOrder) {
+    if (!beforeOrder || !afterOrder) {
       state = state.map((slide) => earlier.get(slide.path) ?? slide);
       continue;
     }
     for (const slide of state)
-      if (!beforeOrder.includes(slide.path)) mark(slide.node, 'insertion', by);
+      if (!beforeOrder.includes(slide.path) && afterOrder.includes(slide.path))
+        mark(slide.node, 'insertion', by);
     const next = beforeOrder.map(
       (path) =>
         earlier.get(path) ??
@@ -194,14 +200,11 @@ export function toNormalForm(native: string): {
 } {
   const deck = readNative(native);
   const read: ReadNodes = { residue: {}, sources: new Map() };
-  const links = Object.fromEntries(
-    deck.slides.map((slide) => [slide.path, slide.links])
-  );
-  const slides = deck.slides.map(({ path, xml, inherited }) => {
-    read.links = links[path];
+  const slides = deck.slides.map(({ path, xml, inherited, links }) => {
+    read.links = links;
     return readSlide(path, parseXml(xml), path, read, inherited);
   });
-  markPending(slides, deck.pending, read, links);
+  markPending(slides, deck.pending, read);
   read.links = undefined;
   const residue: Residue = {
     ...read.residue,

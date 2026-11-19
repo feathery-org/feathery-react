@@ -268,6 +268,34 @@ describe('a formula rewritten through its paragraph without its id', () => {
   });
 });
 
+describe('a field copy whose text the user deleted, tracked (review regression)', () => {
+  it('still defines its name, so changing the other copy\'s scope is refused as two definitions', () => {
+    const sfdt = JSON.parse(flagship);
+    const copies = (function find(n: any): any[] {
+      if (Array.isArray(n)) return n.flatMap(find);
+      if (!n || typeof n !== 'object') return [];
+      if (n.contentControlProperties?.tag === '[[name=client_name|type=text]]') return [n];
+      return Object.values(n).flatMap(find);
+    })(sfdt.sections);
+    copies.slice(2).forEach((n) => { n.contentControlProperties.tag = '[[name=insured_name|type=text]]'; });
+    copies[0].inlines.forEach((run: any) => { run.revisionIds = ['user-del']; });
+    sfdt.revisions = [...(sfdt.revisions ?? []), { revisionId: 'user-del', revisionType: 'Deletion', author: 'Pat', date: '2026-11-18T00:00:00Z' }];
+    let doc = JSON.stringify(sfdt);
+    const host = { serialize: () => doc, open: (s: string) => { doc = s; }, canUndo: () => false, undo: () => {}, canRedo: () => false, redo: () => {}, readOnly: () => false };
+    const session = new DocumentSession({ pack: docxPack, host, target: { type: 'envelope', id: 'e' }, editorId: 'ed' });
+    const other = session.state.view.nodes().filter((n) => n.kind === 'control' && (n.binding as { name?: string } | undefined)?.name === 'client_name')[1];
+    const read = session.dispatch('read', { turnId: 'turn-r', editorId: 'ed', target: { type: 'envelope', id: 'e' }, input: { ids: [other.id] } });
+    if (read.status !== 'ok') throw new Error(JSON.stringify(read).slice(0, 600));
+    const base = (read.result as { nodes: Array<{ id: string; base: string }> }).nodes.find((n) => n.id === other.id)?.base;
+    const node = JSON.parse(JSON.stringify(other, (k, v) => (['id', 'pending'].includes(k) ? undefined : v)));
+    node.binding = { ...node.binding, global: true };
+    const out = session.dispatch('write', { turnId: 'turn-g', editorId: 'ed', target: { type: 'envelope', id: 'e' }, input: { intent: 'Make the client name global.', scope: { ids: [other.id] }, changes: [{ kind: 'replace', id: other.id, base, node }] } });
+    const refusal = (out as { result?: { refusal?: { invariant?: string; destroyed?: string } } }).result?.refusal;
+    expect(refusal?.invariant).toBe('binding');
+    expect(refusal?.destroyed).toContain('conflicting-definition');
+  });
+});
+
 describe('a section rewritten without its ids', () => {
   it('keeps its bound table whole, so the formulas over it still evaluate', () => {
     const m = mount();

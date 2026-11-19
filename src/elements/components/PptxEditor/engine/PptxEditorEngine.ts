@@ -804,6 +804,8 @@ export class PptxEditorEngine {
 
   /** Drop what undo set aside, so nothing undone can come back */
   discardRedo(): void {
+    for (const entry of this.redoStack)
+      this.rejectedSuggestions.delete(String(entry.id));
     this.redoStack = [];
     for (const shelved of this.shelvedRecords.values())
       this.pendingSnapshots.delete(shelved.id);
@@ -833,6 +835,14 @@ export class PptxEditorEngine {
   acceptChange(id: string): boolean {
     const record = this.changeLog.find((candidate) => candidate.id === id);
     if (!record || record.status !== 'pending') return false;
+    // Redo must not replay an undone reject of what is now accepted
+    if (
+      this.redoStack.some(
+        (entry) =>
+          this.rejectedSuggestions.get(String(entry.id))?.record.id === id
+      )
+    )
+      this.discardRedo();
     this.changeLog = this.changeLog.map((candidate) =>
       candidate === record
         ? { ...candidate, status: 'accepted' as const, beforeSlides: undefined }
@@ -1094,10 +1104,10 @@ export class PptxEditorEngine {
     this.present = after;
     if (sameHistoryDocument(before, after)) return this.result(false, []);
     const entryId = ++this.sequence;
-    this.undoStack = [
-      ...this.undoStack,
-      { id: entryId, label, before, after }
-    ].slice(-HISTORY_LIMIT);
+    const history = [...this.undoStack, { id: entryId, label, before, after }];
+    for (const dropped of history.slice(0, -HISTORY_LIMIT))
+      this.rejectedSuggestions.delete(String(dropped.id));
+    this.undoStack = history.slice(-HISTORY_LIMIT);
     this.discardRedo();
     const changeRecord = deriveChangeRecord({
       transactionId: entryId,
@@ -1110,6 +1120,8 @@ export class PptxEditorEngine {
     if (changeRecord.status === 'pending') {
       this.pendingSnapshots.set(changeRecord.id, { before, after });
       changeRecord.beforeSlides = slidesBefore(changeRecord, before);
+      changeRecord.changedSlides = [...slidesChangedBetween(before, after)];
+      changeRecord.beforeSlideRels = before.manifest.slideRels;
     }
     this.changeLog = [...this.changeLog, changeRecord];
     this.revision += 1;

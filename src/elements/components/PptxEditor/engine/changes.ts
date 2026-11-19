@@ -30,6 +30,8 @@ export interface PptxChangeRecord {
   before: unknown;
   after: unknown;
   beforeSlides?: Readonly<Record<string, OTree>>;
+  changedSlides?: string[];
+  beforeSlideRels?: Readonly<Record<string, OTree>>;
 }
 
 function slideOf(doc: DeckJSON, path: string): SlideJSON | undefined {

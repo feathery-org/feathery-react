@@ -8,6 +8,7 @@ import { limits } from './invariants/limits';
 import { belowBlocks, detail, ownText } from './outline';
 import {
   accept,
+  adjacentLinks,
   authoredBy,
   conservedResidue,
   editorIdentity,
@@ -50,7 +51,7 @@ export const pptxPack: Pack = {
   projections: {
     accept,
     reject,
-    normalizations: [emptyRuns, inheritedFormat, editorIdentity],
+    normalizations: [emptyRuns, adjacentLinks, inheritedFormat, editorIdentity],
     authoredBy,
     othersOf,
     conservedResidue,
