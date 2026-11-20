@@ -1930,6 +1930,24 @@ describe('IntegrationClient', () => {
       ]);
     });
 
+    it('maps cc excludedPackets to excluded_packets, omitted when absent', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'env-1' })
+      });
+      await integrationClient.sendDocusignEnvelope({
+        documents: ['doc-1'],
+        ccRecipients: [
+          { email: 'a@mail.com', excludedPackets: ['Packet A'] },
+          { email: 'b@mail.com' }
+        ]
+      });
+      const cc = requestBody().cc_recipients;
+      expect(cc[0].excluded_packets).toEqual(['Packet A']);
+      expect('excluded_packets' in cc[1]).toBe(false);
+    });
+
     it('omits cc_recipients when a rule passes null', async () => {
       // Logic rules are untyped, so `someField || null` is plausible input;
       // the backend's list field rejects null with a 400.

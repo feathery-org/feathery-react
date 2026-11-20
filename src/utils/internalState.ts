@@ -125,7 +125,12 @@ export type SendDocusignParams = {
   // excludedDocuments hides those documents from the copy, as on a signer.
   ccRecipients?: (
     | string
-    | { email: string; name?: string; excludedDocuments?: number[] }
+    | {
+        email: string;
+        name?: string;
+        excludedDocuments?: number[];
+        excludedPackets?: string[];
+      }
   )[];
   fillData?: Record<string, any>;
   emailSubject?: string;

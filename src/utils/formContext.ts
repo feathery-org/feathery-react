@@ -483,7 +483,7 @@ export const getFormContext = (formUuid: string) => {
       merge?: boolean;
       // Packets: each inner list of document references / template ids merges
       // into one PDF (one DocuSign document, or one download file).
-      mergeGroups?: string[][];
+      mergeGroups?: (string[] | { name: string; documents: string[] })[];
       mergedFileName?: string;
       zipName?: string;
       saveDocumentFieldKey?: string;
@@ -507,7 +507,10 @@ export const getFormContext = (formUuid: string) => {
               name: cc.name,
               excluded_documents: cc.excludedDocuments
                 ? [...cc.excludedDocuments]
-                : undefined
+                : undefined,
+              ...(cc.excludedPackets?.length
+                ? { excluded_packets: [...cc.excludedPackets] }
+                : {})
             }
       );
       if (smsAuthentication !== undefined && signMethod !== 'docusign') {
@@ -590,7 +593,11 @@ export const getFormContext = (formUuid: string) => {
         !!mergeGroups?.length ||
         documentIds.some((doc) => typeof doc !== 'string');
       // Captured before awaits below, like the document sources.
-      mergeGroups = mergeGroups?.map((group) => [...group]);
+      mergeGroups = mergeGroups?.map((group) =>
+        Array.isArray(group)
+          ? [...group]
+          : { ...group, documents: [...group.documents] }
+      );
       // Capture explicit Quik inputs before awaiting saves or opening review.
       // Caller edits to the original object must not change this request.
       documentIds = documentIds.map((doc) =>
@@ -624,7 +631,10 @@ export const getFormContext = (formUuid: string) => {
           )
         );
       }
-      if (mergeGroups?.length && (merge || envelopeAction === 'open_in_editor')) {
+      if (
+        mergeGroups?.length &&
+        (merge || envelopeAction === 'open_in_editor')
+      ) {
         // Fail fast; the backend rejects both combinations anyway.
         return Promise.reject(
           new Error(
@@ -775,7 +785,9 @@ export const getFormContext = (formUuid: string) => {
       }
       if (mergeGroups?.length) {
         return Promise.reject(
-          new Error('generateDocuments: mergeGroups require a mounted <Form />.')
+          new Error(
+            'generateDocuments: mergeGroups require a mounted <Form />.'
+          )
         );
       }
       if (ccRecipients !== undefined) {
