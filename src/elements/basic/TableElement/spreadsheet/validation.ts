@@ -1,4 +1,5 @@
 import { validators } from '../../../../utils/validation';
+import { COUNTRIES, US_STATES } from './hubValues';
 import { CellValue } from './model';
 import {
   CellConstraint,
@@ -31,7 +32,11 @@ export type CellValueType =
   | 'tax_id'
   | 'text'
   | 'url'
-  | 'uuid';
+  | 'uuid'
+  | 'zip_code'
+  // Offered as a fixed list of codes (`options`), the same lists the hub checks.
+  | 'us_state'
+  | 'country_code';
 
 export type CellRule = {
   /** Column name, used in messages. */
@@ -108,6 +113,22 @@ export const parseCellErrorKey = (key: string) => {
 };
 
 const TAX_ID_PATTERN = /^\d{9}$/;
+const ZIP_PATTERN = /^\d{5}(-\d{4})?$/;
+const US_STATE_CODES = US_STATES.map(({ code }) => code);
+const COUNTRY_CODES = COUNTRIES.map(({ code }) => code);
+
+// One list for the menu and the check: the rule's options (what the editor
+// offers), else its type's. Sets are cached per list, so a check stays cheap.
+const codeSets = new WeakMap<string[], Set<string>>();
+function allowedCodes(rule: CellRule): Set<string> {
+  const codes = rule.options ?? HUB_TYPE_OPTIONS[rule.type] ?? [];
+  let set = codeSets.get(codes);
+  if (!set) {
+    set = new Set(codes);
+    codeSets.set(codes, set);
+  }
+  return set;
+}
 const UUID_PATTERN =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 // Exactly the hub's `_PHONE_RE`: digits only, no punctuation and no leading
@@ -216,6 +237,12 @@ export function validateCellValue(
       return TAX_ID_PATTERN.test(text) ? null : 'Must be 9 digits, no dashes';
     case 'uuid':
       return UUID_PATTERN.test(text) ? null : 'Invalid UUID';
+    case 'zip_code':
+      return ZIP_PATTERN.test(text) ? null : 'Must be 12345 or 12345-6789';
+    case 'us_state':
+      return allowedCodes(rule).has(text) ? null : 'Must be a valid US state';
+    case 'country_code':
+      return allowedCodes(rule).has(text) ? null : 'Must be a valid country';
     case 'date':
     case 'datetime': {
       const parsed = parseDate(text);
@@ -354,7 +381,15 @@ const HUB_TYPES: Record<string, CellValueType> = {
   phone_number: 'phone_number',
   tax_id: 'tax_id',
   text: 'text',
-  uuid: 'uuid'
+  uuid: 'uuid',
+  zip_code: 'zip_code',
+  us_state: 'us_state',
+  country_code: 'country_code'
+};
+
+const HUB_TYPE_OPTIONS: Record<string, string[]> = {
+  us_state: US_STATE_CODES,
+  country_code: COUNTRY_CODES
 };
 
 /**
@@ -387,7 +422,7 @@ export function hubCellRules(
       type: HUB_TYPES[field.type] ?? 'any',
       required: field.required,
       unique: field.unique,
-      options: metadata.options,
+      options: HUB_TYPE_OPTIONS[field.type] ?? metadata.options,
       minLength: metadata.min_length,
       maxLength: metadata.max_length,
       minValue: metadata.min_value,

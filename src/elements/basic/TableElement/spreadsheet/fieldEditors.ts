@@ -1,5 +1,6 @@
 import { CellValue, formatCellValue, parseInputValue } from './model';
 import { CellRule } from './validation';
+import { toStoredForm } from './hubValues';
 
 /**
  * How one column is edited and displayed.
@@ -39,6 +40,21 @@ export function editorKindFor(rule?: CellRule): EditorKind {
     default:
       return 'text';
   }
+}
+
+/**
+ * The choice a type-ahead `query` lands on: an exact match first ("NY", not the
+ * first code starting with N), then the first choice starting with it.
+ */
+export function matchChoice(
+  choices: string[],
+  query: string
+): string | undefined {
+  const q = query.toLowerCase();
+  return (
+    choices.find((choice) => choice.toLowerCase() === q) ??
+    choices.find((choice) => choice.toLowerCase().startsWith(q))
+  );
 }
 
 /** The choices a `select` column offers, in the order they are shown. */
@@ -201,7 +217,9 @@ export function parseCellInput(
     const guessed = parseInputValue(text);
     return typeof guessed === type ? guessed : text;
   }
-  return text;
+  // What the hub would store ("California" -> CA), so a value it accepts
+  // isn't flagged here.
+  return toStoredForm(type, text);
 }
 
 // Mask everything but the last four, the way an SSN is shown on a statement.
