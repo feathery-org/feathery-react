@@ -298,6 +298,11 @@ import {
   STEP_EVENT_SKIP,
   STEP_EVENT_SUBMIT
 } from '../utils/stepEvents';
+import {
+  loadReviewPrinter,
+  printFinalizedFiles,
+  PRINT_LOAD_ERROR
+} from '../utils/reviewPrint';
 
 const DocumentViewer = React.lazy(
   () => import('../elements/components/DocumentViewer')
@@ -1614,9 +1619,12 @@ function Form({
                   envelopes,
                   envelopeAction,
                   draft,
+                  print,
                   refreshDraft,
                   completes
                 }: any) => {
+                  const printer = print ? await loadReviewPrinter() : null;
+                  if (print && !printer) return PRINT_LOAD_ERROR;
                   const result = await client.finalizeEnvelopeReview(action, {
                     envelopes,
                     envelopeAction,
@@ -1627,13 +1635,21 @@ function Form({
                     return { status: 'error', message: 'Finalize failed' };
                   }
                   if (result.status === 'error') return result;
-                  await runEnvelopeAction(result, envelopeAction, draft);
+                  // Print finalizes as a download, then prints the files
+                  // instead of saving them.
+                  if (printer) {
+                    const printError = await printFinalizedFiles(
+                      printer,
+                      result.files
+                    );
+                    if (printError) return printError;
+                  } else await runEnvelopeAction(result, envelopeAction, draft);
                   await runDocumentReviewLogic(
                     buildDocumentReviewTrigger({
                       action,
                       elementId: '',
                       envelopes,
-                      envelopeAction,
+                      envelopeAction: print ? 'print' : envelopeAction,
                       draft,
                       result
                     })
@@ -1644,7 +1660,11 @@ function Form({
                   if (completes)
                     finalized = {
                       ...result,
-                      reviewAction: draft ? 'draft' : envelopeAction
+                      reviewAction: draft
+                        ? 'draft'
+                        : print
+                        ? 'print'
+                        : envelopeAction
                     };
                   return result;
                 },
@@ -3807,13 +3827,17 @@ function Form({
                 envelopes,
                 envelopeAction,
                 draft,
+                print,
                 refreshDraft
               }: {
                 envelopes: { envelopeId: string }[];
                 envelopeAction: 'sign' | 'fill' | 'download' | 'save';
                 draft: boolean;
+                print: boolean;
                 refreshDraft: boolean;
               }) => {
+                const printer = print ? await loadReviewPrinter() : null;
+                if (print && !printer) return PRINT_LOAD_ERROR;
                 const result = await client.finalizeEnvelopeReview(action, {
                   envelopes,
                   envelopeAction,
@@ -3831,13 +3855,21 @@ function Form({
                     message: 'Failed to finalize documents. Please try again.'
                   };
                 if (result.status === 'error') return result;
-                await runEnvelopeAction(result, envelopeAction, draft);
+                // Print finalizes as a download, then prints the files
+                // instead of saving them.
+                if (printer) {
+                  const printError = await printFinalizedFiles(
+                    printer,
+                    result.files
+                  );
+                  if (printError) return printError;
+                } else await runEnvelopeAction(result, envelopeAction, draft);
                 await runDocumentReviewLogic(
                   buildDocumentReviewTrigger({
                     action,
                     elementId: element.id,
                     envelopes,
-                    envelopeAction,
+                    envelopeAction: print ? 'print' : envelopeAction,
                     draft,
                     result
                   })
