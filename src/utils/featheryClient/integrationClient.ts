@@ -132,13 +132,14 @@ const envelopeErrorMessage = (payload: any) => {
   return (!ownMessage && firstErrorMessage(payload)) || parseAPIError(payload);
 };
 
-// A coded error comes back as {message, code}; others as [{message, code}].
+// DRF errors come back as [{message, code}], a few as one {message, code}.
 const errorCode = (payload: any) =>
   Array.isArray(payload) ? payload[0]?.code : payload?.code;
 
 // Only the backend's own verdict says nothing went out; any other failure
-// (expired poll, throttle, timeout, finalize_failed) may have sent.
-const FINALIZE_REFUSED = 'finalize_refused';
+// (expired poll, throttle, timeout, a DocuSign error) may have sent.
+const finalizeRefused = (response: Response) =>
+  response.headers?.get?.('X-Finalize-Verdict')?.toLowerCase() === 'refused';
 
 const QUIK_DYNAMIC_ATTACHMENTS_OPTION = '__quik_dynamic_attachments__';
 // Backend 400s meaning another tab closed, superseded or finalized the session.
@@ -1483,7 +1484,7 @@ export default class IntegrationClient {
       return {
         status: 'error',
         message: envelopeErrorMessage(data),
-        ...(errorCode(data) === FINALIZE_REFUSED ? { rejected: true } : {})
+        ...(finalizeRefused(response) ? { rejected: true } : {})
       };
     // The sync response is already the final `{ files: [...] }` payload.
     // The async response is always `{}` immediately, regardless of the
@@ -1498,15 +1499,12 @@ export default class IntegrationClient {
 
     const envelopeIds = envelopes.map((envelope) => envelope.envelopeId);
     const pollUrl = `${getApiUrl()}document/form/finalize/poll/?fid=${userId}&eids=${envelopeIds}`;
-    const result = await this.pollUntilComplete(
+    return await this.pollUntilComplete(
       pollUrl,
       this.FINALIZE_CHECK_INTERVAL,
       this.FINALIZE_MAX_TIME,
       'Document finalize'
     );
-    return result.code === FINALIZE_REFUSED
-      ? { ...result, rejected: true }
-      : result;
   }
 
   // Shared GET-poll loop for endpoints whose async path reports completion
@@ -1572,7 +1570,8 @@ export default class IntegrationClient {
         return resolve({
           status: 'error',
           message: parseAPIError(data),
-          code: errorCode(data)
+          // Only finalize's poll ever sends the verdict header.
+          ...(finalizeRefused(response) ? { rejected: true } : {})
         });
       };
 
