@@ -248,7 +248,7 @@ export const getFormContext = (formUuid: string) => {
         const id = type === 'field' ? el.servar.key : el.id;
         hideIfMap[id] = {
           elementType: type,
-          name: type === 'field' ? el.servar.key : el.key ?? el.id,
+          name: type === 'field' ? el.servar.key : el.key || el.id,
           showOrHide: el.show_logic ? 'show' : 'hide',
           childFields:
             type === 'subgrid' ? fieldKeysByContainer[el.id] : undefined,
