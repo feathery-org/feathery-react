@@ -104,8 +104,9 @@ type DocusignLibraryDocuments = {
   // ('*.44252.2.Sign'). The page still ships; only the tab is dropped.
   skipEsignFields?: string[];
 };
-// Reminder + expiration schedule (day counts). Omit either block to leave that
-// part on the DocuSign account default.
+// Reminder + expiration schedule (day counts). Each field given overrides the
+// DocuSign integration's reminder setting; anything omitted falls back to it,
+// then to the DocuSign account default.
 export type DocusignNotification = {
   reminders?: { enabled?: boolean; delay?: number; frequency?: number };
   expirations?: { enabled?: boolean; after?: number; warn?: number };
@@ -174,6 +175,9 @@ export type UpdateDocusignEnvelopeParams = {
   // recycle bin, deleting a draft)
   status: 'sent' | 'voided' | 'discarded';
   voidedReason?: string; // required by the backend when status is 'voided'
+  // status 'sent' only: applied to the draft before it is sent; blocks left
+  // out keep the draft's own schedule
+  notification?: DocusignNotification;
 };
 
 // Runtime changes a host embedding the form may react to
