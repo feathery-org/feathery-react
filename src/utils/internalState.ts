@@ -104,9 +104,8 @@ type DocusignLibraryDocuments = {
   // ('*.44252.2.Sign'). The page still ships; only the tab is dropped.
   skipEsignFields?: string[];
 };
-// Reminder + expiration schedule (day counts). Each field given overrides the
-// DocuSign integration's reminder setting; anything omitted falls back to it,
-// then to the DocuSign account default.
+// Reminder + expiration schedule in days. Each field given overrides the
+// DocuSign card's Email Reminder settings, then the account default applies.
 export type DocusignNotification = {
   reminders?: { enabled?: boolean; delay?: number; frequency?: number };
   expirations?: { enabled?: boolean; after?: number; warn?: number };
