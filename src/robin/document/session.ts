@@ -549,7 +549,7 @@ export class DocumentSession {
 
   /**
    * An editor that tracks suggestions itself settles the cards with its own history, one undo step
-   * per reject. Otherwise accept or reject cards through the engine: a reject of the last change
+   * per accept or reject. Otherwise accept or reject cards through the engine: a reject of the last change
    * set alone, with the document still as it left it, restores the snapshot byte for byte;
    * otherwise the pack's group projection of the live document is opened for every card at once.
    * `alongside` is the editor's own resolution of the batch's other cards, run in the same step.

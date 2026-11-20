@@ -101,9 +101,6 @@ function RecordCard({
       </button>
       <span css={{ fontSize: 11, color: INK_2 }}>
         Slide {slideIndex + 1} · {record.author.label}
-        {record.status === 'rejected' && (
-          <span css={{ color: DEL }}> · rejected</span>
-        )}
       </span>
       {pending && (
         <div css={{ display: 'flex', gap: 6 }}>
@@ -125,7 +122,18 @@ export default function PptxChangesPanel() {
   const state = usePptxEditorState();
   const [conflicts, setConflicts] = useState<Record<string, string>>({});
 
-  const records = store.engine.changes();
+  // A settled suggestion leaves the list, along with the reject's own entry;
+  // the log keeps both, and undo brings the suggestion back as pending.
+  const log = store.engine.changes();
+  const records = useMemo(
+    () =>
+      log.filter(
+        (record) =>
+          !record.rejects &&
+          !(record.origin === 'assistant' && record.status !== 'pending')
+      ),
+    [log]
+  );
   const groups = useMemo(() => {
     const deck = state.deck;
     if (!deck) return [];
@@ -155,9 +163,19 @@ export default function PptxChangesPanel() {
     if (target.shapeId) store.select(target.shapeId);
   };
 
+  // A settled card unmounts while its button holds focus; hand focus to the
+  // stage so the undo shortcut still reaches the editor.
+  const focusStage = () =>
+    store.svgRoot?.closest<HTMLElement>('[data-pptx-stage]')?.focus();
+
+  const accept = (record: PptxChangeRecord) => {
+    if (store.acceptChange(record.id)) focusStage();
+  };
+
   const reject = (record: PptxChangeRecord) => {
     const outcome = store.rejectChange(record.id);
-    if (!outcome.ok) {
+    if (outcome.ok) focusStage();
+    else {
       setConflicts((current) => ({
         ...current,
         [record.id]:
@@ -213,7 +231,7 @@ export default function PptxChangesPanel() {
                 record={record}
                 slideIndex={slideIndex}
                 onSelect={() => selectRecord(record)}
-                onAccept={() => store.acceptChange(record.id)}
+                onAccept={() => accept(record)}
                 onReject={() => reject(record)}
                 conflict={conflicts[record.id]}
               />
