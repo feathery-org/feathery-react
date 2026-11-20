@@ -5,6 +5,7 @@ import { HubFieldSchema, HubSchema } from '../../components/dataMapping/types';
 import {
   CellRules,
   CellErrorConstraints,
+  HUB_RELATION_TYPE,
   hubCellRules,
   isChangedConstraintError
 } from './spreadsheet/validation';
@@ -26,12 +27,18 @@ export type HubVerification = 'verified' | 'unverified' | 'all';
 type HubEntry = {
   id: string;
   data: Record<string, any>;
+  relations?: Record<
+    string,
+    { items: Array<{ id: string; label: string | null }>; count: number }
+  >;
   verified?: boolean;
 };
 type HubRow = {
   localId: string;
   entryId: string | null;
   data: Record<string, any>;
+  // Relation field key -> its linked entries' labels, for display only.
+  relationLabels?: Record<string, string>;
   // Only meaningful when a verification filter was sent: the Hub labels each
   // entry then. Writes to an unverified row must say so, since update and
   // delete default to the verified set server-side.
@@ -82,6 +89,7 @@ type DataHubAction = (options: {
   operation: 'get' | 'create' | 'update' | 'delete' | 'verify' | 'unverify';
   entryId?: string;
   data?: Record<string, any>;
+  fields?: string[];
   where?: HubWhereCondition[];
   verification?: HubVerification;
 }) => Promise<any>;
@@ -224,6 +232,18 @@ export function useHubTableSource({
   const [schemaFields, setSchemaFields] = useState<HubFieldSchema[] | null>(
     null
   );
+  // The last schema's fields and the hub they came from, read by the loader
+  // without making it reload whenever the schema lands.
+  const loadedSchemaRef = useRef<{
+    hubId: string;
+    fields: HubFieldSchema[];
+  } | null>(null);
+  // Static mode keeps its schema across loads, so a new hub must drop it.
+  useEffect(() => {
+    if (hubDynamic) return;
+    loadedSchemaRef.current = null;
+    setSchemaFields(null);
+  }, [staticHubId, hubDynamic]);
   // Whether the Hub stages unverified rows, per its schema. Null until the
   // schema has loaded (or on a backend that predates the flag).
   const [unverifiedEnabled, setUnverifiedEnabled] = useState<boolean | null>(
@@ -303,6 +323,17 @@ export function useHubTableSource({
     return { hubColumns: cols, syntheticToHubKey: map };
   }, [resolvedColumns, tableId, statusKey]);
 
+  // Relation links are written apart from `data`, which the grid can't do.
+  const relationKeys = useMemo(
+    () =>
+      new Set(
+        (schemaFields ?? [])
+          .filter((field) => field.type === HUB_RELATION_TYPE)
+          .map((field) => field.key)
+      ),
+    [schemaFields]
+  );
+
   // Read-only columns are a builder setting (the Hub has no such flag), plus
   // the status column, which reports a state rather than storing a value.
   const readOnlyKeys = useMemo(() => {
@@ -312,11 +343,12 @@ export function useHubTableSource({
         .filter(
           (col) =>
             col.hub_field_id === STATUS_HUB_FIELD_ID ||
+            relationKeys.has(col.hub_field_key ?? '') ||
             (col.hub_field_id ? readonly.has(col.hub_field_id) : false)
         )
         .map((col) => col.field_key)
     );
-  }, [hubColumns, readonlyHubFields]);
+  }, [hubColumns, readonlyHubFields, relationKeys]);
 
   const [rows, setRows] = useState<HubRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -417,12 +449,17 @@ export function useHubTableSource({
         verification,
         ...(where.length ? { where } : {})
       };
-      const readEntries = (hubId: string) =>
-        client.dataHubAction!({ hubId, ...getOptions }).then(
+      const readEntries = (hubId: string, fields?: string[]) =>
+        client.dataHubAction!({
+          hubId,
+          ...getOptions,
+          ...(fields ? { fields } : {})
+        }).then(
           (list) => ({ list }),
           (error) => ({ error })
         );
       let entries: { list?: any; error?: any };
+      let sentFields: string[] | undefined;
       if (hubDynamic) {
         // The reference may be a hub key or id; the schema endpoint accepts
         // both and answers with the id every other call needs, so the entries
@@ -447,22 +484,44 @@ export function useHubTableSource({
           resolvedHubIdRef.current = match.id;
           setResolvedHubId(match.id);
         }
-        entries = await readEntries(targetHubId);
+        sentFields = fieldsToRead(match.fields);
+        entries = await readEntries(targetHubId, sentFields);
       } else {
         // A schema failure (e.g. a backend without the endpoint yet) falls
         // back to the columns stored on the element instead of erroring the
         // table. The schema is applied even when the read fails: a filter on
         // a renamed column can only recover once the live key is known.
+        const cached = loadedSchemaRef.current;
+        sentFields =
+          cached?.hubId === targetHubId
+            ? fieldsToRead(cached.fields)
+            : undefined;
         [schemas, entries] = await Promise.all([
           client.getHubSchemas
             ? client.getHubSchemas([targetHubId]).catch(() => null)
             : Promise.resolve(null),
-          readEntries(targetHubId)
+          readEntries(targetHubId, sentFields)
         ]);
       }
       if (isStale()) return;
       const hubSchema = schemas?.hubs?.find((h) => h.id === targetHubId);
-      if (Array.isArray(hubSchema?.fields)) setSchemaFields(hubSchema.fields);
+      // Read again when the fields named before the schema arrived were wrong,
+      // or unconfirmed because it failed: stale names would filter out data.
+      const wantedFields = fieldsToRead(hubSchema?.fields);
+      if (
+        !('error' in entries) &&
+        JSON.stringify(wantedFields) !== JSON.stringify(sentFields)
+      ) {
+        entries = await readEntries(targetHubId, wantedFields);
+        if (isStale()) return;
+      }
+      if (Array.isArray(hubSchema?.fields)) {
+        loadedSchemaRef.current = {
+          hubId: targetHubId,
+          fields: hubSchema.fields
+        };
+        setSchemaFields(hubSchema.fields);
+      }
       if (typeof hubSchema?.unverified_enabled === 'boolean') {
         setUnverifiedEnabled(hubSchema.unverified_enabled);
       }
@@ -475,6 +534,7 @@ export function useHubTableSource({
           localId: `entry:${entry.id}`,
           entryId: entry.id,
           data: { ...entry.data },
+          relationLabels: relationLabels(entry.relations),
           // The Hub only labels entries when a verification filter was sent;
           // with the default filter every row it returns is verified.
           verified: entry.verified ?? true
@@ -530,9 +590,13 @@ export function useHubTableSource({
   const hubFieldValues = useMemo(() => {
     const values: Record<string, any[]> = {};
     // Hidden columns can still be dependencies of a visible cell's rules.
+    const cellValue = (row: HubRow, hubFieldKey: string) =>
+      (relationKeys.has(hubFieldKey)
+        ? row.relationLabels?.[hubFieldKey]
+        : row.data[hubFieldKey]) ?? '';
     schemaFields?.forEach((field) => {
-      values[syntheticKey(tableId, field.key)] = rows.map(
-        (row) => row.data[field.key] ?? ''
+      values[syntheticKey(tableId, field.key)] = rows.map((row) =>
+        cellValue(row, field.key)
       );
     });
     hubColumns.forEach((column) => {
@@ -542,10 +606,18 @@ export function useHubTableSource({
       }
       const hubFieldKey = syntheticToHubKey[column.field_key];
       if (!hubFieldKey) return;
-      values[column.field_key] = rows.map((row) => row.data[hubFieldKey] ?? '');
+      values[column.field_key] = rows.map((row) => cellValue(row, hubFieldKey));
     });
     return values;
-  }, [hubColumns, rows, syntheticToHubKey, statusKey, schemaFields, tableId]);
+  }, [
+    hubColumns,
+    rows,
+    syntheticToHubKey,
+    statusKey,
+    schemaFields,
+    tableId,
+    relationKeys
+  ]);
 
   const entryIds = useMemo(() => rows.map((row) => row.entryId), [rows]);
 
@@ -644,7 +716,7 @@ export function useHubTableSource({
       writes.forEach(({ fieldKey, rowIndex, value }) => {
         const hubFieldKey = syntheticToHubKey[fieldKey];
         const target = rowsRef.current[rowIndex];
-        if (!hubFieldKey || !target) return;
+        if (!hubFieldKey || !target || relationKeys.has(hubFieldKey)) return;
 
         const changes = changesByLocalId.get(target.localId) ?? {};
         changes[hubFieldKey] = value;
@@ -805,7 +877,8 @@ export function useHubTableSource({
       cellRules,
       autoVerify,
       autoVerifyRow,
-      hubVerified
+      hubVerified,
+      relationKeys
     ]
   );
 
@@ -821,15 +894,18 @@ export function useHubTableSource({
       // Defaults run after the blanks so they can also set a hidden column,
       // which has no grid column of its own. Field values are read now, so a
       // row keeps what the form said when it was added.
-      const data = {
-        ...Object.fromEntries(
-          Object.values(syntheticToHubKey).map((hubFieldKey) => [
-            hubFieldKey,
-            ''
-          ])
-        ),
-        ...hubRowDefaults(rowDefaults, schemaFields, fieldValues)
-      };
+      // A relation key in `data` fails the create, blank or not.
+      const data = Object.fromEntries(
+        Object.entries({
+          ...Object.fromEntries(
+            Object.values(syntheticToHubKey).map((hubFieldKey) => [
+              hubFieldKey,
+              ''
+            ])
+          ),
+          ...hubRowDefaults(rowDefaults, schemaFields, fieldValues)
+        }).filter(([hubFieldKey]) => !relationKeys.has(hubFieldKey))
+      );
       const rows = rowsRef.current;
       const at = Math.max(0, Math.min(atIndex, rows.length));
       commitRows([
@@ -846,7 +922,14 @@ export function useHubTableSource({
       ]);
       setErrors([]);
     },
-    [syntheticToHubKey, commitRows, verification, rowDefaults, schemaFields]
+    [
+      syntheticToHubKey,
+      commitRows,
+      verification,
+      rowDefaults,
+      schemaFields,
+      relationKeys
+    ]
   );
 
   const handleAddRow = useCallback(() => handleInsertRow(0), [handleInsertRow]);
@@ -989,6 +1072,36 @@ function orderLikeGrid(entries: HubEntry[], current: HubRow[]): HubEntry[] {
     .filter((entry) => !seen.has(entry.id))
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return [...fresh, ...kept];
+}
+
+/**
+ * The `fields` a read names. The Hub sends relation links only for named
+ * fields and drops unnamed ones from `data`, so a hub with a relation names
+ * every field; one without names none, keeping its request unchanged.
+ */
+function fieldsToRead(
+  fields: HubFieldSchema[] | null | undefined
+): string[] | undefined {
+  if (!fields?.some((field) => field.type === HUB_RELATION_TYPE)) return;
+  return fields.map((field) => field.key);
+}
+
+/** Each relation's linked entry labels as one display string. */
+function relationLabels(
+  relations: HubEntry['relations']
+): Record<string, string> {
+  if (!relations) return {};
+  return Object.fromEntries(
+    Object.entries(relations).map(([key, { items, count }]) => {
+      // A hidden target hub sends no label, so show the linked entry's id.
+      const labels = items.map((item) => item.label ?? item.id);
+      const more = count - items.length;
+      return [
+        key,
+        [...labels, ...(more > 0 ? [`+${more} more`] : [])].join(', ')
+      ];
+    })
+  );
 }
 
 /**
