@@ -22,7 +22,12 @@ import {
   featheryWindow,
   runningInClient
 } from '../../../utils/browser';
-import { stepPageKey, trapTabKey, isEditableTarget } from './keyboard';
+import {
+  stepPageKey,
+  trapTabKey,
+  isEditableTarget,
+  isTextEntryTarget
+} from './keyboard';
 import {
   allowsReviewAttachments,
   signsViaDocusign
@@ -102,15 +107,17 @@ const TOOLBAR_ACTION_ENVELOPE_ACTION: Record<
   print: 'download'
 };
 
-// Mirrors the backend's cap, so an oversized file fails before it uploads.
+// Mirrors the backend's caps, so an oversized file fails before it uploads.
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+export const MAX_ATTACHMENTS = 20;
+const PARALLEL_UPLOADS = 3;
 
 // The viewer covers the page, so a file dropped anywhere outside the documents
 // list lands here instead of making the browser open it in place of the form.
 const keepFileDropInViewer = (e: React.DragEvent) => {
-  // Text dropped on a PDF form field still lands there.
+  // Text dropped on a PDF text field still lands there.
   const files = e.dataTransfer?.types?.includes('Files');
-  if (files || !isEditableTarget(e.target)) e.preventDefault();
+  if (files || !isTextEntryTarget(e.target)) e.preventDefault();
 };
 
 const MAX_PAGE_WIDTH = 900;
@@ -148,7 +155,7 @@ export interface FinalizeResult {
   // async poll overwrites it with "complete". Absent from older backends.
   // "created" is a draft; anything else means DocuSign no longer holds one.
   docusign_status?: string;
-  // An error the backend returned before any send (a 4xx), so no draft exists.
+  // The backend refused before anything went out, so no draft exists.
   rejected?: boolean;
 }
 
@@ -452,10 +459,8 @@ export default function DocumentViewer({
     // once and always calls the latest close.
   }, []);
 
-  // The envelopes finalize acts on: every reviewed document and attachment,
-  // in the order shown. Read off the document list rather than out of the
-  // rendered PDFs; edited field values are persisted separately
-  // (saveEditedDocuments) before finalize runs.
+  // Every reviewed document and attachment, in the order shown; edited field
+  // values are saved separately (saveEditedDocuments) before finalize runs.
   const reviewedEnvelopes = useMemo(
     () =>
       documents
@@ -566,22 +571,49 @@ export default function DocumentViewer({
   // Uploads hold the toolbar (via busyKey) so finalize can't run without them.
   const addAttachments = async (files: File[]) => {
     if (!onUploadAttachment || !files.length) return;
+    if (busyKeyRef.current !== null || isPacketLocked) {
+      setError(
+        isPacketLocked
+          ? "These documents were already sent, so attachments can't be added."
+          : 'Wait for the current action to finish, then add the files again.'
+      );
+      return;
+    }
+    const attached = documents.filter((d) => d.type === 'attachment').length;
+    const room = Math.max(0, MAX_ATTACHMENTS - attached);
     setBusyKey('attachment');
     setError('');
     // Each file stands alone: one failing doesn't drop the rest.
-    const failures: string[] = [];
-    for (const file of files) {
-      if (file.size > MAX_ATTACHMENT_BYTES) {
-        failures.push(`${file.name}: Attachments can be at most 20MB.`);
-        continue;
+    const failures: string[] = files
+      .slice(room)
+      .map(
+        (f) =>
+          `${f.name}: A packet can have at most ${MAX_ATTACHMENTS} attachments.`
+      );
+    const queue = files.slice(0, room);
+    const results: (ViewerDocument | null)[] = queue.map(() => null);
+    let next = 0;
+    const worker = async () => {
+      while (next < queue.length) {
+        const index = next++;
+        const file = queue[index];
+        if (file.size > MAX_ATTACHMENT_BYTES) {
+          failures.push(`${file.name}: Attachments can be at most 20MB.`);
+          continue;
+        }
+        try {
+          results[index] = await onUploadAttachment(file);
+        } catch (e) {
+          failures.push(`${file.name}: ${errorMessage(e)}`);
+        }
       }
-      try {
-        const attachment = await onUploadAttachment(file);
-        setDocuments((prev) => [...prev, attachment]);
-      } catch (e) {
-        failures.push(`${file.name}: ${errorMessage(e)}`);
-      }
-    }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(PARALLEL_UPLOADS, queue.length) }, worker)
+    );
+    // Appended in the order picked, whichever finished first.
+    const added = results.filter((doc): doc is ViewerDocument => !!doc);
+    if (added.length) setDocuments((prev) => [...prev, ...added]);
     if (failures.length) setError(`Couldn't attach ${failures.join('; ')}`);
     setBusyKey(null);
   };
@@ -601,6 +633,11 @@ export default function DocumentViewer({
       setDocuments((prev) => prev.filter((doc) => doc !== removed));
       return true;
     } catch (e) {
+      // It went out with a send, so it stays; the rest of the packet doesn't.
+      if (isDocumentPersistenceError(e) && e.code === 'attachment_sent')
+        setDocuments((prev) =>
+          prev.map((doc) => (doc === removed ? { ...doc, locked: true } : doc))
+        );
       setError(removeErrorMessage(e));
       return false;
     } finally {

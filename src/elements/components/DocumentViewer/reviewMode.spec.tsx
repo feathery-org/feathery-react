@@ -1076,6 +1076,147 @@ describe('DocumentViewer — packet editing (editor_allow_attachments)', () => {
     expect(fireEvent.drop(field, files)).toBe(false);
   });
 
+  it('keeps a link dropped on a checkbox or select from leaving the form', () => {
+    renderViewer();
+    const link = { dataTransfer: { types: ['text/uri-list'] } };
+    const checkbox = featheryDoc().createElement('input');
+    checkbox.type = 'checkbox';
+    const select = featheryDoc().createElement('select');
+    screen.getByRole('dialog').append(checkbox, select);
+
+    expect(fireEvent.drop(checkbox, link)).toBe(false);
+    expect(fireEvent.drop(select, link)).toBe(false);
+  });
+
+  it('locks an attachment the backend says already went out', async () => {
+    const sent = new DocumentPersistenceError(
+      "This attachment was already sent and can't be removed.",
+      'conflict',
+      409,
+      undefined,
+      'attachment_sent'
+    );
+    renderViewer({
+      payload: {
+        ...twoDocs,
+        documents: [
+          ...twoDocs.documents,
+          attachment,
+          { ...attachment, envelope_id: 'att-2', name: 'other' }
+        ]
+      },
+      onRemoveAttachment: jest.fn().mockRejectedValueOnce(sent)
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove bundle' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "This attachment was already sent and can't be removed."
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Remove bundle' })
+    ).not.toBeInTheDocument();
+    // The rest of the packet stays editable.
+    expect(screen.getByRole('button', { name: 'Remove other' })).toBeEnabled();
+    expect(
+      screen.getByRole('button', { name: 'Add attachment' })
+    ).toBeEnabled();
+  });
+
+  it('gives focus back to the attachment when a remove fails', async () => {
+    renderViewer({
+      payload: { ...twoDocs, documents: [...twoDocs.documents, attachment] },
+      // Browsers drop focus from a button once it's disabled; jsdom doesn't.
+      onRemoveAttachment: jest.fn(async () => {
+        (featheryDoc().activeElement as HTMLElement | null)?.blur();
+        throw new Error('Gone wrong');
+      })
+    });
+
+    const remove = screen.getByRole('button', { name: 'Remove bundle' });
+    remove.focus();
+    fireEvent.click(remove);
+
+    await screen.findByRole('alert');
+    await waitFor(() => expect(remove).toHaveFocus());
+  });
+
+  it('uploads up to three files at once and adds them in the order picked', async () => {
+    const pending: ((doc: any) => void)[] = [];
+    const onUploadAttachment = jest.fn(
+      () => new Promise((resolve) => pending.push(resolve))
+    );
+    const props = renderViewer({ onUploadAttachment });
+    const files = ['a', 'b', 'c', 'd'].map((n) => new File(['x'], `${n}.zip`));
+
+    fireEvent.change(screen.getByTestId('attachment-input'), {
+      target: { files }
+    });
+
+    await waitFor(() => expect(onUploadAttachment).toHaveBeenCalledTimes(3));
+    // Finishing out of order still adds them in the order picked.
+    pending[2]({ ...attachment, envelope_id: 'att-c', name: 'c' });
+    pending[0]({ ...attachment, envelope_id: 'att-a', name: 'a' });
+    await waitFor(() => expect(onUploadAttachment).toHaveBeenCalledTimes(4));
+    pending[1]({ ...attachment, envelope_id: 'att-b', name: 'b' });
+    pending[3]({ ...attachment, envelope_id: 'att-d', name: 'd' });
+
+    await screen.findByRole('button', { name: 'Remove d' });
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+    await waitFor(() => expect(props.onFinalize).toHaveBeenCalled());
+    expect(finalizedIds(props.onFinalize)).toEqual([
+      'env-1',
+      'env-2',
+      'att-a',
+      'att-b',
+      'att-c',
+      'att-d'
+    ]);
+  });
+
+  it('caps a packet at 20 attachments', async () => {
+    const existing = Array.from({ length: 19 }, (_, i) => ({
+      ...attachment,
+      envelope_id: `old-${i}`,
+      name: `old ${i}`
+    }));
+    const { onUploadAttachment } = renderViewer({
+      payload: { ...twoDocs, documents: [...twoDocs.documents, ...existing] }
+    });
+
+    fireEvent.change(screen.getByTestId('attachment-input'), {
+      target: {
+        files: [new File(['x'], 'one.zip'), new File(['x'], 'two.zip')]
+      }
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "Couldn't attach two.zip: A packet can have at most 20 attachments."
+    );
+    expect(onUploadAttachment).toHaveBeenCalledTimes(1);
+  });
+
+  it('says why files dropped while another action runs are not attached', async () => {
+    let finishRemove = () => {};
+    const { onUploadAttachment } = renderViewer({
+      payload: { ...twoDocs, documents: [...twoDocs.documents, attachment] },
+      onRemoveAttachment: jest.fn(
+        () => new Promise<void>((resolve) => (finishRemove = resolve))
+      )
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove bundle' }));
+    fireEvent.drop(screen.getByRole('list', { name: 'Documents' }), {
+      dataTransfer: { types: ['Files'], files: [new File(['x'], 'late.zip')] }
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Wait for the current action to finish, then add the files again.'
+    );
+    expect(onUploadAttachment).not.toHaveBeenCalled();
+    finishRemove();
+  });
+
   it('keeps the packet editable after a native Sign fails', async () => {
     renderViewer({
       action: {

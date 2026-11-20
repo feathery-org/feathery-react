@@ -273,7 +273,8 @@ import {
   editorContainerId,
   getSignUrl,
   isDocusignSignAction,
-  buildDocumentReviewTrigger
+  buildDocumentReviewTrigger,
+  reviewViewerAction
 } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
 import DataMappingModal from '../elements/components/dataMapping/DataMappingModal';
@@ -3842,7 +3843,7 @@ function Form({
             // editing surface (and needs the plain generate response).
             setReviewViewerPayload({
               payload: data,
-              action: { ...action, editor_mode: 'overlay' },
+              action: reviewViewerAction(action),
               onFinalize: async ({
                 envelopes,
                 envelopeAction,

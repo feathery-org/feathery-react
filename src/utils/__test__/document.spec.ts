@@ -2,7 +2,8 @@ import {
   containerToolbarOutcomes,
   documentSourceUploadFields,
   editorContainerId,
-  isDocusignSignAction
+  isDocusignSignAction,
+  reviewViewerAction
 } from '../document';
 
 describe('documentSourceUploadFields', () => {
@@ -220,6 +221,29 @@ describe('isDocusignSignAction', () => {
       // The direct (non-editor) path calls it with one argument.
       expect(isDocusignSignAction(editorAction)).toBe(false);
       expect(isDocusignSignAction({ sign_method: 'docusign' })).toBe(true);
+    });
+  });
+});
+
+describe('reviewViewerAction', () => {
+  const action = {
+    envelope_action: 'open_in_editor',
+    editor_allow_attachments: true
+  };
+
+  it('opens an overlay action with its attachments', () => {
+    expect(reviewViewerAction(action)).toEqual({
+      ...action,
+      editor_mode: 'overlay'
+    });
+  });
+
+  it('drops a container flag when the server sends it to the overlay', () => {
+    expect(
+      reviewViewerAction({ ...action, editor_mode: 'container-1' })
+    ).toMatchObject({
+      editor_mode: 'overlay',
+      editor_allow_attachments: false
     });
   });
 });

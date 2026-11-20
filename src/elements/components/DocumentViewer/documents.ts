@@ -9,9 +9,8 @@ export const moveItem = <T>(items: T[], from: number, to: number): T[] => {
   return next;
 };
 
-/** One entry of the review payload's `documents` array, as the backend's
- * build_envelope_viewer_payload emits it, or an attachment the filler added
- * (build_attachment_viewer_document). */
+/** A review payload document (build_envelope_viewer_payload) or an attachment
+ * the filler added (build_attachment_viewer_document). */
 export interface ViewerDocument {
   type: 'form' | 'attachment';
   // Absent for an attachment the viewer can't render: it shows as a file card.
@@ -28,6 +27,8 @@ export interface ViewerDocument {
   // Where DocuSign's recipients sign this document, when the toolbar signs
   // through DocuSign. Empty for attachments.
   signing_tags?: SigningTag[];
+  // Set once the backend refuses to remove it because it already went out.
+  locked?: boolean;
 }
 
 /** The URL a document's pages (or its single file card) are keyed by. */

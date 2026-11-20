@@ -132,17 +132,13 @@ const envelopeErrorMessage = (payload: any) => {
   return (!ownMessage && firstErrorMessage(payload)) || parseAPIError(payload);
 };
 
-// A definitive 4xx from finalize means nothing reached DocuSign. A timeout or
-// an unexpected server failure (finalize_failed) might have sent it.
-const finalizeRefused = (status: number, payload: any) => {
-  const code = Array.isArray(payload) ? payload[0]?.code : payload?.code;
-  return (
-    status >= 400 &&
-    status < 500 &&
-    status !== 408 &&
-    code !== 'finalize_failed'
-  );
-};
+// A coded error comes back as {message, code}; others as [{message, code}].
+const errorCode = (payload: any) =>
+  Array.isArray(payload) ? payload[0]?.code : payload?.code;
+
+// Only the backend's own verdict says nothing went out; any other failure
+// (expired poll, throttle, timeout, finalize_failed) may have sent.
+const FINALIZE_REFUSED = 'finalize_refused';
 
 const QUIK_DYNAMIC_ATTACHMENTS_OPTION = '__quik_dynamic_attachments__';
 // Backend 400s meaning another tab closed, superseded or finalized the session.
@@ -1024,7 +1020,8 @@ export default class IntegrationClient {
         message,
         kind,
         status,
-        Number.isFinite(retryAfterMs) ? retryAfterMs : undefined
+        Number.isFinite(retryAfterMs) ? retryAfterMs : undefined,
+        errorCode(payload) || undefined
       );
     });
   }
@@ -1486,7 +1483,7 @@ export default class IntegrationClient {
       return {
         status: 'error',
         message: envelopeErrorMessage(data),
-        ...(finalizeRefused(response.status, data) ? { rejected: true } : {})
+        ...(errorCode(data) === FINALIZE_REFUSED ? { rejected: true } : {})
       };
     // The sync response is already the final `{ files: [...] }` payload.
     // The async response is always `{}` immediately, regardless of the
@@ -1501,13 +1498,15 @@ export default class IntegrationClient {
 
     const envelopeIds = envelopes.map((envelope) => envelope.envelopeId);
     const pollUrl = `${getApiUrl()}document/form/finalize/poll/?fid=${userId}&eids=${envelopeIds}`;
-    return await this.pollUntilComplete(
+    const result = await this.pollUntilComplete(
       pollUrl,
       this.FINALIZE_CHECK_INTERVAL,
       this.FINALIZE_MAX_TIME,
-      'Document finalize',
-      true
+      'Document finalize'
     );
+    return result.code === FINALIZE_REFUSED
+      ? { ...result, rejected: true }
+      : result;
   }
 
   // Shared GET-poll loop for endpoints whose async path reports completion
@@ -1523,8 +1522,7 @@ export default class IntegrationClient {
     pollUrl: string,
     checkInterval: number,
     maxTime: number,
-    operationName: string,
-    markRefused = false
+    operationName: string
   ): Promise<Record<string, any>> {
     return new Promise((resolve) => {
       let attempts = 0;
@@ -1574,9 +1572,7 @@ export default class IntegrationClient {
         return resolve({
           status: 'error',
           message: parseAPIError(data),
-          ...(markRefused && finalizeRefused(response.status, data)
-            ? { rejected: true }
-            : {})
+          code: errorCode(data)
         });
       };
 

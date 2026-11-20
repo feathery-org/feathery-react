@@ -83,6 +83,18 @@ export function allowsReviewAttachments(action: Record<string, any>): boolean {
   );
 }
 
+/** The action the review overlay opens with. A container the server sent to the
+ * overlay keeps no attachments: generate wasn't asked to restore them. */
+export function reviewViewerAction(
+  action: Record<string, any>
+): Record<string, any> {
+  return {
+    ...action,
+    editor_mode: 'overlay',
+    editor_allow_attachments: allowsReviewAttachments(action)
+  };
+}
+
 /** What a Document Editor container's toolbar offers, read from the same
  * `editor_toolbar_actions` key the overlay uses — `envelope_action` is always
  * 'open_in_editor' for a container and carries no outcome of its own.

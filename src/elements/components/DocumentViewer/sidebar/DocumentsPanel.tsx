@@ -37,6 +37,9 @@ export default function DocumentsPanel({
   const rowButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
   // The row index whose Remove button had focus before it unmounted.
   const focusAfterRemove = useRef<number | null>(null);
+  // A failed remove gives focus back to its row once the panel is enabled.
+  const [refocusIndex, setRefocusIndex] = useState<number | null>(null);
+  const removeButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [announcement, setAnnouncement] = useState('');
@@ -51,6 +54,15 @@ export default function DocumentsPanel({
       addButtonRef.current;
     target?.focus();
   }, [documents]);
+
+  useEffect(() => {
+    if (refocusIndex === null || packetEditor?.disabled) return;
+    setRefocusIndex(null);
+    (
+      removeButtonRefs.current[refocusIndex] ??
+      rowButtonRefs.current[refocusIndex]
+    )?.focus();
+  }, [refocusIndex, packetEditor?.disabled, documents]);
 
   // A repeat of the same text wouldn't be read again, so vary it invisibly.
   const announce = (text: string) =>
@@ -75,17 +87,14 @@ export default function DocumentsPanel({
     setDropIndex(null);
   };
 
-  // Rows reorder each other; files dropped in from the desktop are attached.
-  // A row moves only when dropped on a row (index); a drop between rows or
-  // on the list itself just attaches any files it carries.
+  // A row dropped on a row moves there; dropped files are attached (the
+  // viewer explains when it can't take them right now).
   const onDrop = (e: React.DragEvent, index?: number) => {
     e.preventDefault();
-    if (editable) {
-      if (dragIndex !== null) {
-        if (index !== undefined) move(dragIndex, index);
-      } else if (e.dataTransfer.files.length) {
-        packetEditor?.onAddFiles(Array.from(e.dataTransfer.files));
-      }
+    if (dragIndex !== null) {
+      if (editable && index !== undefined) move(dragIndex, index);
+    } else if (packetEditor && e.dataTransfer.files.length) {
+      packetEditor.onAddFiles(Array.from(e.dataTransfer.files));
     }
     endDrag();
   };
@@ -191,16 +200,22 @@ export default function DocumentsPanel({
                 >
                   <ChevronDownIcon size={14} />
                 </button>
-                {doc.type === 'attachment' && (
+                {doc.type === 'attachment' && !doc.locked && (
                   <button
                     type='button'
+                    ref={(el) => {
+                      removeButtonRefs.current[index] = el;
+                    }}
                     aria-label={`Remove ${documentName(doc)}`}
                     disabled={!editable}
                     onClick={async () => {
                       focusAfterRemove.current = index;
-                      if (await packetEditor.onRemove(index))
+                      if (await packetEditor.onRemove(index)) {
                         announce(`Removed ${documentName(doc)}`);
-                      else focusAfterRemove.current = null;
+                      } else {
+                        focusAfterRemove.current = null;
+                        setRefocusIndex(index);
+                      }
                     }}
                     css={rowIconButtonCss}
                   >
