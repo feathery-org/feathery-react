@@ -1507,24 +1507,27 @@ describe('IntegrationClient', () => {
   describe('finalizeEnvelopeReview', () => {
     const baseAction = { form_key: 'test_form_key' };
 
-    // A coded finalize error arrives as {message, code}; an uncoded one as a list.
-    const coded = (code) => ({ message: 'No', code });
-    const uncoded = [{ message: 'No', code: 'default-error' }];
+    const errorBody = [{ message: 'No', code: 'default-error' }];
+    const verdict = (value) => ({
+      get: (name) =>
+        name.toLowerCase() === 'x-finalize-verdict' ? value : null
+    });
 
     it.each([
-      [400, coded('finalize_refused'), true],
-      [400, coded('finalize_failed'), false],
-      [400, uncoded, false],
-      [429, uncoded, false],
-      [408, uncoded, false],
-      [500, uncoded, false]
+      [400, 'refused', true],
+      [400, 'Refused', true],
+      [400, null, false],
+      [429, null, false],
+      [408, null, false],
+      [500, null, false]
     ])(
-      'flags a %s finalize response %j as refused: %s',
-      async (status, body, rejected) => {
+      'flags a %s finalize response with verdict %s as refused: %s',
+      async (status, header, rejected) => {
         global.fetch.mockResolvedValue({
           ok: false,
           status,
-          json: jest.fn().mockResolvedValue(body)
+          headers: verdict(header),
+          json: jest.fn().mockResolvedValue(errorBody)
         });
 
         const result = await new IntegrationClient(
@@ -1541,36 +1544,15 @@ describe('IntegrationClient', () => {
     );
 
     it.each([
-      // The cached verdict, re-raised by the poll view.
-      [
-        400,
-        { message: 'An attachment was removed.', code: 'finalize_refused' },
-        true
-      ],
-      [
-        400,
-        { message: 'An attachment was removed.', code: 'finalize_failed' },
-        false
-      ],
-      // Poll-level failures say nothing about the send itself.
-      [
-        400,
-        [{ message: 'An attachment was removed.', code: 'default-error' }],
-        false
-      ],
-      [
-        429,
-        [{ message: 'An attachment was removed.', code: 'default-error' }],
-        false
-      ],
-      [
-        404,
-        [{ message: 'An attachment was removed.', code: 'default-error' }],
-        false
-      ]
+      // The cached refusal, re-raised by the poll view with its verdict.
+      [400, 'refused', true],
+      // Poll-level failures and maybe-sent errors carry no verdict.
+      [400, null, false],
+      [429, null, false],
+      [404, null, false]
     ])(
-      'flags an async finalize whose poll returns %s %j as refused: %s',
-      async (status, body, rejected) => {
+      'flags an async finalize whose poll returns %s with verdict %s as refused: %s',
+      async (status, header, rejected) => {
         const integrationClient = new IntegrationClient('test_form_key');
         integrationClient.FINALIZE_CHECK_INTERVAL = 1;
         integrationClient.FINALIZE_MAX_TIME = 20;
@@ -1583,7 +1565,12 @@ describe('IntegrationClient', () => {
           .mockResolvedValueOnce({
             ok: false,
             status,
-            json: jest.fn().mockResolvedValue(body)
+            headers: verdict(header),
+            json: jest
+              .fn()
+              .mockResolvedValue([
+                { message: 'An attachment was removed.', code: 'default-error' }
+              ])
           });
 
         const result = await integrationClient.finalizeEnvelopeReview(
