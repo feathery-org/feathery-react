@@ -87,6 +87,7 @@ import {
 } from '../interactionState';
 import { EventQueue } from '../eventQueue';
 import { STEP_EVENT_LOAD, STEP_EVENT_SUBMIT } from '../stepEvents';
+import { SALESFORCE_PROVIDER } from '../../integrations/connectAccount/providers';
 
 declare const __PACKAGE_VERSION__: string;
 
@@ -851,10 +852,34 @@ export default class FeatheryClient extends IntegrationClient {
     );
 
     const trueSession = { ...session, ...authSession };
+    let connectionValues: Record<string, string> = {};
+    if (trueSession.integrations?.[SALESFORCE_PROVIDER]) {
+      try {
+        const saved = await this.listAccountCredentials(SALESFORCE_PROVIDER);
+        const first = saved?.credentials?.[0];
+        // A fresh submission reuses the user's first saved account. Existing
+        // attachments, including deliberate disconnects, keep their selection.
+        if (saved?.can_save && !saved.attached && first) {
+          const selected = await this.selectAccountCredential(
+            SALESFORCE_PROVIDER,
+            first.id
+          );
+          connectionValues = selected.values ?? {};
+          trueSession.field_values = {
+            ...trueSession.field_values,
+            ...connectionValues
+          };
+        }
+      } catch (error) {
+        // Keep the form and its manual account picker available on failure.
+        console.warn('Unable to select a default Salesforce account.', error);
+      }
+    }
     // Registered even when the session carries no data, since the field keys are
     // returned regardless and text variables need them to resolve empty fields
     registerKnownFieldKeys(trueSession);
     if (!noData) updateSessionValues(trueSession, this.formKey);
+    else Object.assign(fieldValues, connectionValues);
 
     // submitAuthInfo can set formCompleted before the session is set, so we don't want to override completed flags
     if (initState.formSessions[this.formKey]?.form_completed)
