@@ -163,9 +163,19 @@ export default function PptxChangesPanel() {
     if (target.shapeId) store.select(target.shapeId);
   };
 
+  // A settled card unmounts while its button holds focus; hand focus to the
+  // stage so the undo shortcut still reaches the editor.
+  const focusStage = () =>
+    store.svgRoot?.closest<HTMLElement>('[data-pptx-stage]')?.focus();
+
+  const accept = (record: PptxChangeRecord) => {
+    if (store.acceptChange(record.id)) focusStage();
+  };
+
   const reject = (record: PptxChangeRecord) => {
     const outcome = store.rejectChange(record.id);
-    if (!outcome.ok) {
+    if (outcome.ok) focusStage();
+    else {
       setConflicts((current) => ({
         ...current,
         [record.id]:
@@ -221,7 +231,7 @@ export default function PptxChangesPanel() {
                 record={record}
                 slideIndex={slideIndex}
                 onSelect={() => selectRecord(record)}
-                onAccept={() => store.acceptChange(record.id)}
+                onAccept={() => accept(record)}
                 onReject={() => reject(record)}
                 conflict={conflicts[record.id]}
               />
