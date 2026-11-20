@@ -258,6 +258,9 @@ export interface FormInternalState {
   setUserProgress: React.Dispatch<React.SetStateAction<null>>;
   setDataMappingState?: (state: { show: boolean; hubs: any[] }) => void;
   steps: any;
+  // Hidden field key -> stored value type (`number_value`, ...), so an
+  // element showing a hidden field can type it the way a servar is typed.
+  hiddenFields?: Record<string, string>;
   setStepKey: (key: string) => void;
   updateFieldOptions: (newOptions: FieldOptions, repeatIndex?: number) => void;
   updateFieldStyles: (fieldKey: string, newStyles: FieldStyles) => void;

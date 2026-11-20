@@ -99,7 +99,7 @@ export type TableCellOutcome =
   | { ok: true; value: unknown }
   | {
       ok: false;
-      reason: 'row_deleted' | 'unknown_column' | 'read_only';
+      reason: 'row_deleted' | 'unknown_column' | 'read_only' | 'invalid_value';
       message: string;
     };
 
