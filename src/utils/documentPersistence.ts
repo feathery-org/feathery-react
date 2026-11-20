@@ -11,7 +11,9 @@ export class DocumentPersistenceError extends Error {
       | 'blocked'
       | 'cancelled',
     public readonly status?: number,
-    public readonly retryAfterMs?: number
+    public readonly retryAfterMs?: number,
+    // The backend's error code, when it sent one.
+    public readonly code?: string
   ) {
     super(message);
     // The es5 build otherwise returns a plain Error, so instanceof is false

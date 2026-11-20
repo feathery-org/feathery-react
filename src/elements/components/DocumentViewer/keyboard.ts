@@ -22,6 +22,31 @@ export function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
+const NON_TEXT_INPUT_TYPES = new Set([
+  'button',
+  'checkbox',
+  'color',
+  'file',
+  'hidden',
+  'image',
+  'radio',
+  'range',
+  'reset',
+  'submit'
+]);
+
+/** Whether dropped text would land in this element (a text input, textarea or
+ * contenteditable); checkboxes and selects don't take it. */
+export function isTextEntryTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el) return false;
+  if (el.tagName === 'TEXTAREA' || el.isContentEditable) return true;
+  return (
+    el.tagName === 'INPUT' &&
+    !NON_TEXT_INPUT_TYPES.has((el as HTMLInputElement).type)
+  );
+}
+
 interface TabLikeEvent {
   shiftKey: boolean;
   preventDefault: () => void;

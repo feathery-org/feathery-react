@@ -1507,19 +1507,24 @@ describe('IntegrationClient', () => {
   describe('finalizeEnvelopeReview', () => {
     const baseAction = { form_key: 'test_form_key' };
 
+    // A coded finalize error arrives as {message, code}; an uncoded one as a list.
+    const coded = (code) => ({ message: 'No', code });
+    const uncoded = [{ message: 'No', code: 'default-error' }];
+
     it.each([
-      [400, 'x', true],
-      [429, 'x', true],
-      [408, 'x', false],
-      [400, 'finalize_failed', false],
-      [500, 'x', false]
+      [400, coded('finalize_refused'), true],
+      [400, coded('finalize_failed'), false],
+      [400, uncoded, false],
+      [429, uncoded, false],
+      [408, uncoded, false],
+      [500, uncoded, false]
     ])(
-      'flags a %s (%s) as refused before any send: %s',
-      async (status, code, rejected) => {
+      'flags a %s finalize response %j as refused: %s',
+      async (status, body, rejected) => {
         global.fetch.mockResolvedValue({
           ok: false,
           status,
-          json: jest.fn().mockResolvedValue([{ message: 'No', code }])
+          json: jest.fn().mockResolvedValue(body)
         });
 
         const result = await new IntegrationClient(
@@ -1530,16 +1535,42 @@ describe('IntegrationClient', () => {
         });
 
         expect(result.status).toBe('error');
+        expect(result.message).toBe('No');
         expect(!!result.rejected).toBe(rejected);
       }
     );
 
     it.each([
-      ['x', true],
-      ['finalize_failed', false]
+      // The cached verdict, re-raised by the poll view.
+      [
+        400,
+        { message: 'An attachment was removed.', code: 'finalize_refused' },
+        true
+      ],
+      [
+        400,
+        { message: 'An attachment was removed.', code: 'finalize_failed' },
+        false
+      ],
+      // Poll-level failures say nothing about the send itself.
+      [
+        400,
+        [{ message: 'An attachment was removed.', code: 'default-error' }],
+        false
+      ],
+      [
+        429,
+        [{ message: 'An attachment was removed.', code: 'default-error' }],
+        false
+      ],
+      [
+        404,
+        [{ message: 'An attachment was removed.', code: 'default-error' }],
+        false
+      ]
     ])(
-      'flags an async finalize the poll reports as failed with %s as refused: %s',
-      async (code, rejected) => {
+      'flags an async finalize whose poll returns %s %j as refused: %s',
+      async (status, body, rejected) => {
         const integrationClient = new IntegrationClient('test_form_key');
         integrationClient.FINALIZE_CHECK_INTERVAL = 1;
         integrationClient.FINALIZE_MAX_TIME = 20;
@@ -1551,12 +1582,8 @@ describe('IntegrationClient', () => {
           })
           .mockResolvedValueOnce({
             ok: false,
-            status: 400,
-            json: jest
-              .fn()
-              .mockResolvedValue([
-                { message: 'An attachment was removed.', code }
-              ])
+            status,
+            json: jest.fn().mockResolvedValue(body)
           });
 
         const result = await integrationClient.finalizeEnvelopeReview(
@@ -2294,16 +2321,21 @@ describe('IntegrationClient', () => {
       ).rejects.toThrow(/^Not found\.$/);
     });
 
-    it('rejects when the attachment was already sent', async () => {
-      await expect(
-        removeWith({
-          ok: false,
-          status: 409,
-          json: jest.fn().mockResolvedValue({
-            detail: "This attachment was already sent and can't be removed."
-          })
-        })
-      ).rejects.toThrow('already sent');
+    it.each([
+      [
+        'attachment_sent',
+        "This attachment was already sent and can't be removed."
+      ],
+      ['attachment_busy', 'This packet is being sent. Try again in a moment.']
+    ])('rejects a 409 with its %s code', async (code, message) => {
+      const error = await removeWith({
+        ok: false,
+        status: 409,
+        json: jest.fn().mockResolvedValue([{ message, code }])
+      }).catch((e) => e);
+
+      expect(error.message).toBe(message);
+      expect(error.code).toBe(code);
     });
   });
 });
