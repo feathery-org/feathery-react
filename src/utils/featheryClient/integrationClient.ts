@@ -85,6 +85,9 @@ export type GenerateDocumentRef =
       document_id: string;
       // Exactly one opaque reference per generated copy, in repeat order.
       references?: string[];
+      // Skip this many repeat rows, then one copy per page of rows (sized by
+      // the template's slot mappings). Not allowed with open_in_editor.
+      repeat_start?: number;
     };
 
 // The template id a document entry names, or null for a non-template source.
@@ -888,9 +891,31 @@ export default class IntegrationClient {
       };
     }
 
+    // The container route goes through client-utils, which would silently
+    // drop these options; error rather than deliver unmerged/unchunked copies.
+    if (
+      editorContainerId(action) &&
+      (action.merge_groups?.length ||
+        documentIds.some(
+          (doc: GenerateDocumentRef) =>
+            typeof doc !== 'string' &&
+            (doc as Record<string, any>).repeat_start !== undefined
+        ))
+    ) {
+      return {
+        status: 'error',
+        message:
+          'Merge groups and repeat_start are not supported with a document ' +
+          'editor container action.'
+      };
+    }
+
     if (
       openInEditor ||
-      ((isDocusignSignAction(action) || hasPolymorphicDocument) &&
+      ((isDocusignSignAction(action) ||
+        hasPolymorphicDocument ||
+        // client-utils can't forward merge_groups either.
+        action.merge_groups?.length) &&
         !editorContainerId(action))
     ) {
       return await this.generateEnvelopesForEditor({
@@ -900,6 +925,8 @@ export default class IntegrationClient {
         runAsync,
         toolbarActions: action.editor_toolbar_actions ?? [],
         mergeDocs: action.merge_docs ?? false,
+        mergeGroups: action.merge_groups,
+        mergedFileName: action.merged_file_name,
         openInEditor,
         editorMode: openInEditor ? action.editor_mode : undefined,
         envelopeAction,
@@ -1213,6 +1240,8 @@ export default class IntegrationClient {
     runAsync,
     toolbarActions,
     mergeDocs,
+    mergeGroups,
+    mergedFileName,
     openInEditor,
     editorMode,
     envelopeAction,
@@ -1233,6 +1262,10 @@ export default class IntegrationClient {
     runAsync: boolean;
     toolbarActions: string[];
     mergeDocs: boolean;
+    // Packets: each inner list of document references / template ids merges
+    // into one PDF (one download file, or one DocuSign document).
+    mergeGroups?: string[][];
+    mergedFileName?: string;
     // False for a direct DocuSign sign, which also needs this call because
     // client-utils can't forward sign_method.
     openInEditor: boolean;
@@ -1284,6 +1317,8 @@ export default class IntegrationClient {
       // document and pressed a button that finalize would then refuse.
       merge_docs: mergeDocs
     };
+    if (mergeGroups?.length) payload.merge_groups = mergeGroups;
+    if (mergedFileName) payload.merged_file_name = mergedFileName;
     if (openInEditor) {
       // Generate reads the toolbar only to decide whether default field values
       // are baked in; the pressed action is sent to finalize separately.

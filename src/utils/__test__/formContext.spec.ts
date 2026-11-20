@@ -589,6 +589,35 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(client.generateDocuments).toHaveBeenCalledTimes(1);
   });
 
+  it('sends packets through the flow as a fill, captured before saves', async () => {
+    const mergeGroups = [['tpl-1', 'tpl-2']];
+    client.flushCustomFields.mockImplementation(async () => {
+      mergeGroups[0].push('tpl-3');
+    });
+    await getFormContext(uuid).generateDocuments({
+      documentIds: [
+        'tpl-1',
+        { kind: 'template', document_id: 'tpl-2', repeat_start: 10 }
+      ],
+      mergeGroups
+    });
+    const action = flow.mock.calls[0][0];
+    // A packet call with no signing inputs fills; it must not default to sign.
+    expect(action.envelope_action).toBe('fill');
+    expect(action.merge_groups).toEqual([['tpl-1', 'tpl-2']]);
+    // repeat_start survives the template-object passthrough.
+    expect(action.documents[1]).toMatchObject({ repeat_start: 10 });
+    expect(client.generateDocuments).not.toHaveBeenCalled();
+
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: ['tpl-1'],
+        mergeGroups: [['tpl-1']],
+        merge: true
+      })
+    ).rejects.toThrow(/mergeGroups cannot combine/);
+  });
+
   it('rejects options the headless path cannot honor instead of dropping them', async () => {
     // A source object stringifies to "[object Object]" in the client path's
     // poll URL and never matches the cache key the backend wrote, so the poll
@@ -607,6 +636,12 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
         signers: [{ documentId: 'tpl-1', email: 'a@x.com' }]
       })
     ).rejects.toThrow(/per-role signers require a mounted <Form \/>/);
+    await expect(
+      headless.generateDocuments({
+        documentIds: ['tpl-1'],
+        mergeGroups: [['tpl-1']]
+      })
+    ).rejects.toThrow(/mergeGroups require a mounted <Form \/>/);
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
 
