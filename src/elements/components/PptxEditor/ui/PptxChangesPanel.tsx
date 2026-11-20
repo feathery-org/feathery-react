@@ -15,7 +15,7 @@ import {
   usePptxEditorState,
   usePptxEditorStore
 } from '../state/PptxEditorContext';
-import { REJECT_LABEL, type PptxChangeRecord } from '../engine/changes';
+import type { PptxChangeRecord } from '../engine/changes';
 import type { DeckJSON } from '../core/model/json';
 
 // Tracked-edits panel: the engine's transaction log grouped by slide, newest
@@ -129,7 +129,7 @@ export default function PptxChangesPanel() {
     () =>
       log.filter(
         (record) =>
-          record.summary !== REJECT_LABEL &&
+          !record.rejects &&
           !(record.origin === 'assistant' && record.status !== 'pending')
       ),
     [log]

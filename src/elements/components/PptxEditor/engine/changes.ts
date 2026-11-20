@@ -6,9 +6,6 @@ import type { CommandMeta, Invalidation } from './commands';
 import type { DeckJSON, SlideJSON, ShapeJSON } from '../core/model/json';
 import type { OTree } from '../core/opc/xml';
 
-// Label of the transaction a reject commits; the panel hides that entry.
-export const REJECT_LABEL = 'Reject suggestion';
-
 export interface PptxChangeTarget {
   slideId: string;
   shapeId?: string;
@@ -27,6 +24,8 @@ export interface PptxChangeRecord {
   author: PptxChangeAuthor;
   origin: NonNullable<CommandMeta['origin']>;
   status: 'pending' | 'accepted' | 'rejected';
+  /** Set on the record of a reject: the id of the suggestion it rejected. */
+  rejects?: string;
   createdAt: string;
   targets: PptxChangeTarget[];
   summary: string;

@@ -568,8 +568,13 @@ describe('PowerPoint suggestions beside the person\'s own edits', () => {
     });
   };
   const rejectsKept = (deck: ReturnType<typeof openDeck>) =>
-    (deck.engine as unknown as { rejectedSuggestions: Map<string, unknown> })
-      .rejectedSuggestions.size;
+    [
+      ...(
+        deck.engine as unknown as {
+          settledSuggestions: Map<string, { status: string }>;
+        }
+      ).settledSuggestions.values()
+    ].filter((settled) => settled.status === 'rejected').length;
 
   it('keeps an accepted slide copy when redo would replay its undone reject', () => {
     const deck = openDeck();

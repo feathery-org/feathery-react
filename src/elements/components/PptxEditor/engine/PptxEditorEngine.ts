@@ -63,11 +63,7 @@ import {
 import type { Deck, Shape, Slide } from '../core/model/types';
 import type { OTree } from '../core/opc/xml';
 import type { CommandMeta, EditorCommand, Invalidation } from './commands';
-import {
-  deriveChangeRecord,
-  REJECT_LABEL,
-  type PptxChangeRecord
-} from './changes';
+import { deriveChangeRecord, type PptxChangeRecord } from './changes';
 
 const HISTORY_LIMIT = 100;
 
@@ -853,7 +849,11 @@ export class PptxEditorEngine {
   acceptChange(id: string): boolean {
     const record = this.changeLog.find((candidate) => candidate.id === id);
     if (!record || record.status !== 'pending') return false;
-    this.discardRedo();
+    // Redo must not replay an undone accept or reject of this suggestion, or what follows it
+    const settledAt = this.redoStack.findIndex(
+      (entry) => this.settledSuggestions.get(String(entry.id))?.record.id === id
+    );
+    if (settledAt >= 0) this.dropRedo(settledAt + 1);
     const snapshots = this.pendingSnapshots.get(id);
     if (snapshots && this.present && !this.openTransaction) {
       const entryId = ++this.sequence;
@@ -975,12 +975,22 @@ export class PptxEditorEngine {
         };
       });
     }
-    const result = this.commit(REJECT_LABEL, invalidations, 'change', [], {
-      label: REJECT_LABEL,
-      authorLabel: 'Reject'
-    });
-    if (result.changed && !this.openTransaction)
-      this.settledSuggestions.set(String(this.sequence), {
+    const result = this.commit(
+      'Reject suggestion',
+      invalidations,
+      'change',
+      [],
+      {
+        label: 'Reject suggestion',
+        authorLabel: 'Reject'
+      }
+    );
+    const rejectEntry =
+      result.changed && !this.openTransaction
+        ? String(this.sequence)
+        : undefined;
+    if (rejectEntry)
+      this.settledSuggestions.set(rejectEntry, {
         status: 'rejected',
         record,
         snapshots
@@ -994,6 +1004,8 @@ export class PptxEditorEngine {
             beforeSlideRels: undefined,
             changedSlides: undefined
           }
+        : candidate.transactionId === rejectEntry
+        ? { ...candidate, rejects: id }
         : candidate
     );
     this.pendingSnapshots.delete(id);

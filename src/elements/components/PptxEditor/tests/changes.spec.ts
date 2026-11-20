@@ -118,8 +118,8 @@ describe('tracked edits (engine change log)', () => {
     expect(
       engine
         .changes()
-        .some((candidate) => candidate.summary === 'Reject suggestion')
-    ).toBe(true);
+        .find((candidate) => candidate.summary === 'Reject suggestion')?.rejects
+    ).toBe(record.id);
   });
 
   it('reject reports a conflict when the target changed after the suggestion', () => {
