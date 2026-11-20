@@ -483,7 +483,10 @@ export const getFormContext = (formUuid: string) => {
       merge?: boolean;
       // Packets: each inner list of document references / template ids merges
       // into one PDF (one DocuSign document, or one download file).
-      mergeGroups?: (string[] | { name: string; documents: string[] })[];
+      mergeGroups?: (
+        | string[]
+        | { name: string; documents: string[]; fileName?: string }
+      )[];
       mergedFileName?: string;
       zipName?: string;
       saveDocumentFieldKey?: string;
@@ -596,8 +599,14 @@ export const getFormContext = (formUuid: string) => {
       mergeGroups = mergeGroups?.map((group) =>
         Array.isArray(group)
           ? [...group]
-          : { ...group, documents: [...group.documents] }
-      );
+          : {
+              name: group.name,
+              documents: [...group.documents],
+              // fileName (API) -> file_name (wire); the backend defaults it to
+              // the packet name when omitted.
+              ...(group.fileName ? { file_name: group.fileName } : {}),
+            }
+      ) as typeof mergeGroups;
       // Capture explicit Quik inputs before awaiting saves or opening review.
       // Caller edits to the original object must not change this request.
       documentIds = documentIds.map((doc) =>

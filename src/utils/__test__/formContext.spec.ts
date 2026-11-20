@@ -108,6 +108,24 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(groups[0].documents).toEqual(['tpl-1', 'tpl-2']);
   });
 
+  it('maps named packet fileName to file_name, omitted when absent', async () => {
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1', 'tpl-2'],
+      mergeGroups: [
+        { name: 'A', documents: ['tpl-1'], fileName: 'Package A.pdf' },
+        { name: 'B', documents: ['tpl-2'] }
+      ]
+    });
+    const groups = flow.mock.calls[0][0].merge_groups;
+    expect(groups[0]).toEqual({
+      name: 'A',
+      documents: ['tpl-1'],
+      file_name: 'Package A.pdf'
+    });
+    expect(groups[1]).toEqual({ name: 'B', documents: ['tpl-2'] });
+    expect('fileName' in groups[0]).toBe(false);
+  });
+
   it('maps CC excludedPackets to excluded_packets, omitted when absent', async () => {
     await getFormContext(uuid).generateDocuments({
       documentIds: ['tpl-1'],
