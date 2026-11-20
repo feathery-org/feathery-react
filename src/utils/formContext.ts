@@ -471,8 +471,19 @@ export const getFormContext = (formUuid: string) => {
       // every signer; false sends with no SMS, even for a signer's phone.
       smsAuthentication?: boolean;
       // Completion copies added to the integration's configured recipients.
-      // excludedDocuments uses 0-based positions in the generated packet.
-      ccRecipients?: SendDocusignParams['ccRecipients'];
+      // excludedDocuments hides documents by 0-based position (not allowed with
+      // mergeGroups, since positions shift on merge); excludedPackets hides them
+      // by mergeGroups packet name instead — each name must be a named packet in
+      // this call's mergeGroups.
+      ccRecipients?: (
+        | string
+        | {
+            email: string;
+            name?: string;
+            excludedDocuments?: number[];
+            excludedPackets?: string[];
+          }
+      )[];
       // DocuSign envelope metadata (not PDF fields), e.g. account_submission_id.
       customFields?: Record<
         string,
@@ -481,8 +492,11 @@ export const getFormContext = (formUuid: string) => {
       repeatable?: boolean;
       download?: boolean;
       merge?: boolean;
-      // Packets: each inner list of document references / template ids merges
-      // into one PDF (one DocuSign document, or one download file).
+      // Packets: each entry merges its document references / template ids into
+      // one PDF (one DocuSign document, or one download file). An entry is a
+      // plain id list, or { name, documents, fileName? }: name makes the packet
+      // referenceable from ccRecipients.excludedPackets (names must be unique);
+      // fileName names the merged file (defaults to name).
       mergeGroups?: (
         | string[]
         | { name: string; documents: string[]; fileName?: string }

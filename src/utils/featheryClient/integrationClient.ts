@@ -1288,7 +1288,6 @@ export default class IntegrationClient {
           email: string;
           name?: string;
           excluded_documents?: number[];
-          excluded_packets?: string[];
         }
     )[];
     customFields?: Record<
@@ -1617,10 +1616,8 @@ export default class IntegrationClient {
               ? {
                   email: cc.email,
                   name: cc.name,
-                  excluded_documents: cc.excludedDocuments,
-                  ...(cc.excludedPackets?.length
-                    ? { excluded_packets: cc.excludedPackets }
-                    : {})
+                  excluded_documents: cc.excludedDocuments
+                  // No excluded_packets: this endpoint has no merge_groups.
                 }
               : cc
           ) ?? undefined,

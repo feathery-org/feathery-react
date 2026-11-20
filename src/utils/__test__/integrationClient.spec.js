@@ -1930,7 +1930,7 @@ describe('IntegrationClient', () => {
       ]);
     });
 
-    it('maps cc excludedPackets to excluded_packets, omitted when absent', async () => {
+    it('drops cc excludedPackets (sendDocusignEnvelope has no packets)', async () => {
       const integrationClient = new IntegrationClient('test_form_key');
       global.fetch.mockResolvedValue({
         ok: true,
@@ -1938,14 +1938,12 @@ describe('IntegrationClient', () => {
       });
       await integrationClient.sendDocusignEnvelope({
         documents: ['doc-1'],
-        ccRecipients: [
-          { email: 'a@mail.com', excludedPackets: ['Packet A'] },
-          { email: 'b@mail.com' }
-        ]
+        ccRecipients: [{ email: 'a@mail.com', excludedPackets: ['Packet A'] }]
       });
       const cc = requestBody().cc_recipients;
-      expect(cc[0].excluded_packets).toEqual(['Packet A']);
-      expect('excluded_packets' in cc[1]).toBe(false);
+      // This endpoint has no merge_groups, so a packet name can't resolve; the
+      // key is dropped rather than forwarded where it would fail open.
+      expect('excluded_packets' in cc[0]).toBe(false);
     });
 
     it('omits cc_recipients when a rule passes null', async () => {

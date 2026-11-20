@@ -123,13 +123,14 @@ export type SendDocusignParams = {
   // envelopes only - rejected alongside existingEnvelopeId, which adds
   // documents to an envelope whose recipients are already set.
   // excludedDocuments hides those documents from the copy, as on a signer.
+  // No excludedPackets here: this endpoint has no merge_groups, so a packet
+  // name could never resolve — it belongs only on generateDocuments.
   ccRecipients?: (
     | string
     | {
         email: string;
         name?: string;
         excludedDocuments?: number[];
-        excludedPackets?: string[];
       }
   )[];
   fillData?: Record<string, any>;
