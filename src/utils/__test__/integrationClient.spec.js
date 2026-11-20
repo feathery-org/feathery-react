@@ -1930,20 +1930,22 @@ describe('IntegrationClient', () => {
       ]);
     });
 
-    it('drops cc excludedPackets (sendDocusignEnvelope has no packets)', async () => {
+    it('rejects cc excludedPackets (sendDocusignEnvelope has no packets)', async () => {
       const integrationClient = new IntegrationClient('test_form_key');
       global.fetch.mockResolvedValue({
         ok: true,
         json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'env-1' })
       });
-      await integrationClient.sendDocusignEnvelope({
-        documents: ['doc-1'],
-        ccRecipients: [{ email: 'a@mail.com', excludedPackets: ['Packet A'] }]
-      });
-      const cc = requestBody().cc_recipients;
-      // This endpoint has no merge_groups, so a packet name can't resolve; the
-      // key is dropped rather than forwarded where it would fail open.
-      expect('excluded_packets' in cc[0]).toBe(false);
+      // This endpoint has no merge_groups to resolve a packet name against, so
+      // excludedPackets can't take effect. Throw instead of dropping it, which
+      // would fail open (the CC would get every document meant to be hidden).
+      expect(() =>
+        integrationClient.sendDocusignEnvelope({
+          documents: ['doc-1'],
+          ccRecipients: [{ email: 'a@mail.com', excludedPackets: ['Packet A'] }]
+        })
+      ).toThrow(/excludedPackets is only supported on generateDocuments/);
+      expect(global.fetch).not.toHaveBeenCalled();
     });
 
     it('omits cc_recipients when a rule passes null', async () => {

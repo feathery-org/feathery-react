@@ -1547,6 +1547,18 @@ export default class IntegrationClient {
     ignoreTemplateFieldMapping
   }: SendDocusignParams) {
     const { userId } = initInfo();
+    // excludedPackets only works on generateDocuments (merge packets). This
+    // endpoint has no merge_groups to resolve a packet name against, so reject
+    // it loudly: dropping it would send the CC every document the author meant
+    // to hide (fail-open). Logic rules are untyped, so guard the runtime shape.
+    if (
+      ccRecipients?.some(
+        (cc) => cc && typeof cc === 'object' && 'excludedPackets' in cc
+      )
+    )
+      throw new Error(
+        'ccRecipients.excludedPackets is only supported on generateDocuments (merge packets); sendDocusignEnvelope has no packets to exclude.'
+      );
     const url = `${API_URL}docusign/envelope/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
