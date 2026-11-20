@@ -405,6 +405,7 @@ export const getFormContext = (formUuid: string) => {
       ccRecipients,
       customFields,
       repeatable,
+      includeInQuikBundle,
       download,
       merge,
       mergedFileName,
@@ -478,6 +479,10 @@ export const getFormContext = (formUuid: string) => {
         string | { listItems: string[]; value?: string }
       >;
       repeatable?: boolean;
+      // Attach the other templates and file uploads in documentIds to the
+      // bundle of the `{ kind: 'quik' }` source, which is required. They are
+      // filled with no signers of their own and go to the Quik recipients.
+      includeInQuikBundle?: boolean;
       download?: boolean;
       merge?: boolean;
       mergedFileName?: string;
@@ -584,17 +589,36 @@ export const getFormContext = (formUuid: string) => {
         !!toolbarActions?.length ||
         !!repeatable ||
         documentIds.some((doc) => typeof doc !== 'string');
+      if (
+        includeInQuikBundle &&
+        !documentIds.some(
+          (doc) => typeof doc !== 'string' && doc.kind === 'quik'
+        )
+      ) {
+        return Promise.reject(
+          new Error(
+            "generateDocuments: includeInQuikBundle requires a { kind: 'quik' } source in documentIds"
+          )
+        );
+      }
       // Capture explicit Quik inputs before awaiting saves or opening review.
       // Caller edits to the original object must not change this request.
       documentIds = documentIds.map((doc) =>
-        typeof doc !== 'string' && doc.kind === 'quik' && doc.forms
+        typeof doc !== 'string' && doc.kind === 'quik'
           ? {
               ...doc,
-              forms: doc.forms.map((form) => ({
-                ...form,
-                fields: { ...form.fields },
-                ...(form.signerIds ? { signerIds: { ...form.signerIds } } : {})
-              }))
+              ...(doc.forms
+                ? {
+                    forms: doc.forms.map((form) => ({
+                      ...form,
+                      fields: { ...form.fields },
+                      ...(form.signerIds
+                        ? { signerIds: { ...form.signerIds } }
+                        : {})
+                    }))
+                  }
+                : {}),
+              attach_documents: includeInQuikBundle ?? doc.attach_documents
             }
           : typeof doc !== 'string' && doc.kind === 'template'
           ? {
@@ -614,6 +638,33 @@ export const getFormContext = (formUuid: string) => {
         return Promise.reject(
           new Error(
             "generateDocuments: references require signMethod 'docusign' and cannot be merged"
+          )
+        );
+      }
+      const bundled = documentIds.some(
+        (doc) =>
+          typeof doc !== 'string' &&
+          doc.kind === 'quik' &&
+          !!doc.attach_documents
+      );
+      if (bundled && merge) {
+        return Promise.reject(
+          new Error('generateDocuments: a Quik bundle cannot be merged')
+        );
+      }
+      if (
+        bundled &&
+        documentIds.some(
+          (doc) =>
+            typeof doc !== 'string' &&
+            // A kind-less object is a template, as on the backend.
+            ((doc as { kind?: string }).kind ?? 'template') === 'template' &&
+            (doc as { references?: string[] }).references !== undefined
+        )
+      ) {
+        return Promise.reject(
+          new Error(
+            'generateDocuments: templates in the Quik bundle cannot take references'
           )
         );
       }
