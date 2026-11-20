@@ -1264,7 +1264,7 @@ export default class IntegrationClient {
     mergeDocs: boolean;
     // Packets: each inner list of document references / template ids merges
     // into one PDF (one download file, or one DocuSign document).
-    mergeGroups?: string[][];
+    mergeGroups?: (string[] | { name: string; documents: string[] })[];
     mergedFileName?: string;
     // False for a direct DocuSign sign, which also needs this call because
     // client-utils can't forward sign_method.
@@ -1284,7 +1284,11 @@ export default class IntegrationClient {
     sourceElementId?: string;
     ccRecipients?: (
       | string
-      | { email: string; name?: string; excluded_documents?: number[] }
+      | {
+          email: string;
+          name?: string;
+          excluded_documents?: number[];
+        }
     )[];
     customFields?: Record<
       string,
@@ -1613,6 +1617,7 @@ export default class IntegrationClient {
                   email: cc.email,
                   name: cc.name,
                   excluded_documents: cc.excludedDocuments
+                  // No excluded_packets: this endpoint has no merge_groups.
                 }
               : cc
           ) ?? undefined,

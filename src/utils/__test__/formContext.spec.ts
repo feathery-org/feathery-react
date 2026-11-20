@@ -92,6 +92,55 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     }
   );
 
+  it('forwards named mergeGroups intact next to plain ones', async () => {
+    const named = { name: 'Packet A', documents: ['tpl-1', 'tpl-2'] };
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1', 'tpl-2', 'tpl-3'],
+      mergeGroups: [named, ['tpl-3']]
+    });
+    const groups = flow.mock.calls[0][0].merge_groups;
+    expect(groups).toEqual([
+      { name: 'Packet A', documents: ['tpl-1', 'tpl-2'] },
+      ['tpl-3']
+    ]);
+    // Captured copy: later caller edits must not leak in.
+    named.documents.push('x');
+    expect(groups[0].documents).toEqual(['tpl-1', 'tpl-2']);
+  });
+
+  it('maps named packet fileName to file_name, omitted when absent', async () => {
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1', 'tpl-2'],
+      mergeGroups: [
+        { name: 'A', documents: ['tpl-1'], fileName: 'Package A.pdf' },
+        { name: 'B', documents: ['tpl-2'] }
+      ]
+    });
+    const groups = flow.mock.calls[0][0].merge_groups;
+    expect(groups[0]).toEqual({
+      name: 'A',
+      documents: ['tpl-1'],
+      file_name: 'Package A.pdf'
+    });
+    expect(groups[1]).toEqual({ name: 'B', documents: ['tpl-2'] });
+    expect('fileName' in groups[0]).toBe(false);
+  });
+
+  it('maps CC excludedPackets to excluded_packets, omitted when absent', async () => {
+    await getFormContext(uuid).generateDocuments({
+      documentIds: ['tpl-1'],
+      signMethod: 'docusign',
+      envelopeAction: 'sign',
+      ccRecipients: [
+        { email: 'a@example.com', excludedPackets: ['Packet A'] },
+        { email: 'b@example.com' }
+      ]
+    });
+    const cc = flow.mock.calls[0][0].cc_recipients;
+    expect(cc[0].excluded_packets).toEqual(['Packet A']);
+    expect('excluded_packets' in cc[1]).toBe(false);
+  });
+
   it('rejects CC recipients for other sign methods before saving', async () => {
     await expect(
       getFormContext(uuid).generateDocuments({
