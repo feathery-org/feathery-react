@@ -270,7 +270,8 @@ import {
   editorContainerId,
   getSignUrl,
   isDocusignSignAction,
-  buildDocumentReviewTrigger
+  buildDocumentReviewTrigger,
+  reviewViewerAction
 } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
 import DataMappingModal from '../elements/components/dataMapping/DataMappingModal';
@@ -3802,7 +3803,7 @@ function Form({
             // editing surface (and needs the plain generate response).
             setReviewViewerPayload({
               payload: data,
-              action: { ...action, editor_mode: 'overlay' },
+              action: reviewViewerAction(action),
               onFinalize: async ({
                 envelopes,
                 envelopeAction,
@@ -4367,6 +4368,8 @@ function Form({
         {reviewViewerPayload && (
           <React.Suspense fallback={null}>
             <DocumentViewer
+              // A new packet starts a fresh viewer: its document list is state.
+              key={reviewViewerPayload.payload?.expires_at}
               payload={reviewViewerPayload.payload}
               action={reviewViewerPayload.action}
               setShow={(show: boolean) => {
@@ -4380,6 +4383,12 @@ function Form({
               }}
               onComplete={reviewViewerPayload.onComplete}
               onFinalize={reviewViewerPayload.onFinalize}
+              onUploadAttachment={(file: File) =>
+                clientRef.current.uploadReviewAttachment(file)
+              }
+              onRemoveAttachment={(envelopeId: string) =>
+                clientRef.current.removeReviewAttachment(envelopeId)
+              }
               // Persists PDFs whose fields the filler edited in the viewer.
               // The generic envelope file endpoint validates the extension
               // against the envelope type, so name the upload as a pdf.

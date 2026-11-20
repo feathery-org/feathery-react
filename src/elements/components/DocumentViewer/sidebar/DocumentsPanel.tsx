@@ -1,45 +1,314 @@
-import React from 'react';
-import { ViewerDocument } from '../index';
+import React, { useEffect, useRef, useState } from 'react';
+import { ViewerDocument, documentName, documentUrl } from '../documents';
 import { color, fontSize, radius } from '../tokens';
+import { iconButtonCss, secondaryButtonCss } from '../buttonStyles';
+import {
+  ChevronDownIcon,
+  ChevronUpIcon,
+  CloseIcon,
+  GripIcon,
+  PaperclipIcon
+} from '../icons';
+
+/** Packet editing (`editor_allow_attachments`): add, remove and reorder. */
+export interface PacketEditor {
+  disabled: boolean;
+  onAddFiles: (files: File[]) => void;
+  onMove: (from: number, to: number) => void;
+  // Resolves to whether the attachment was removed.
+  onRemove: (index: number) => Promise<boolean>;
+}
 
 interface DocumentsPanelProps {
   documents: ViewerDocument[];
   onNavigate: (pdfUrl: string, pageIndex: number) => void;
+  packetEditor?: PacketEditor;
 }
+
+const DRAG_TYPE = 'application/x-feathery-document-index';
 
 export default function DocumentsPanel({
   documents,
-  onNavigate
+  onNavigate,
+  packetEditor
 }: DocumentsPanelProps) {
-  const forms = documents.filter((doc) => doc.type === 'form');
-  if (forms.length === 0) return null;
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const addButtonRef = useRef<HTMLButtonElement | null>(null);
+  const rowButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // The row index whose Remove button had focus before it unmounted.
+  const focusAfterRemove = useRef<number | null>(null);
+  // A failed remove gives focus back to its row once the panel is enabled.
+  const [refocusIndex, setRefocusIndex] = useState<number | null>(null);
+  const removeButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const [announcement, setAnnouncement] = useState('');
+
+  useEffect(() => {
+    const index = focusAfterRemove.current;
+    if (index === null) return;
+    focusAfterRemove.current = null;
+    // The next row takes the removed one's place; else the one before it.
+    const target =
+      rowButtonRefs.current[Math.min(index, documents.length - 1)] ??
+      addButtonRef.current;
+    target?.focus();
+  }, [documents]);
+
+  useEffect(() => {
+    if (refocusIndex === null || packetEditor?.disabled) return;
+    setRefocusIndex(null);
+    (
+      removeButtonRefs.current[refocusIndex] ??
+      rowButtonRefs.current[refocusIndex]
+    )?.focus();
+  }, [refocusIndex, packetEditor?.disabled, documents]);
+
+  // A repeat of the same text wouldn't be read again, so vary it invisibly.
+  const announce = (text: string) =>
+    setAnnouncement((prev) => (prev === text ? `${text}\u200b` : text));
+
+  if (!documents.length && !packetEditor) return null;
+  const editable = !!packetEditor && !packetEditor.disabled;
+
+  const move = (from: number, to: number) => {
+    if (!packetEditor || from === to || to < 0 || to >= documents.length)
+      return;
+    packetEditor.onMove(from, to);
+    announce(
+      `Moved ${documentName(documents[from])} to position ${to + 1} of ${
+        documents.length
+      }`
+    );
+  };
+
+  const endDrag = () => {
+    setDragIndex(null);
+    setDropIndex(null);
+  };
+
+  // A row dropped on a row moves there; dropped files are attached (the
+  // viewer explains when it can't take them right now).
+  const onDrop = (e: React.DragEvent, index?: number) => {
+    e.preventDefault();
+    if (dragIndex !== null) {
+      if (editable && index !== undefined) move(dragIndex, index);
+    } else if (packetEditor && e.dataTransfer.files.length) {
+      packetEditor.onAddFiles(Array.from(e.dataTransfer.files));
+    }
+    endDrag();
+  };
+
   return (
-    <div css={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
-      {forms.map((doc) => (
-        <button
-          key={doc.pdf_url}
-          type='button'
-          onClick={() => onNavigate(doc.pdf_url, 0)}
-          css={rowButtonCss}
-        >
-          {doc.name}
-        </button>
-      ))}
+    <div css={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <ol
+        aria-label='Documents'
+        css={{
+          listStyle: 'none',
+          margin: 0,
+          padding: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2
+        }}
+        onDragOver={(e) => editable && e.preventDefault()}
+        onDrop={(e) => onDrop(e)}
+      >
+        {documents.map((doc, index) => (
+          <li
+            key={doc.envelope_id ?? documentUrl(doc)}
+            draggable={editable}
+            onDragStart={(e) => {
+              setDragIndex(index);
+              e.dataTransfer.effectAllowed = 'move';
+              e.dataTransfer.setData(DRAG_TYPE, String(index));
+            }}
+            onDragOver={(e) => {
+              if (!editable) return;
+              e.preventDefault();
+              e.stopPropagation();
+              setDropIndex(index);
+            }}
+            onDrop={(e) => {
+              e.stopPropagation();
+              onDrop(e, index);
+            }}
+            onDragEnd={endDrag}
+            css={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+              borderRadius: radius.sm,
+              opacity: dragIndex === index ? 0.4 : 1,
+              boxShadow:
+                dropIndex === index && dragIndex !== index
+                  ? `inset 0 ${
+                      dragIndex !== null && dragIndex < index ? -2 : 2
+                    }px 0 ${color.accent}`
+                  : 'none',
+              '&:hover': { backgroundColor: color.surfaceHover }
+            }}
+          >
+            {packetEditor && (
+              <span
+                aria-hidden
+                css={{
+                  display: 'flex',
+                  color: color.textMuted,
+                  cursor: editable ? 'grab' : 'default',
+                  paddingLeft: 4
+                }}
+              >
+                <GripIcon size={14} />
+              </span>
+            )}
+            <button
+              type='button'
+              ref={(el) => {
+                rowButtonRefs.current[index] = el;
+              }}
+              onClick={() => onNavigate(documentUrl(doc), 0)}
+              css={rowButtonCss}
+            >
+              <span css={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {documentName(doc)}
+              </span>
+              {doc.type === 'attachment' && (
+                <span css={badgeCss}>
+                  <PaperclipIcon size={11} />
+                  Attachment
+                </span>
+              )}
+            </button>
+            {packetEditor && (
+              <span css={{ display: 'flex', flexShrink: 0 }}>
+                <button
+                  type='button'
+                  aria-label={`Move ${documentName(doc)} up`}
+                  disabled={!editable || index === 0}
+                  onClick={() => move(index, index - 1)}
+                  css={rowIconButtonCss}
+                >
+                  <ChevronUpIcon size={14} />
+                </button>
+                <button
+                  type='button'
+                  aria-label={`Move ${documentName(doc)} down`}
+                  disabled={!editable || index === documents.length - 1}
+                  onClick={() => move(index, index + 1)}
+                  css={rowIconButtonCss}
+                >
+                  <ChevronDownIcon size={14} />
+                </button>
+                {doc.type === 'attachment' && !doc.locked && (
+                  <button
+                    type='button'
+                    ref={(el) => {
+                      removeButtonRefs.current[index] = el;
+                    }}
+                    aria-label={`Remove ${documentName(doc)}`}
+                    disabled={!editable}
+                    onClick={async () => {
+                      focusAfterRemove.current = index;
+                      if (await packetEditor.onRemove(index)) {
+                        announce(`Removed ${documentName(doc)}`);
+                      } else {
+                        focusAfterRemove.current = null;
+                        setRefocusIndex(index);
+                      }
+                    }}
+                    css={rowIconButtonCss}
+                  >
+                    <CloseIcon size={14} />
+                  </button>
+                )}
+              </span>
+            )}
+          </li>
+        ))}
+      </ol>
+      {packetEditor && (
+        <>
+          <button
+            type='button'
+            ref={addButtonRef}
+            disabled={packetEditor.disabled}
+            onClick={() => fileInputRef.current?.click()}
+            css={{ ...secondaryButtonCss, width: '100%' }}
+          >
+            <PaperclipIcon size={14} />
+            Add attachment
+          </button>
+          <input
+            ref={fileInputRef}
+            type='file'
+            multiple
+            hidden
+            data-testid='attachment-input'
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              // Reset so picking the same file again still fires onChange.
+              e.target.value = '';
+              packetEditor.onAddFiles(files);
+            }}
+          />
+          <p
+            css={{
+              margin: 0,
+              fontSize: fontSize.xs,
+              color: color.textMuted,
+              textAlign: 'center'
+            }}
+          >
+            Drag to reorder, or drop files here to attach them.
+          </p>
+        </>
+      )}
+      <div aria-live='polite' css={visuallyHiddenCss}>
+        {announcement}
+      </div>
     </div>
   );
 }
 
 const rowButtonCss = {
+  flex: 1,
+  minWidth: 0,
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
   border: 'none',
   background: 'transparent',
   textAlign: 'left' as const,
   cursor: 'pointer',
   fontSize: fontSize.md,
-  padding: '8px 10px',
+  padding: '8px 6px',
   borderRadius: radius.sm,
   color: color.text,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
   whiteSpace: 'nowrap' as const,
-  '&:hover': { backgroundColor: color.surfaceHover, color: color.accent }
+  '&:hover': { color: color.accent },
+  '&:focus-visible': { outline: `2px solid ${color.accent}`, outlineOffset: -2 }
+};
+
+const rowIconButtonCss = { ...iconButtonCss, padding: 4 };
+
+const badgeCss = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 3,
+  flexShrink: 0,
+  padding: '1px 6px',
+  borderRadius: radius.pill,
+  backgroundColor: color.accentSoft,
+  color: color.accent,
+  fontSize: fontSize.xs
+};
+
+const visuallyHiddenCss = {
+  position: 'absolute' as const,
+  width: 1,
+  height: 1,
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap' as const
 };

@@ -11,7 +11,9 @@ export class DocumentPersistenceError extends Error {
       | 'blocked'
       | 'cancelled',
     public readonly status?: number,
-    public readonly retryAfterMs?: number
+    public readonly retryAfterMs?: number,
+    // The backend's error code, when it sent one.
+    public readonly code?: string
   ) {
     super(message);
     // The es5 build otherwise returns a plain Error, so instanceof is false
@@ -69,6 +71,9 @@ export function documentErrorMessage(payload: unknown): string {
   if (typeof payload === 'string') return payload;
   if (Array.isArray(payload))
     return payload.map(documentErrorMessage).join('; ');
+  // DRF's error shape is {message, code}: the code isn't for people.
+  if (payload && typeof (payload as any).message === 'string')
+    return (payload as any).message;
   if (payload && typeof payload === 'object')
     return Object.values(payload)
       .map(documentErrorMessage)
