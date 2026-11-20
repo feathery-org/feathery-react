@@ -24,6 +24,8 @@ export interface PptxChangeRecord {
   author: PptxChangeAuthor;
   origin: NonNullable<CommandMeta['origin']>;
   status: 'pending' | 'accepted' | 'rejected';
+  /** Set on the record of a reject: the id of the suggestion it rejected. */
+  rejects?: string;
   createdAt: string;
   targets: PptxChangeTarget[];
   summary: string;
