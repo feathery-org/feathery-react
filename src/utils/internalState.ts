@@ -13,6 +13,7 @@ import { LogicRule, Subgrid } from '../types/Form';
 import type { FormActionHandlers } from './formActions/utils';
 import type { FormToolsStepWrites } from './formTools/types';
 import type { TableHandlers } from './formActions/tables';
+import type { SharedCodeModules } from '../Form/sharedCode';
 import {
   ExtractionActionOptions,
   FillQuikParams,
@@ -224,6 +225,7 @@ export interface FormInternalState {
   backNavMap?: Record<string, string>;
   visiblePositions: any;
   logicRules?: LogicRule[];
+  sharedCodeModules?: SharedCodeModules;
   formActions?: FormActionHandlers;
   tables?: Map<string, TableHandlers>;
   formToolsCallbacks?: FormToolsCallbacks;
