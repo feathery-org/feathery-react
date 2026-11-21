@@ -462,8 +462,8 @@ export const getFormContext = (formUuid: string) => {
       // signing email, as sendDocusignEnvelope takes them.
       emailSubject?: string;
       emailBlurb?: string;
-      // Only for signMethod 'docusign': reminder and expiration schedule, as
-      // sendDocusignEnvelope takes it.
+      // Only for signMethod 'docusign': reminder/expiration schedule that
+      // overrides the card's Email Reminder settings field by field.
       notification?: DocusignNotification;
       // Only for signMethod 'docusign': overrides the DocuSign integration's
       // Require SMS Authentication for this send. true requires a phone for

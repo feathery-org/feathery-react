@@ -2034,7 +2034,18 @@ describe('IntegrationClient', () => {
         })
       );
       expect(requestBody().voided_reason).toBeUndefined();
+      expect(requestBody()).not.toHaveProperty('notification');
       expect(result).toEqual({ status: 'sent' });
+
+      const notification = {
+        reminders: { enabled: true, delay: 2, frequency: 1 }
+      };
+      await integrationClient.updateDocusignEnvelope({
+        envelopeId: 'env-123',
+        status: 'sent',
+        notification
+      });
+      expect(requestBody(1).notification).toEqual(notification);
     });
 
     it('includes voided_reason when voiding', async () => {
