@@ -70,11 +70,7 @@ function validateElements({
     (errors: any, { element, repeat, last, type: elementType }) => {
       let key, type;
       if (elementType === 'servar_fields') {
-        if (isTrailingSetValueRow(element, repeat, last)) return errors;
-        // A state field disabled for want of states can never be filled in
-        if (stateFieldHasNoOptions(element, step, fieldValues, repeat)) {
-          return errors;
-        }
+        if (isExemptFromValidation(element, step, repeat, last)) return errors;
         type = element.servar.type;
         key = element.servar.key;
       } else {
@@ -306,6 +302,64 @@ function storeAlignedSliderValues(
     );
   };
   return { visiblePositions: settled.visiblePositions, restore };
+}
+
+/**
+ * Rows a submit never validates: the trailing auto-added repeat row, which may
+ * still hold its default value, and a state field with no states to pick.
+ */
+function isExemptFromValidation(
+  element: any,
+  step: any,
+  repeat: any,
+  last: boolean
+): boolean {
+  if (isTrailingSetValueRow(element, repeat, last)) return true;
+  // A state field disabled for want of states can never be filled in
+  return stateFieldHasNoOptions(element, step, fieldValues, repeat);
+}
+
+/**
+ * Whether one field would pass a submit's validation right now, across every
+ * visible row, without touching the DOM or inline errors. Drives autosave: a
+ * field is only flushed once it is in a state the step could be submitted in.
+ */
+function isFieldValid({
+  step,
+  visiblePositions,
+  fieldKey
+}: {
+  step: any;
+  visiblePositions: any;
+  fieldKey: string;
+}): boolean {
+  const elements = getVisibleElements(
+    step,
+    visiblePositions,
+    ['servar_fields'],
+    true
+  ).filter(({ element }) => element.servar.key === fieldKey);
+  // A field with nothing visible (hidden, or on another step) isn't saved
+  return (
+    elements.length > 0 &&
+    elements.every(({ element, repeat, last }) => {
+      // The trailing row a set_value repeat adds is only exempt while it's
+      // untouched: mid-typing it's the last row until the next one renders
+      const trailingRowStarted =
+        element.servar.repeat_trigger === 'set_value' &&
+        last &&
+        repeat &&
+        !isFieldValueEmpty(
+          (fieldValues[fieldKey] as any)?.[repeat],
+          element.servar
+        );
+      return (
+        (!trailingRowStarted &&
+          isExemptFromValidation(element, step, repeat, last)) ||
+        !validateElement(element, repeat)
+      );
+    })
+  );
 }
 
 /**
@@ -562,6 +616,7 @@ export {
   storeAlignedSliderValues,
   getSettledVisiblePositions,
   getSliderSources,
+  isFieldValid,
   getStandardFieldError,
   isFieldValueEmpty,
   emailPatternStr,

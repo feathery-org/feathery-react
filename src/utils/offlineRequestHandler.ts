@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { featheryWindow, runningInClient } from './browser';
 import { fileRetryStatus, initInfo } from './init';
 import { withLinkRequestHeaders } from './accessLinkRequest';
+import { trackRequest } from './networkDebug';
 import type FeatheryClient from './featheryClient';
 import { isInteractionDetected } from './interactionState';
 import {
@@ -1080,7 +1081,13 @@ export class OfflineRequestHandler {
         // before _fetch attached the header, and a replay can outlive the
         // page that queued them. The link this device holds now is the
         // one the submission is open under, so it wins over the snapshot.
-        response = await fetch(url, withLinkRequestHeaders(url, fetchOptions));
+        const replayOptions = withLinkRequestHeaders(url, fetchOptions);
+        response = await trackRequest(
+          url,
+          replayOptions,
+          () => fetch(url, replayOptions),
+          { retry: true }
+        );
         await checkResponseSuccess(response);
       } catch (error: any) {
         if (error instanceof FormConflictError) {
