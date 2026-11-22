@@ -86,6 +86,10 @@ import {
   setInteractionDetected
 } from '../interactionState';
 import { EventQueue } from '../eventQueue';
+import {
+  isSubmittedValue,
+  startSubmittingValues
+} from '../submittedFieldValues';
 import { STEP_EVENT_LOAD, STEP_EVENT_SUBMIT } from '../stepEvents';
 
 declare const __PACKAGE_VERSION__: string;
@@ -288,13 +292,25 @@ export default class FeatheryClient extends IntegrationClient {
       body: JSON.stringify(data)
     };
 
-    return this.offlineRequestHandler.runOrSaveRequest(
+    // A step submit saves these values, so a later rule writing the same value
+    // back doesn't need to send it again
+    const commitSubmitted = startSubmittingValues(
+      Object.fromEntries(
+        data.servars.map(({ key, ...typed }: Record<string, any>) => [
+          key,
+          Object.values(typed)[0]
+        ])
+      )
+    );
+    const req = this.offlineRequestHandler.runOrSaveRequest(
       () => this._fetch(url, options, true, true),
       url,
       options,
       'submit',
       stepKey
     );
+    req.then(commitSubmitted, () => {});
+    return req;
   }
 
   async _getFileValue(servar: any) {
@@ -1051,6 +1067,11 @@ export default class FeatheryClient extends IntegrationClient {
 
     // Here we can safely remove the listener because offlineRequestHandler has its own beforeunload
     this._removeCustomFieldListener();
+    // With override off the server keeps any value it already has, so only an
+    // overriding save tells us what the server holds
+    const commitSubmitted = override
+      ? startSubmittingValues(customKeyValues)
+      : () => {};
     const uniqueId = uuidv4();
     const req = this.offlineRequestHandler.runOrSaveRequest(
       () => this._fetch(url, options, true, true),
@@ -1061,10 +1082,10 @@ export default class FeatheryClient extends IntegrationClient {
     // Clean up on both success and failure so a failed request doesn't
     // permanently register as in flight and block future flush cycles
     const removeInFlight = () => delete this.customSubmitInFlight[uniqueId];
-    this.customSubmitInFlight[uniqueId] = req.then(
-      removeInFlight,
-      removeInFlight
-    );
+    this.customSubmitInFlight[uniqueId] = req.then(() => {
+      commitSubmitted();
+      removeInFlight();
+    }, removeInFlight);
     return await req;
   }
 
@@ -1140,14 +1161,29 @@ export default class FeatheryClient extends IntegrationClient {
     if (this.draft || this.getNoSave()) return;
     if (Object.keys(customKeyValues).length === 0 && !shouldFlush) return;
     // If there are values passed, aggregate them in the pending queue
+    const queuedKeys = new Set<string>();
     Object.entries(
       this.formKey
         ? normalizeKnownAsciiValues(customKeyValues, this.formKey)
         : customKeyValues
     ).forEach(([key, value]) => {
-      if (value !== undefined) this.pendingCustomFieldUpdates[key] = value;
+      if (value === undefined) return;
+      // Skip a value the server already has, e.g. a rule writing a field's
+      // value back. A key already queued is still replaced, since the queued
+      // value may differ from the one last sent.
+      if (
+        override &&
+        !(key in this.pendingCustomFieldUpdates) &&
+        isSubmittedValue(key, value)
+      )
+        return;
+      this.pendingCustomFieldUpdates[key] = value;
+      queuedKeys.add(key);
     });
-    repeatedFileKeys.forEach((key) => this.pendingRepeatedFileKeys.add(key));
+    repeatedFileKeys.forEach((key) => {
+      if (queuedKeys.has(key)) this.pendingRepeatedFileKeys.add(key);
+    });
+    if (!queuedKeys.size && !shouldFlush) return;
     // if we don't want to override the existing values or the caller tells us to flush, immediately flush
     if (!override || shouldFlush) {
       return this.flushCustomFields(override);
