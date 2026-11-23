@@ -1,7 +1,14 @@
 import 'jest-canvas-mock';
 import { randomFillSync } from 'crypto';
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within
+} from '@testing-library/react';
 import {
   DocumentEditor,
   Editor,
@@ -13,7 +20,10 @@ import {
 } from '@syncfusion/ej2-documenteditor';
 import TrackedChangeGroups from './TrackedChangeGroups';
 import { RailErrorBoundary } from './index';
-import { applyDocumentEdits } from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import {
+  createEditorAdapter,
+  SyncfusionEditorLike
+} from './bindings/editorAdapter';
 import {
   installRevisionGroupIsolation,
   resolveLiveRevisionGroupsAsOneUndo,
@@ -21,6 +31,7 @@ import {
   LiveEditor
 } from '../../../utils/documentEditorPrimitives';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
+import { registerCardResolver } from '../../../robin/document/mounts';
 
 DocumentEditor.Inject(
   Editor,
@@ -52,8 +63,22 @@ if (!(testWindow.SVGElement.prototype as any).getBBox) {
 // A minimal live-editor stand-in: tagged revisions in a collection, plus the
 // event surface the panel subscribes to. Group tags use the same JSON shape
 // the ops engine stamps through revisionSettings.customData.
-const tag = (changeSetId: string, group: string) =>
-  JSON.stringify({ v: 1, source: 'robin', changeSetId, group });
+const tag = (
+  changeSetId: string,
+  group: string,
+  derivedChanges?: Array<{
+    name: string;
+    beforeText: string;
+    afterText: string;
+  }>
+) =>
+  JSON.stringify({
+    v: 1,
+    source: 'robin',
+    changeSetId,
+    group,
+    derivedChanges
+  });
 
 function makeEditor(revisions: any[]): any {
   const listeners: Record<string, Array<() => void>> = {};
@@ -132,14 +157,28 @@ function makeRealEditor(text = ''): DocumentEditor {
   return editor;
 }
 
+// Robin's tracked replacement of the premium in 'Premium: $5,200'
+function suggestPremiumChange(editor: DocumentEditor, changeSetId: string) {
+  createEditorAdapter(
+    editor as unknown as SyncfusionEditorLike
+  ).withAuthoredRevisions?.(
+    { author: 'Robin', changeSetId, group: 'update-premium' },
+    () => {
+      editor.selection.select('0;0;9', '0;0;15');
+      editor.editor.insertText('$5,500');
+    }
+  );
+}
+
 function destroyRealEditor(editor: DocumentEditor): void {
   const element = editor.element;
   editor.destroy();
   element?.remove();
 }
 
-function acceptOnlyGroup(): void {
-  fireEvent.click(screen.getByRole('button', { name: /^Accept \d+$/ }));
+async function acceptOnlyGroup(): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+  await flushDeferredResolve();
 }
 
 // Single-edit groups carry no group-wide card button, so the rail-wide action
@@ -181,21 +220,25 @@ describe('TrackedChangeGroups', () => {
     render(<TrackedChangeGroups editor={editor} />);
     // Card titled by the author, tally as usual.
     expect(screen.getByText('Ayesha')).toBeInTheDocument();
-    expect(screen.getByText('1 edit')).toBeInTheDocument();
+    expect(screen.getByText('1 change')).toBeInTheDocument();
 
-    // Expanding shows the edit with its author attribution.
+    // Expanding shows the edit itself. The author is the card title, not
+    // repeated on each chip, so it still appears exactly once.
     fireEvent.click(screen.getByRole('button', { name: 'Expand Ayesha' }));
     expect(screen.getByText('A human tracked edit.')).toBeInTheDocument();
-    expect(screen.getAllByText('Ayesha').length).toBeGreaterThan(1);
+    expect(screen.getAllByText('Ayesha')).toHaveLength(1);
   });
 
-  it('shows the author on assistant chips too', () => {
-    const editor = makeEditor([makeRevision()]);
+  it('shows the assistant author once on the group header, not per chip', () => {
+    const editor = makeEditor([makeRevision(), makeRevision()]);
     render(<TrackedChangeGroups editor={editor} />);
+    // Visible on the header before expanding.
+    expect(screen.getByText('Robin (assistant)')).toBeInTheDocument();
+    // Still exactly one after expanding two chips — no per-chip repetition.
     fireEvent.click(
       screen.getByRole('button', { name: 'Expand Update premium' })
     );
-    expect(screen.getByText('Robin (assistant)')).toBeInTheDocument();
+    expect(screen.getAllByText('Robin (assistant)')).toHaveLength(1);
   });
 
   it('keeps every review control from submitting the surrounding form', () => {
@@ -246,8 +289,164 @@ describe('TrackedChangeGroups', () => {
     expect(screen.getByText('Update premium')).toBeInTheDocument();
     expect(screen.getByText('Fix effective date')).toBeInTheDocument();
     // Two pending edits in the premium group, one in the date group.
-    expect(screen.getByText('2 edits')).toBeInTheDocument();
-    expect(screen.getByText('1 edit')).toBeInTheDocument();
+    expect(screen.getByText('2 changes')).toBeInTheDocument();
+    expect(screen.getByText('1 change')).toBeInTheDocument();
+    expect(screen.getByText('3 pending')).toBeInTheDocument();
+  });
+
+  it("shows the engine's title, and the full intent only when the card is expanded", () => {
+    const engineTag = JSON.stringify({
+      v: 1,
+      source: 'robin',
+      changeSetId: 'turn-4',
+      group: 'robin',
+      title: 'Added a row (removes a paragraph)',
+      intent: 'Add a motor line and drop the old note.'
+    });
+    const editor = makeEditor([makeRevision({ customData: engineTag })]);
+    render(<TrackedChangeGroups editor={editor} />);
+    expect(
+      screen.getByText('Added a row (removes a paragraph)')
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('Add a motor line and drop the old note.')
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Expand Added a row (removes a paragraph)'
+      })
+    );
+    expect(
+      screen.getByText('Add a motor line and drop the old note.')
+    ).toBeInTheDocument();
+  });
+
+  it('a card the engine owns resolves through the engine, never natively, and leaves the rail', async () => {
+    const engineTag = JSON.stringify({
+      v: 1,
+      source: 'robin',
+      changeSetId: 'turn-5',
+      group: 'robin',
+      title: 'Moved a table'
+    });
+    const revisions = [
+      makeRevision({ customData: engineTag }),
+      makeRevision({ customData: engineTag, revisionType: 'Deletion' })
+    ];
+    const editor = makeEditor(revisions);
+    const resolve = jest.fn((changeSetIds: string[]) => {
+      expect(changeSetIds).toEqual(['turn-5']);
+      revisions.splice(0, revisions.length);
+      return true;
+    });
+    const off = registerCardResolver(editor, {
+      owns: (id) => id === 'turn-5',
+      resolve
+    });
+    const { container } = render(<TrackedChangeGroups editor={editor} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
+    await flushDeferredResolve();
+    expect(resolve).toHaveBeenCalledWith(['turn-5'], false, undefined);
+    for (const r of [makeRevision()]) expect(r.reject).not.toHaveBeenCalled();
+    expect(container).toBeEmptyDOMElement();
+    off();
+  });
+
+  it('Accept all resolves native cards inside the engine resolution, as one undo step', async () => {
+    const engineTag = JSON.stringify({
+      v: 1,
+      source: 'robin',
+      changeSetId: 'turn-5',
+      group: 'robin',
+      title: 'Moved a table'
+    });
+    const deletion = makeRevision({ revisionType: 'Deletion' });
+    const revisions = [makeRevision({ customData: engineTag }), deletion];
+    deletion.accept.mockImplementation(() =>
+      revisions.splice(revisions.indexOf(deletion), 1)
+    );
+    const editor = makeEditor(revisions);
+    const resolve = jest.fn(
+      (ids: string[], accept: boolean, alongside?: () => void) => {
+        expect(deletion.accept).not.toHaveBeenCalled();
+        alongside?.();
+        revisions.splice(0, 1);
+        return true;
+      }
+    );
+    const off = registerCardResolver(editor, {
+      owns: (id) => id === 'turn-5',
+      resolve
+    });
+    render(<TrackedChangeGroups editor={editor} />);
+    acceptAllGroups();
+    await flushDeferredResolve();
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledWith(
+      ['turn-5'],
+      true,
+      expect.any(Function)
+    );
+    expect(deletion.accept).toHaveBeenCalledTimes(1);
+    off();
+  });
+
+  it('a card the engine does not own resolves natively as before', async () => {
+    const deletion = makeRevision({ revisionType: 'Deletion' });
+    const revisions = [deletion];
+    deletion.accept.mockImplementation(() => revisions.splice(0, 1));
+    const editor = makeEditor(revisions);
+    const resolve = jest.fn(() => true);
+    const off = registerCardResolver(editor, { owns: () => false, resolve });
+    render(<TrackedChangeGroups editor={editor} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    await flushDeferredResolve();
+    expect(resolve).not.toHaveBeenCalled();
+    expect(deletion.accept).toHaveBeenCalledTimes(1);
+    off();
+  });
+
+  it('renders one card per message, including dependent table messages', () => {
+    const editor = makeEditor([
+      makeRevision({
+        customData: tag('add-signage', 'add-signage', [
+          {
+            name: 'property_premium_subtotal',
+            beforeText: '$11,008.00',
+            afterText: '$11,638.00'
+          }
+        ]),
+        getRange: () => [{ text: 'Signage' }]
+      }),
+      makeRevision({
+        customData: tag('split-property', 'split-property', [
+          {
+            name: 'property_premium_subtotal',
+            beforeText: '$22,054.40',
+            afterText: '$11,008.00'
+          }
+        ]),
+        getRange: () => [{ text: 'Property split' }]
+      }),
+      makeRevision({
+        customData: tag('fix-date', 'fix-effective-date'),
+        getRange: () => [{ text: '2026-02-01' }]
+      })
+    ]);
+
+    render(<TrackedChangeGroups editor={editor} />);
+
+    expect(screen.getByText('Split property')).toBeInTheDocument();
+    expect(screen.getByText('Add signage')).toBeInTheDocument();
+    expect(screen.getByText('Fix effective date')).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Split property' })
+    );
+    expect(
+      screen.getByText('property premium subtotal').parentElement
+    ).toHaveTextContent('$22,054.40 → $11,008.00');
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Add signage' }));
+    expect(screen.getByText('$11,008.00 → $11,638.00')).toBeInTheDocument();
     expect(screen.getByText('3 pending')).toBeInTheDocument();
   });
 
@@ -279,7 +478,12 @@ describe('TrackedChangeGroups', () => {
     expect(
       screen.getByText('$5,500').closest('[aria-current="true"]')
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('Accept this edit')).toBeInTheDocument();
+    // Every row shows its own Accept/Reject; scope to the focused chip's row.
+    expect(
+      within(
+        screen.getByText('$5,500').closest('[role="button"]') as HTMLElement
+      ).getByLabelText('Accept this edit')
+    ).toBeInTheDocument();
 
     // Collapse hides the chips again.
     fireEvent.click(
@@ -369,7 +573,7 @@ describe('TrackedChangeGroups', () => {
     expect(screen.getByText('$6,000')).toBeInTheDocument();
   });
 
-  it('focused-chip Accept resolves only that edit; the resolved chip disappears', () => {
+  it('focused-chip Accept resolves only that edit; the resolved chip disappears', async () => {
     const deletion = makeRevision({
       revisionType: 'Deletion',
       getRange: () => [{ text: '$5,500' }]
@@ -388,7 +592,12 @@ describe('TrackedChangeGroups', () => {
       screen.getByRole('button', { name: 'Expand Update premium' })
     );
     fireEvent.click(screen.getByText('$5,500'));
-    fireEvent.click(screen.getByLabelText('Accept this edit'));
+    fireEvent.click(
+      within(
+        screen.getByText('$5,500').closest('[role="button"]') as HTMLElement
+      ).getByLabelText('Accept this edit')
+    );
+    await flushDeferredResolve();
 
     expect(deletion.accept).toHaveBeenCalledTimes(1);
     expect(insertion.accept).not.toHaveBeenCalled();
@@ -396,11 +605,47 @@ describe('TrackedChangeGroups', () => {
     // The resolved chip is gone; its group sibling stays pending.
     expect(screen.queryByText('$5,500')).not.toBeInTheDocument();
     expect(screen.getByText('$6,000')).toBeInTheDocument();
-    expect(screen.getByText('1 edit')).toBeInTheDocument();
+    expect(screen.getByText('1 change')).toBeInTheDocument();
     expect(screen.getByText('1 pending')).toBeInTheDocument();
   });
 
-  it('group Accept resolves every pending member and removes the card', () => {
+  it('routes acceptance through history with the pending SFDT and revision id', async () => {
+    const revision = makeRevision({ revisionID: 'r-robin' });
+    const revisions = [revision];
+    revision.accept.mockImplementation(() => revisions.splice(0, 1));
+    const beforeSfdt = JSON.stringify({
+      revisions: [
+        {
+          author: revision.author,
+          revisionType: revision.revisionType,
+          revisionId: 'r-robin',
+          customData: revision.customData
+        }
+      ],
+      sections: []
+    });
+    const editor = { ...makeEditor(revisions), serialize: () => beforeSfdt };
+    const onAcceptTrackedChanges = jest.fn(
+      async (_acceptance: unknown, accept: () => void) => accept()
+    );
+    render(
+      <TrackedChangeGroups
+        editor={editor}
+        onAcceptTrackedChanges={onAcceptTrackedChanges}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    await flushDeferredResolve();
+
+    await waitFor(() => expect(revision.accept).toHaveBeenCalledTimes(1));
+    expect(onAcceptTrackedChanges).toHaveBeenCalledWith(
+      { beforeSfdt, revisionIds: ['r-robin'] },
+      expect.any(Function)
+    );
+  });
+
+  it('group Accept resolves every pending member and removes the card', async () => {
     const deletion = makeRevision({ revisionType: 'Deletion' });
     const insertion = makeRevision();
     const revisions = [deletion, insertion];
@@ -413,7 +658,8 @@ describe('TrackedChangeGroups', () => {
     const editor = makeEditor(revisions);
     const { container } = render(<TrackedChangeGroups editor={editor} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Accept 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    await flushDeferredResolve();
 
     // Every member resolved exactly once — a native accept on one member
     // would instead resolve whatever is contiguous to it.
@@ -424,7 +670,7 @@ describe('TrackedChangeGroups', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('group Reject resolves every pending member and removes the card', () => {
+  it('group Reject resolves every pending member and removes the card', async () => {
     const deletion = makeRevision({ revisionType: 'Deletion' });
     const insertion = makeRevision();
     const revisions = [deletion, insertion];
@@ -437,7 +683,8 @@ describe('TrackedChangeGroups', () => {
     const editor = makeEditor(revisions);
     const { container } = render(<TrackedChangeGroups editor={editor} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reject 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
+    await flushDeferredResolve();
 
     expect(deletion.reject).toHaveBeenCalledTimes(1);
     expect(insertion.reject).toHaveBeenCalledTimes(1);
@@ -469,6 +716,41 @@ describe('TrackedChangeGroups', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it('does not claim a partial resolve when every edit remains pending', async () => {
+    const stuck = makeRevision();
+    const editor = makeEditor([stuck]);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    acceptAllGroups();
+    await flushDeferredResolve();
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '1 edit could not be accepted. Nothing in this change was resolved.'
+    );
+    expect(screen.getByRole('status')).not.toHaveTextContent(/undo/i);
+  });
+
+  it('reports exact resolved and unresolved counts after a partial resolve', async () => {
+    const resolved = makeRevision();
+    const stuck = makeRevision({
+      customData: tag('cs-1', 'fix-effective-date'),
+      getRange: () => [{ text: '2026-02-01' }]
+    });
+    const revisions = [resolved, stuck];
+    resolved.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(resolved), 1);
+    });
+    const editor = makeEditor(revisions);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    acceptAllGroups();
+    await flushDeferredResolve();
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '1 edit was accepted, but 1 edit remains. Review the document before retrying.'
+    );
+  });
+
   it('shows a spinner on Accept all while its deferred resolve is pending', async () => {
     const revisions: any[] = [];
     const revision = makeRevision();
@@ -481,12 +763,12 @@ describe('TrackedChangeGroups', () => {
 
     const acceptAllBtn = screen.getByRole('button', { name: 'Accept all' });
     const rejectAllBtn = screen.getByRole('button', { name: 'Reject all' });
-    expect(acceptAllBtn.querySelector('svg')).toBeNull();
+    expect(acceptAllBtn.querySelector('circle')).toBeNull();
     fireEvent.click(acceptAllBtn);
     // The resolve itself hasn't run yet (still queued) — the spinner is up
     // and BOTH bulk buttons are disabled so the two can't race each other.
     expect(revision.accept).not.toHaveBeenCalled();
-    expect(acceptAllBtn.querySelector('svg')).not.toBeNull();
+    expect(acceptAllBtn.querySelector('circle')).not.toBeNull();
     expect(acceptAllBtn).toBeDisabled();
     expect(rejectAllBtn).toBeDisabled();
 
@@ -506,10 +788,10 @@ describe('TrackedChangeGroups', () => {
 
     const acceptAllBtn = screen.getByRole('button', { name: 'Accept all' });
     const rejectAllBtn = screen.getByRole('button', { name: 'Reject all' });
-    expect(rejectAllBtn.querySelector('svg')).toBeNull();
+    expect(rejectAllBtn.querySelector('circle')).toBeNull();
     fireEvent.click(rejectAllBtn);
     expect(revision.reject).not.toHaveBeenCalled();
-    expect(rejectAllBtn.querySelector('svg')).not.toBeNull();
+    expect(rejectAllBtn.querySelector('circle')).not.toBeNull();
     expect(rejectAllBtn).toBeDisabled();
     expect(acceptAllBtn).toBeDisabled();
 
@@ -517,7 +799,7 @@ describe('TrackedChangeGroups', () => {
     expect(revision.reject).toHaveBeenCalledTimes(1);
   });
 
-  it('suppresses the selectionChange echo native accept fires during a group-wide resolve', () => {
+  it('suppresses the selectionChange echo native accept fires during a group-wide resolve', async () => {
     // Each native accept() moves the selection, firing a real
     // selectionChange — one unguarded rail rescan per resolve if unsuppressed.
     const first = makeRevision({ getRange: () => [{ text: 'first' }] });
@@ -539,7 +821,9 @@ describe('TrackedChangeGroups', () => {
     const editor = makeEditor(revisions);
     render(<TrackedChangeGroups editor={editor} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Accept 2' }));
+    // Two groups each render an 'Accept' button; the first is 'Update premium'.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Accept' })[0]);
+    await flushDeferredResolve();
 
     // Without suppression, "untouched"'s group would now be force-expanded
     // with its chip marked current, even though the user never touched it.
@@ -575,6 +859,7 @@ describe('TrackedChangeGroups', () => {
       await Promise.resolve();
     });
     fireEvent.click(screen.getByLabelText('Accept this edit'));
+    await flushDeferredResolve();
 
     expect(
       screen.getByRole('button', { name: 'Expand Fix effective date' })
@@ -582,7 +867,7 @@ describe('TrackedChangeGroups', () => {
     expect(screen.queryByText('Untouched')).not.toBeInTheDocument();
   });
 
-  it('uses panel-scoped J/K and arrow keys to focus, then A/R to resolve', () => {
+  it('uses panel-scoped J/K and arrow keys to focus, then A/R to resolve', async () => {
     const deletion = makeRevision({
       revisionType: 'Deletion',
       getRange: () => [{ text: '$5,500' }]
@@ -614,6 +899,7 @@ describe('TrackedChangeGroups', () => {
 
     // A resolves only the focused chip.
     fireEvent.keyDown(panel, { key: 'a' });
+    await flushDeferredResolve();
     expect(deletion.accept).toHaveBeenCalledTimes(1);
     expect(insertion.accept).not.toHaveBeenCalled();
 
@@ -621,6 +907,7 @@ describe('TrackedChangeGroups', () => {
     fireEvent.keyDown(panel, { key: 'ArrowDown' });
     expect(insertion.select).toHaveBeenCalledTimes(2);
     fireEvent.keyDown(panel, { key: 'r' });
+    await flushDeferredResolve();
     expect(insertion.reject).toHaveBeenCalledTimes(1);
   });
 
@@ -676,7 +963,7 @@ describe('TrackedChangeGroups', () => {
     expect(panel).toHaveFocus();
   });
 
-  it('keeps keyboard focus on the panel after resolving from a chip button', () => {
+  it('keeps keyboard focus on the panel after resolving from a chip button', async () => {
     const insertion = makeRevision();
     const sibling = makeRevision({ getRange: () => [{ text: 'sibling' }] });
     const revisions = [insertion, sibling];
@@ -692,7 +979,12 @@ describe('TrackedChangeGroups', () => {
     );
     fireEvent.click(screen.getByText('$6,000'));
     expect(panel).toHaveFocus();
-    fireEvent.click(screen.getByRole('button', { name: 'Accept this edit' }));
+    fireEvent.click(
+      within(
+        screen.getByText('$6,000').closest('[role="button"]') as HTMLElement
+      ).getByRole('button', { name: 'Accept this edit' })
+    );
+    await flushDeferredResolve();
     expect(insertion.accept).toHaveBeenCalledTimes(1);
     expect(panel).toHaveFocus();
   });
@@ -719,7 +1011,7 @@ describe('TrackedChangeGroups', () => {
     expect(editor.editorHistory.undo).toHaveBeenCalledTimes(2);
   });
 
-  it('hands focus to the editor when the last pending edit resolves', () => {
+  it('hands focus to the editor when the last pending edit resolves', async () => {
     const insertion = makeRevision();
     const revisions = [insertion];
     insertion.accept.mockImplementation(() => {
@@ -735,6 +1027,7 @@ describe('TrackedChangeGroups', () => {
     );
     fireEvent.click(screen.getByText('$6,000'));
     fireEvent.click(screen.getByLabelText('Accept this edit'));
+    await flushDeferredResolve();
 
     // The rail unmounted; focus on <body> would swallow the next ⌘Z, so it
     // goes back into the document instead.
@@ -749,12 +1042,8 @@ describe('TrackedChangeGroups', () => {
 
     // Group-wide actions are visible up front — no need to expand or focus a
     // chip.
-    expect(
-      screen.getByRole('button', { name: 'Accept 1' })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Reject 1' })
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Accept' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole('button', { name: 'Expand Update premium' })
@@ -815,7 +1104,7 @@ describe('TrackedChangeGroups', () => {
     ).toEqual([one, two, three, four]);
   });
 
-  it('folds a replace pair into one Replaced chip; one approval settles both halves', () => {
+  it('folds a replace pair into one Replaced chip; one approval settles both halves', async () => {
     // A replace: the deletion's last range element links directly to the
     // insertion's first (nextNode), same as the live engine produces.
     const newRun = { text: '$6,000' };
@@ -835,7 +1124,7 @@ describe('TrackedChangeGroups', () => {
     const { container } = render(<TrackedChangeGroups editor={editor} />);
 
     // ONE edit, not two.
-    expect(screen.getByText('1 edit')).toBeInTheDocument();
+    expect(screen.getByText('1 change')).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole('button', { name: 'Expand Update premium' })
     );
@@ -847,6 +1136,7 @@ describe('TrackedChangeGroups', () => {
     // its only edit resolved, the group — and the rail — disappear.
     fireEvent.click(screen.getByText('$6,000'));
     fireEvent.click(screen.getByLabelText('Accept this edit'));
+    await flushDeferredResolve();
     expect(deletion.accept).toHaveBeenCalledTimes(1);
     expect(insertion.accept).toHaveBeenCalledTimes(1);
     expect(container).toBeEmptyDOMElement();
@@ -1006,6 +1296,74 @@ describe('TrackedChangeGroups', () => {
     expect(scrollBox.scrollTop).toBe(0);
     expect(viewport.scrollTop).toBe(8742);
     expect(container).toContainElement(row as HTMLElement);
+  });
+
+  it('scrolls to the group card top so the heading stays in view', () => {
+    const revision = makeRevision();
+    const editor = makeEditor([revision]);
+    render(<TrackedChangeGroups editor={editor} />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    const panel = screen.getByLabelText('Assistant tracked changes');
+    const scrollBox = panel.children[1] as HTMLElement;
+    const card = scrollBox.children[0] as HTMLElement;
+    const row = screen
+      .getByText('$6,000')
+      .closest('[role="button"]') as HTMLElement;
+
+    // Scrolled well past the card; the effect must bring it back up.
+    Object.defineProperties(scrollBox, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 3000 },
+      scrollTop: { configurable: true, writable: true, value: 2000 }
+    });
+    Object.defineProperty(row, 'offsetHeight', {
+      configurable: true,
+      value: 40
+    });
+    jest
+      .spyOn(scrollBox, 'getBoundingClientRect')
+      .mockReturnValue({ top: 100, bottom: 700 } as DOMRect);
+    // Both are scrolled above the viewport (top < box top); the card header
+    // sits just above its first chip row.
+    jest
+      .spyOn(card, 'getBoundingClientRect')
+      .mockReturnValue({ top: 50, bottom: 300 } as DOMRect);
+    jest
+      .spyOn(row, 'getBoundingClientRect')
+      .mockReturnValue({ top: 90, bottom: 130 } as DOMRect);
+
+    editor.selection.getCurrentRevision.mockReturnValue([revision]);
+    act(() => editor.emit('selectionChange'));
+
+    // Card top offset = 50 - 100 + 2000 = 1950 (not the row's 1990), so the
+    // group heading of the clicked change remains visible.
+    expect(scrollBox.scrollTop).toBe(1950);
+  });
+
+  it('leaves the rail scroll in place when a group is merely expanded', () => {
+    const revision = makeRevision();
+    const editor = makeEditor([revision]);
+    render(<TrackedChangeGroups editor={editor} />);
+    const panel = screen.getByLabelText('Assistant tracked changes');
+    const scrollBox = panel.children[1] as HTMLElement;
+    Object.defineProperties(scrollBox, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 3000 },
+      scrollTop: { configurable: true, writable: true, value: 1234 }
+    });
+
+    // Expanding/collapsing the group changes no selection, so the scroll
+    // effect must not run — the rail stays exactly where the user left it.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    expect(scrollBox.scrollTop).toBe(1234);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Collapse Update premium' })
+    );
+    expect(scrollBox.scrollTop).toBe(1234);
   });
 
   it('every rail button is type=button so clicks never submit the host form', () => {
@@ -1178,7 +1536,7 @@ describe('TrackedChangeGroups', () => {
       );
       expect(screen.getByText('$6,000')).toBeInTheDocument();
 
-      // applyDocumentEdits sets this around the whole batch; contentChange
+      // Robin's writes set this around the whole batch; contentChange
       // fires once per op inside it.
       editor.__featheryAssistantWriting = true;
       act(() => editor.emit('contentChange'));
@@ -1268,7 +1626,8 @@ describe('resolveLiveRevisionGroupsAsOneUndo', () => {
     // the other two.
     expect(stuck.accept).toHaveBeenCalledTimes(1);
     expect(revisions).toEqual([stuck]);
-    expect(resolved).toEqual([stuck, first, second]);
+    expect(Array.from(resolved)).toEqual([first, second]);
+    expect(resolved.unresolved).toEqual([stuck]);
   });
 });
 
@@ -1448,7 +1807,7 @@ describe('RailErrorBoundary', () => {
     expect(screen.getByTestId('rail-child')).toBeInTheDocument();
   });
 
-  it('real SDK: native grouped table can be accepted again after undo', () => {
+  it('real SDK: native grouped table can be accepted again after undo', async () => {
     const editor = makeRealEditor();
     let unmount = () => {};
     try {
@@ -1488,15 +1847,13 @@ describe('RailErrorBoundary', () => {
 
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
       expect(screen.getByText('Add premium table')).toBeInTheDocument();
-      acceptOnlyGroup();
+      await acceptOnlyGroup();
       expect(editor.revisions.length).toBe(0);
 
       act(() => editor.editorHistory.undo());
       expect(editor.revisions.length).toBeGreaterThan(0);
-      expect(
-        screen.getByRole('button', { name: /^Accept \d+$/ })
-      ).toBeEnabled();
-      acceptOnlyGroup();
+      expect(screen.getByRole('button', { name: 'Accept' })).toBeEnabled();
+      await acceptOnlyGroup();
       expect(editor.revisions.length).toBe(0);
     } finally {
       unmount();
@@ -1504,23 +1861,11 @@ describe('RailErrorBoundary', () => {
     }
   });
 
-  it('real SDK: bridge-created group can be accepted again after undo', async () => {
+  it('real SDK: a Robin-authored group can be accepted again after undo', async () => {
     const editor = makeRealEditor('Premium: $5,200');
     let unmount = () => {};
     try {
-      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
-        changeSetId: 'bridge-cs',
-        edits: [
-          {
-            op: 'replace_text',
-            anchor: '0;0',
-            find: '$5,200',
-            replace: '$5,500',
-            group: 'update-premium'
-          }
-        ]
-      });
-      expect(result.results[0]).toMatchObject({ ok: true });
+      suggestPremiumChange(editor, 'bridge-cs');
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
       acceptAllGroups();
       await flushDeferredResolve();
@@ -1538,35 +1883,25 @@ describe('RailErrorBoundary', () => {
     }
   });
 
-  it('real SDK: an individual chip accepts again from its button after undo', () => {
+  it('real SDK: an individual chip accepts again from its button after undo', async () => {
     const editor = makeRealEditor('Premium: $5,200');
     let unmount = () => {};
     try {
-      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
-        changeSetId: 'individual-button-cs',
-        edits: [
-          {
-            op: 'replace_text',
-            anchor: '0;0',
-            find: '$5,200',
-            replace: '$5,500',
-            group: 'update-premium'
-          }
-        ]
-      });
-      expect(result.results[0]).toMatchObject({ ok: true });
+      suggestPremiumChange(editor, 'individual-button-cs');
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
       fireEvent.click(
         screen.getByRole('button', { name: 'Expand Update premium' })
       );
       fireEvent.click(screen.getByText('$5,500'));
       fireEvent.click(screen.getByLabelText('Accept this edit'));
+      await flushDeferredResolve();
       expect(editor.revisions.length).toBe(0);
 
       act(() => editor.editorHistory.undo());
       expect(editor.revisions.length).toBe(2);
       fireEvent.click(screen.getByText('$5,500'));
       fireEvent.click(screen.getByLabelText('Accept this edit'));
+      await flushDeferredResolve();
       expect(editor.revisions.length).toBe(0);
     } finally {
       unmount();
@@ -1574,27 +1909,16 @@ describe('RailErrorBoundary', () => {
     }
   });
 
-  it('real SDK: an individual chip rejects again from the keyboard after undo', () => {
+  it('real SDK: an individual chip rejects again from the keyboard after undo', async () => {
     const editor = makeRealEditor('Premium: $5,200');
     let unmount = () => {};
     try {
-      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
-        changeSetId: 'individual-keyboard-cs',
-        edits: [
-          {
-            op: 'replace_text',
-            anchor: '0;0',
-            find: '$5,200',
-            replace: '$5,500',
-            group: 'update-premium'
-          }
-        ]
-      });
-      expect(result.results[0]).toMatchObject({ ok: true });
+      suggestPremiumChange(editor, 'individual-keyboard-cs');
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
       let panel = screen.getByLabelText('Assistant tracked changes');
       fireEvent.keyDown(panel, { key: 'j' });
       fireEvent.keyDown(panel, { key: 'r' });
+      await flushDeferredResolve();
       expect(editor.revisions.length).toBe(0);
 
       act(() => editor.editorHistory.undo());
@@ -1602,6 +1926,7 @@ describe('RailErrorBoundary', () => {
       panel = screen.getByLabelText('Assistant tracked changes');
       fireEvent.keyDown(panel, { key: 'j' });
       fireEvent.keyDown(panel, { key: 'r' });
+      await flushDeferredResolve();
       expect(editor.revisions.length).toBe(0);
       expect(editor.serialize()).toContain('$5,200');
       expect(editor.serialize()).not.toContain('$5,500');

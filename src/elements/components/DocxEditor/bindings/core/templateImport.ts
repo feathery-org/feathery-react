@@ -44,7 +44,7 @@ import {
 
 const TOKEN_RE = /\[\[[^[\]]*\]\]/g;
 
-export interface TemplateImportResult {
+interface TemplateImportResult {
   sfdt: SfdtDocument;
   converted: number;
   diagnostics: Diagnostic[];
@@ -177,8 +177,20 @@ function replaceTokensInParagraph(
   let changedAny = false;
   TOKEN_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
+  // Textless inlines such as bookmarks ride along at their position
+  const carried = new Set<RunSegment>();
   const pushPlain = (from: number, to: number) => {
     for (const segment of segments) {
+      if (
+        typeof segment.inl.text !== 'string' &&
+        segment.start >= from &&
+        segment.start <= to &&
+        !carried.has(segment)
+      ) {
+        carried.add(segment);
+        pieces.push(segment.inl);
+        continue;
+      }
       const start = Math.max(segment.start, from);
       const end = Math.min(segment.end, to);
       if (start >= end) continue;
@@ -288,6 +300,27 @@ export function convertTemplateTokens(
     );
   };
 
+  // A shape/text box's content is its own block list (doc-level, like the
+  // body). Convert tokens inside every text frame reachable from a block: an
+  // inline shape carries node.textFrame.blocks; a floating shape may be
+  // anchored on the paragraph as block.floatingElements[k].textFrame.blocks.
+  const convertTextFramesIn = (block: SfdtBlock): void => {
+    for (const inline of block.inlines || []) {
+      const frame = (inline as { textFrame?: { blocks?: SfdtBlock[] } })
+        .textFrame;
+      if (frame && Array.isArray(frame.blocks))
+        frame.blocks = convertStory(frame.blocks);
+    }
+    const floating = (block as { floatingElements?: unknown[] })
+      .floatingElements;
+    for (const shape of Array.isArray(floating) ? floating : []) {
+      const frame = (shape as { textFrame?: { blocks?: SfdtBlock[] } } | null)
+        ?.textFrame;
+      if (frame && Array.isArray(frame.blocks))
+        frame.blocks = convertStory(frame.blocks);
+    }
+  };
+
   /**
    * Convert one story's block list.
    *
@@ -297,8 +330,11 @@ export function convertTemplateTokens(
    * `section.blocks` left those tokens as literal text, so the client read the
    * tag language itself - and, because no content control was created, the
    * header held no binding for anything to write to or refuse.
+   *
+   * Each story is also walked for text boxes and shapes, so a binding in a
+   * floating quote box behaves the same as one in the body.
    */
-  const convertStory = (blocks: SfdtBlock[]): SfdtBlock[] => {
+  function convertStory(blocks: SfdtBlock[]): SfdtBlock[] {
     const out: SfdtBlock[] = [];
     let pendingTable: TableDefinition | null = null;
     for (const block of blocks) {
@@ -313,6 +349,7 @@ export function convertTemplateTokens(
                   true
               )
                 converted += 1;
+              convertTextFramesIn(cellBlock);
             }
           }
         }
@@ -340,6 +377,7 @@ export function convertTemplateTokens(
         const result = replaceTokensInParagraph(block, diagnostics, (def) => {
           pendingTable = def;
         });
+        convertTextFramesIn(block);
         if (result === 'marker') continue; // Drop the marker paragraph.
         if (result === true) converted += 1;
       }
@@ -348,7 +386,7 @@ export function convertTemplateTokens(
     // A marker still pending at the end of a story had no table after it.
     reportDangling(pendingTable);
     return out;
-  };
+  }
 
   for (const section of doc.sections || []) {
     section.blocks = convertStory(section.blocks || []);

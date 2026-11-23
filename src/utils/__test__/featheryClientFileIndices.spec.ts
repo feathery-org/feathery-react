@@ -16,10 +16,11 @@ jest.mock('../init', () => ({
   filePathMap: {},
   fileDeduplicationCount: {},
   fileRetryStatus: {},
+  restoredFileKeys: new Set(),
   setFieldValues: () => {},
   markStepCompleted: () => {},
   registerKnownFieldKeys: () => {},
-  registerTextVariableFormats: () => {}
+  registerTextVariableFields: () => {}
 }));
 
 const { fieldValues, filePathMap, fileDeduplicationCount } =
@@ -34,9 +35,6 @@ function newClient() {
     .mockImplementation((run: any) => run());
   jest
     .spyOn(client.offlineRequestHandler, 'resetRetryAttemptsByUrl')
-    .mockResolvedValue(undefined);
-  jest
-    .spyOn(client.offlineRequestHandler, 'clearFailedRequestByUrl')
     .mockResolvedValue(undefined);
   jest.spyOn(client, '_fetch').mockResolvedValue({} as any);
   return client;
@@ -55,6 +53,50 @@ beforeEach(() => {
 });
 
 describe('repeatable file upload wire format', () => {
+  it('keeps an offline queued upload retryable until the server acknowledges it', async () => {
+    const client = newClient();
+    const { fileRetryStatus } = jest.requireMock('../init');
+    delete fileRetryStatus.f;
+    client.offlineRequestHandler.runOrSaveRequest.mockImplementation(
+      async (
+        _run: any,
+        _url: any,
+        _options: any,
+        _type: any,
+        _step: any,
+        _metadata: any,
+        onQueued: any
+      ) => {
+        onQueued();
+      }
+    );
+
+    await client._submitFileData(
+      { ...servar, file_upload: [new Blob(['synthetic card'])] },
+      'Insurance'
+    );
+
+    expect(client._fetch).not.toHaveBeenCalled();
+    expect(fileRetryStatus.f).toBe(false);
+    expect(fileDeduplicationCount.f).toBeUndefined();
+  });
+
+  it('sends a file and preserves its acknowledged status when resetting stored retries fails', async () => {
+    const client = newClient();
+    client.offlineRequestHandler.resetRetryAttemptsByUrl.mockRejectedValue(
+      new Error('IndexedDB connection lost')
+    );
+    const upload = { ...servar, file_upload: [new Blob(['synthetic card'])] };
+
+    await expect(client._submitFileData(upload, 'Insurance')).resolves.toEqual(
+      {}
+    );
+    expect(client._fetch).toHaveBeenCalledTimes(1);
+    expect(jest.requireMock('../init').fileRetryStatus.f).toBe(true);
+    await client._submitFileData(upload, 'Insurance');
+    expect(client._fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps a hole at every empty repeat row', async () => {
     const file = new Blob(['x']);
     const client = newClient();
@@ -80,6 +122,7 @@ describe('repeatable file upload wire format', () => {
       'step'
     );
     const body = bodyOf(client);
+    expect(body.get('__feathery_sdk_version')).toBe('0.0.0-test');
     expect(body.getAll('f')).toHaveLength(1);
     expect(indicesOf(body)).toBe(
       JSON.stringify({ f: { keep: [], new: [2], length: 3 } })
@@ -106,6 +149,26 @@ describe('repeatable file upload wire format', () => {
     const body = bodyOf(client);
     expect(body.getAll('f')).toEqual(['']);
     expect(indicesOf(body)).toBeNull();
+  });
+
+  it('clears an emptied field only when the server holds its file', async () => {
+    // A file restored from an earlier session has no upload this session.
+    delete jest.requireMock('../init').fileRetryStatus.f;
+    const client = newClient();
+    // Never submitted: the server may hold a file this client never saw.
+    await client._submitFileData({ ...servar, file_upload: [] }, 'step');
+    // Picked and removed in this tab leaves a filePathMap entry too, which
+    // doesn't make it restored.
+    filePathMap.f = null;
+    await client._submitFileData({ ...servar, file_upload: [] }, 'step');
+    expect(client._fetch).not.toHaveBeenCalled();
+
+    // Restored, then removed: any submit clears it.
+    const { restoredFileKeys } = jest.requireMock('../init');
+    restoredFileKeys.add('f');
+    await client._submitFileData({ ...servar, file_upload: [] }, 'step');
+    expect(bodyOf(client).getAll('f')).toEqual(['']);
+    restoredFileKeys.clear();
   });
 
   it('sends no indices for a non-repeated multi-file field', async () => {

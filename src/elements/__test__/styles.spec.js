@@ -65,6 +65,92 @@ describe('responsiveStyles', () => {
     });
   });
 
+  describe('applyObjectFit', () => {
+    it('applies the object_fit style', () => {
+      const objectUnderTest = new ResponsiveStyles(
+        { styles: { object_fit: 'cover' } },
+        ['image']
+      );
+
+      objectUnderTest.applyObjectFit('image');
+
+      expect(objectUnderTest.getTarget('image')).toEqual({
+        objectFit: 'cover'
+      });
+    });
+
+    it('leaves objectFit unset when no object_fit style exists', () => {
+      const objectUnderTest = new ResponsiveStyles({ styles: {} }, ['image']);
+
+      objectUnderTest.applyObjectFit('image');
+
+      expect(objectUnderTest.getTarget('image')).toEqual({});
+    });
+
+    it('applies a mobile object_fit override', () => {
+      const objectUnderTest = new ResponsiveStyles(
+        {
+          styles: { object_fit: 'contain' },
+          mobile_styles: { object_fit: 'fill' }
+        },
+        ['image'],
+        true
+      );
+
+      objectUnderTest.applyObjectFit('image');
+
+      expect(objectUnderTest.getTarget('image')).toEqual({
+        objectFit: 'contain',
+        [`@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`]: {
+          objectFit: 'fill'
+        }
+      });
+    });
+  });
+
+  describe('applyObjectPosition', () => {
+    it('applies the object_position style', () => {
+      const objectUnderTest = new ResponsiveStyles(
+        { styles: { object_position: 'left top' } },
+        ['image']
+      );
+
+      objectUnderTest.applyObjectPosition('image');
+
+      expect(objectUnderTest.getTarget('image')).toEqual({
+        objectPosition: 'left top'
+      });
+    });
+
+    it('leaves objectPosition unset when no object_position style exists', () => {
+      const objectUnderTest = new ResponsiveStyles({ styles: {} }, ['image']);
+
+      objectUnderTest.applyObjectPosition('image');
+
+      expect(objectUnderTest.getTarget('image')).toEqual({});
+    });
+
+    it('applies a mobile object_position override', () => {
+      const objectUnderTest = new ResponsiveStyles(
+        {
+          styles: { object_position: 'center' },
+          mobile_styles: { object_position: 'right bottom' }
+        },
+        ['image'],
+        true
+      );
+
+      objectUnderTest.applyObjectPosition('image');
+
+      expect(objectUnderTest.getTarget('image')).toEqual({
+        objectPosition: 'center',
+        [`@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`]: {
+          objectPosition: 'right bottom'
+        }
+      });
+    });
+  });
+
   describe('applyFontStyles with a prefix', () => {
     it('reads the prefixed property namespace, not the unprefixed one', () => {
       // Arrange
@@ -236,5 +322,82 @@ describe('responsiveStyles', () => {
         rs.getRichFontStyles({ font_family: 'Uploaded Font' }).fontFamily
       ).toEqual("'Uploaded Font', monospace");
     });
+  });
+});
+
+describe('stored background icons', () => {
+  const icon = {
+    icon: 'IconHeart',
+    glyph: { variant: 'outline', nodes: [['path', { d: 'M12 5v14' }]] }
+  };
+
+  it('applies desktop and mobile icon colors without losing background layout', () => {
+    const styles = new ResponsiveStyles(
+      {
+        styles: {
+          background_icon: icon,
+          background_icon_color: 'FF0000FF',
+          background_image_display: 'tile',
+          background_image_size: 25
+        },
+        mobile_styles: { background_icon_color: '0000FFFF' }
+      },
+      ['cell'],
+      true
+    );
+    styles.applyBackgroundImageStyles('cell');
+    const result = styles.getTarget('cell');
+    expect(decodeURIComponent(result.backgroundImage)).toContain(
+      'color="#FF0000FF"'
+    );
+    expect(result.backgroundSize).toBe('25%');
+    expect(
+      decodeURIComponent(
+        result[`@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`]
+          .backgroundImage
+      )
+    ).toContain('color="#0000FFFF"');
+  });
+
+  it('clears a desktop icon when the mobile background is removed', () => {
+    const ordinary = new ResponsiveStyles(
+      { styles: { background_icon: null } },
+      ['cell'],
+      true
+    );
+    ordinary.applyBackgroundImageStyles('cell');
+    expect(ordinary.getTarget('cell').backgroundImage).toBeUndefined();
+    const styles = new ResponsiveStyles(
+      {
+        styles: { background_icon: icon },
+        mobile_styles: { background_icon: null, background_image_url: '' }
+      },
+      ['cell'],
+      true
+    );
+    styles.applyBackgroundImageStyles('cell');
+    expect(
+      styles.getTarget('cell')[
+        `@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`
+      ].backgroundImage
+    ).toBe('none');
+  });
+
+  it('keeps a mobile image over an inherited desktop icon', () => {
+    const styles = new ResponsiveStyles(
+      {
+        styles: { background_icon: icon, background_image_url: '' },
+        mobile_styles: { background_image_url: 'https://cdn.test/m.png' }
+      },
+      ['cell'],
+      true
+    );
+    styles.applyBackgroundImageStyles('cell');
+    const result = styles.getTarget('cell');
+    expect(result.backgroundImage).toContain('data:image/svg+xml');
+    expect(
+      result[`@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`]
+        .backgroundImage
+    ).toBe('url(https://cdn.test/m.png)');
   });
 });

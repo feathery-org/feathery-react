@@ -1,6 +1,6 @@
 import { featheryDoc, featheryWindow } from '../utils/browser';
 
-export let heapInstalled = false;
+let heapInstalled = false;
 
 export function installHeap(heapConfig: any) {
   if (heapConfig && !heapInstalled) {

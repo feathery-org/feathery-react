@@ -2,14 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import { DataItem } from './useAIExtractionToast';
 
-export interface EnvelopeGenerationAction {
+interface EnvelopeGenerationAction {
   type: typeof ACTION_GENERATE_ENVELOPES;
   documents?: string[];
   run_async?: boolean;
   [key: string]: any;
 }
 
-export interface OtherAction {
+interface OtherAction {
   type: string;
   [key: string]: any;
 }
@@ -22,10 +22,10 @@ function isEnvelopeGenerationAction(
 }
 
 // Use DataItem type for consistency
-export type EnvelopeDataItem = DataItem;
+type EnvelopeDataItem = DataItem;
 
 // Labels for envelope generation
-export const ENVELOPE_LABELS = {
+const ENVELOPE_LABELS = {
   queued: 'Queued Document',
   incomplete: 'Generating Document',
   complete: 'Completed',

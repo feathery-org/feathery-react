@@ -13,7 +13,7 @@ const ADDRESS_FIELD_TYPES_MAP = new Set([
 ]);
 
 // Returns list of closest address fields
-export const getRelatedAddressFields = (element: any, activeStep: any) => {
+const getRelatedAddressFields = (element: any, activeStep: any) => {
   const addrFields: any = {};
 
   activeStep.servar_fields.forEach((field: any) => {
@@ -32,7 +32,7 @@ export const getRelatedAddressFields = (element: any, activeStep: any) => {
 
 // Compares a field's old and new value, accounting for repeated fields where
 // only the entry at `index` is being written.
-export const addressValueChanged = (
+const addressValueChanged = (
   prevVal: any,
   newVal: any,
   index: number | null

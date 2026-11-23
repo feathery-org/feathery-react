@@ -1,0 +1,29 @@
+{
+  "sourceSha256": "2d8838b1e0d9b05868296e61fa0b90552cc2fcaffd1c828b61bb6492f2b8a49f",
+  "fontParts": {
+    "ppt/fonts/Poppins-regular.fntdata": "c45fc3dc589b1181c49a1d6761b17727f1250f18486c4acc0f888d043fdf0840",
+    "ppt/fonts/PoppinsMedium-regular.fntdata": "590794653912d8cf1d5568504d235ab7017cdcc8c59480160422809eca6d933e",
+    "ppt/fonts/PoppinsMedium-boldItalic.fntdata": "4a936d8f28d8345229481e5c793b7e26822a516eca8a83130c5ba72c60474be3",
+    "ppt/fonts/NunitoSans-boldItalic.fntdata": "5ec62e8f697b3adeacc1c9bfb041b0068ce369da6219162bcaa7e08a73688c5c",
+    "ppt/fonts/NunitoSansSemiBold-bold.fntdata": "d0dd92075713066d68b53425dde5e64fa64c7c19ba2c3a1358cfd8bad30acf4a",
+    "ppt/fonts/NunitoSans-italic.fntdata": "4745dd4fbc4b33c647e897abdf6ba84cdd8b3403e9a56820bffda8d4a390a238",
+    "ppt/fonts/PoppinsSemiBold-boldItalic.fntdata": "4a936d8f28d8345229481e5c793b7e26822a516eca8a83130c5ba72c60474be3",
+    "ppt/fonts/NunitoSansSemiBold-boldItalic.fntdata": "5ec62e8f697b3adeacc1c9bfb041b0068ce369da6219162bcaa7e08a73688c5c",
+    "ppt/fonts/NunitoSansSemiBold-regular.fntdata": "b13024bcd9686fbf5b1a4a6aa4b90d9741767b018acc8a3baaafd0cbc447dd52",
+    "ppt/fonts/PoppinsMedium-italic.fntdata": "015eb01eab656a0a3ba380f9ba62378bed52d0f85c4e1e30cd8b04be3ed9bd06",
+    "ppt/fonts/PoppinsSemiBold-italic.fntdata": "f0c9c70a78a6c39d31ea851bc19a48413f7281dee0619e2b51b3083c8c8a9bd9",
+    "ppt/fonts/NunitoSansMedium-italic.fntdata": "4110108e33762730fb21f6e67ce38089b1ab9135fc6cfb07994a3d09ae215a75",
+    "ppt/fonts/PoppinsSemiBold-regular.fntdata": "cef4b7c6061f35efb32d9f2cf6d554a5ae78db5a294900cab120b2392e676d38",
+    "ppt/fonts/NunitoSansMedium-boldItalic.fntdata": "5ec62e8f697b3adeacc1c9bfb041b0068ce369da6219162bcaa7e08a73688c5c",
+    "ppt/fonts/PoppinsSemiBold-bold.fntdata": "92f93b1b137783c6e84e1cd0b32d8dfc4d741a6e983d8e6c8d44683da19a74a4",
+    "ppt/fonts/Poppins-bold.fntdata": "92f93b1b137783c6e84e1cd0b32d8dfc4d741a6e983d8e6c8d44683da19a74a4",
+    "ppt/fonts/PoppinsMedium-bold.fntdata": "92f93b1b137783c6e84e1cd0b32d8dfc4d741a6e983d8e6c8d44683da19a74a4",
+    "ppt/fonts/NunitoSansMedium-regular.fntdata": "cebdfcb4ac37f32fcdf1317bc13551ce8850c49109e8e89a3333be5eb775527a",
+    "ppt/fonts/NunitoSansSemiBold-italic.fntdata": "d84df2410cfd443ce5633e1d3a361b3e70e0ceaf8b5d7d0a99df835e3d985e8a",
+    "ppt/fonts/Poppins-italic.fntdata": "792341f87dc2ce77e5d507e9148fb9bf79b5607b09c1ddd827dc6b3393273853",
+    "ppt/fonts/NunitoSansMedium-bold.fntdata": "d0dd92075713066d68b53425dde5e64fa64c7c19ba2c3a1358cfd8bad30acf4a",
+    "ppt/fonts/NunitoSans-bold.fntdata": "d0dd92075713066d68b53425dde5e64fa64c7c19ba2c3a1358cfd8bad30acf4a",
+    "ppt/fonts/NunitoSans-regular.fntdata": "1735d7809aae2e948ce2749beb3c9759dc4c5f0d79ce58bcf13908cf3c504504",
+    "ppt/fonts/Poppins-boldItalic.fntdata": "4a936d8f28d8345229481e5c793b7e26822a516eca8a83130c5ba72c60474be3"
+  }
+}

@@ -1,17 +1,25 @@
 import { getWeightedBoolean } from './random';
 import { justRemove } from './array';
 import {
+  applyInlineError,
+  inlineEntryHasMessage,
+  InlineErrors
+} from './inlineErrors';
+import {
   fieldValues,
   filePathMap,
   fileDeduplicationCount,
   fileRetryStatus,
   initInfo,
   initState,
-  setFieldValues
+  restoredFileKeys,
+  setFieldValues,
+  normalizeKnownAsciiValues
 } from './init';
 import throttle from 'lodash.throttle';
 import { ACTION_EXECUTION_ORDER, ACTION_STORE_FIELD } from './elementActions';
 import { featheryDoc, featheryWindow } from './browser';
+import { getFilenameFromUrl } from './fileNames';
 import { DEFAULT_MOBILE_BREAKPOINT } from '../elements/styles';
 import internalState from './internalState';
 import { setSavedStepKey } from './stepHelperFunctions';
@@ -143,7 +151,7 @@ export const lookUpTrigger = (
 };
 
 /** Update the fieldValues cache with a backend session */
-export function updateSessionValues(session: any) {
+export function updateSessionValues(session: any, formKey?: string) {
   processFileValues(session.file_values);
 
   const replaceNullInServarArrays = (
@@ -169,17 +177,38 @@ export function updateSessionValues(session: any) {
     (key) => delete transformedFieldValues[key]
   );
 
-  Object.assign(fieldValues, transformedFieldValues);
+  Object.assign(
+    fieldValues,
+    normalizeKnownAsciiValues(transformedFieldValues, formKey)
+  );
 }
 
 /**
  * Set an error on a particular form DOM node(s).
  */
+// The sole writer of the InlineErrors invariant (row-scoped `byIndex` entries
+// under real field keys), so keep at least the error-map-shaping inputs typed.
+interface SetFormElementErrorArgs {
+  formRef?: React.MutableRefObject<any>;
+  errorType?: string;
+  errorCallback?: (props: Record<string, unknown>) => unknown;
+  fieldKey?: string;
+  inputKey?: string;
+  message?: string;
+  index?: number | null;
+  servarType?: string;
+  inlineErrors?: InlineErrors;
+  setInlineErrors?: (errors: InlineErrors) => void;
+  triggerErrors?: boolean;
+  reportNativeErrors?: boolean;
+}
+
 export async function setFormElementError({
   formRef,
   errorType,
   errorCallback = () => {},
   fieldKey = '',
+  inputKey = fieldKey,
 
   // Empty message means no error / clearing the error
   message = '',
@@ -188,30 +217,42 @@ export async function setFormElementError({
   servarType = '',
   inlineErrors = {},
   setInlineErrors = () => {},
-  triggerErrors = false
-}: any) {
+  triggerErrors = false,
+  reportNativeErrors = true
+}: SetFormElementErrorArgs) {
   let invalid = false;
   let listIndex = index;
+  if (errorType === 'inline' || errorType === 'html5') {
+    // Both modes share field error state for control borders. Only Inline
+    // renders the message beside the field.
+    applyInlineError(inlineErrors, fieldKey, message, index);
+    if (triggerErrors)
+      setInlineErrors(JSON.parse(JSON.stringify(inlineErrors)));
+  }
   if (errorType === 'html5') {
-    if (!formRef.current) return false;
+    const form = formRef?.current;
+    if (!form) return false;
 
     let errorTriggered = false;
-    if (fieldKey) {
+    if (inputKey) {
       if (['pin_input', 'select', 'multiselect'].includes(servarType))
-        fieldKey = `${fieldKey}-0`;
+        inputKey = `${inputKey}-0`;
       // Add repeat index to fieldKey for fields using radio inputs
       if (index != null && ['matrix', 'select'].includes(servarType)) {
-        fieldKey = `${fieldKey}-${index}`;
+        inputKey = `${inputKey}-${index}`;
         // no longer use index to key into element list
         listIndex = null;
       }
       // form.elements has reserved props so must use namedItem to get by id
-      const singleOrList = formRef.current.elements.namedItem(fieldKey);
+      const singleOrList = form.elements.namedItem(inputKey);
       let elements =
         singleOrList instanceof RadioNodeList
           ? Array.from(singleOrList)
           : [singleOrList];
-      elements = elements.filter((e) => e);
+      // Hidden inputs are value mirrors (see HiddenValueInput) and are barred
+      // from constraint validation, so they must never be targeted for, or
+      // shift the indexing of, error display
+      elements = elements.filter((e) => e && (e as any).type !== 'hidden');
 
       if (listIndex !== null && elements.length)
         elements = [elements[listIndex]];
@@ -222,22 +263,23 @@ export async function setFormElementError({
         // If we are targeting a non-submit button, we instead target its hidden input child
         if (element.tagName === 'BUTTON' && element.type !== 'submit') {
           element = element.querySelector(`#error_${element.id}`);
+          // Only ButtonElement renders that child; any other button that
+          // resolves under a field key has nothing to carry the error
+          if (!element) return;
         }
         element.setCustomValidity(message);
-        if (triggerErrors) {
+        if (triggerErrors && reportNativeErrors) {
           // Trigger manually-set errors first before other form errors
           element.reportValidity();
           errorTriggered = true;
         }
       });
     }
-    if (triggerErrors && !errorTriggered) {
+    if (triggerErrors && reportNativeErrors && !errorTriggered) {
       // Find the first visible invalid element to show the browser tooltip.
       // Calling reportValidity() on the entire form fails if the first
       // invalid control is hidden via CSS (display:none).
-      const formElements = Array.from(
-        formRef.current.elements
-      ) as HTMLElement[];
+      const formElements = Array.from(form.elements) as HTMLElement[];
       for (const el of formElements) {
         if (
           'checkValidity' in el &&
@@ -249,16 +291,15 @@ export async function setFormElementError({
         }
       }
     }
-    invalid = !formRef.current.checkValidity();
+    invalid = !form.checkValidity();
   } else if (errorType === 'inline') {
-    if (fieldKey) inlineErrors[fieldKey] = { message };
-    if (triggerErrors)
-      setInlineErrors(JSON.parse(JSON.stringify(inlineErrors)));
-    invalid = Object.values(inlineErrors).some((data) => (data as any).message);
+    invalid = Object.values(inlineErrors).some((data) =>
+      inlineEntryHasMessage(data as any)
+    );
   }
   if (message) {
     await errorCallback({
-      errorFieldId: fieldKey,
+      errorFieldId: errorType === 'html5' ? inputKey : fieldKey,
       errorFieldType: servarType,
       errorMessage: message,
       elementRepeatIndex: index || 0
@@ -281,7 +322,7 @@ export function clearBrowserErrors(formRef: React.MutableRefObject<any>) {
   clearBrowserErrorsDebounced(formRef);
 }
 
-export function objectMap(obj: any, transform: any) {
+function objectMap(obj: any, transform: any) {
   return Object.entries(obj).reduce((newObj, [key, val]) => {
     return { ...newObj, [key]: transform(val) };
   }, {});
@@ -294,7 +335,7 @@ export function objectMap(obj: any, transform: any) {
 export async function fetchS3File(url: any) {
   const response = await fetch(url);
   const blob = await response.blob();
-  return new File([blob], decodeURI(url.split('?')[0].split('/').slice(-1)), {
+  return new File([blob], getFilenameFromUrl(url), {
     type: blob.type
   });
 }
@@ -323,6 +364,7 @@ export function processFileValues(fileValues: Record<string, any>) {
 
   Object.assign(fieldValues, filePromises);
   Object.assign(filePathMap, newFilePathMap);
+  Object.keys(fileValues).forEach((key) => restoredFileKeys.add(key));
 }
 
 // Drop one repeat row's entry so the remaining paths stay aligned with their
@@ -333,9 +375,34 @@ export function removeFilePathMapEntry(key: any, index: number) {
   delete fileDeduplicationCount[key];
 }
 
+// Keep filePathMap lined up with a file value that was replaced wholesale, e.g.
+// `field.value = field.value.toSpliced(i, 1)` from a logic rule. Each stored
+// path follows the file reference it belonged to; a file that is new, moved
+// into a hole, or no longer present gets no path and is uploaded on submit.
+export function realignFilePathMap(
+  key: string,
+  prevValue: any,
+  nextValue: any
+) {
+  const paths = filePathMap[key];
+  if (paths === undefined || paths === null || prevValue === nextValue) return;
+
+  if (Array.isArray(nextValue) && Array.isArray(prevValue)) {
+    const prevPaths = Array.isArray(paths) ? paths : [];
+    filePathMap[key] = nextValue.map((file) => {
+      if (file === null || file === undefined || file === '') return null;
+      const prevIndex = prevValue.indexOf(file);
+      return prevIndex === -1 ? null : prevPaths[prevIndex] ?? null;
+    });
+  } else {
+    filePathMap[key] = null;
+  }
+  delete fileDeduplicationCount[key];
+}
+
 // Update the map we maintain to track files that have already been uploaded to S3
 // This means nulling the existing mapping because the user uploaded a new file
-export function clearFilePathMapEntry(key: any, index = null) {
+export function clearFilePathMapEntry(key: any, index: number | null = null) {
   if (index !== null) {
     if (!filePathMap[key]) filePathMap[key] = [];
     // @ts-ignore
@@ -397,6 +464,8 @@ export function prioritizeActions(actions: any[]) {
 
 export function mapFormSettingsResponse(res: any) {
   return {
+    asciiOnly: res.ascii_only ?? false,
+    authSensitiveActionsOnly: res.auth_sensitive_actions_only ?? false,
     errorType: res.error_type,
     autocomplete: res.autocomplete ? 'on' : 'off',
     autofocus: res.autofocus,
@@ -416,12 +485,7 @@ export function mapFormSettingsResponse(res: any) {
     showFileUploadProgress: res.show_file_upload_progress ?? true,
     showDocumentProgress: res.show_document_progress ?? true,
     mobileBreakpoint: res.mobile_breakpoint ?? DEFAULT_MOBILE_BREAKPOINT,
-    assistantEnabled: res.ai_assistant_settings?.enabled,
-    assistantColor: res.ai_assistant_settings?.color
-      ? `#${res.ai_assistant_settings.color}`
-      : '#6b7280',
-    assistantWorkflowActions: res.ai_assistant_settings?.workflow_actions ?? [],
-    assistantStepSettings: res.ai_assistant_settings?.step_settings ?? {}
+    assistantEnabled: res.ai_assistant_settings?.enabled
   };
 }
 

@@ -4,21 +4,30 @@ import {
   FieldStyles
 } from './fieldHelperFunctions';
 import Field from './entities/Field';
+import { InlineErrors } from './inlineErrors';
 import SimplifiedProduct from '../integrations/stripe/SimplifiedProduct';
 import Cart from '../integrations/stripe/Cart';
 import Collaborator from './entities/Collaborator';
 import FeatheryClient from './featheryClient';
-import { LogicRule } from '../types/Form';
-import AssistantClient from '../assistant/AssistantClient';
+import { LogicRule, Subgrid } from '../types/Form';
+import type { FormActionHandlers } from './formActions/utils';
+import type { FormToolsStepWrites } from './formTools/types';
+import type { TableHandlers } from './formActions/tables';
 import {
   ExtractionActionOptions,
   FillQuikParams,
   ForwardInboxEmailOptions,
   PageSelectionInput
 } from '@feathery/client-utils';
+import type { DocumentReviewTrigger } from '../types/Form';
 
 export type AlloyEntities = Record<string, any>[];
 export type LoanProCustomerObject = Record<string, any>;
+export type RunComputerAgentOptions = {
+  waitForCompletion?: boolean;
+  onStatusUpdate?: (data: any) => void;
+  onComplete?: (data: any) => void;
+};
 export type GetConfigParams = {
   filter?: Record<string, any>;
   keys?: string[];
@@ -90,10 +99,14 @@ type DocusignLibraryDocuments = {
     index: number;
   }[];
   field_mapping: { roleField: string; featheryField: string }[];
+  // Quik esign field names that get no DocuSign tab, as an exact name
+  // ('1own.44252.2.Sign') or a pattern covering every role
+  // ('*.44252.2.Sign'). The page still ships; only the tab is dropped.
+  skipEsignFields?: string[];
 };
 // Reminder + expiration schedule (day counts). Omit either block to leave that
 // part on the DocuSign account default.
-type DocusignNotification = {
+export type DocusignNotification = {
   reminders?: { enabled?: boolean; delay?: number; frequency?: number };
   expirations?: { enabled?: boolean; after?: number; warn?: number };
 };
@@ -104,6 +117,16 @@ export type SendDocusignParams = {
   libraryDocuments?: DocusignLibraryDocuments;
   existingEnvelopeId?: string;
   signers?: DocusignSigner[];
+  // Copied the completed envelope once every signer finishes; they take no
+  // action themselves. Either a bare email or { email, name }. Added to
+  // whatever the integration already CCs rather than replacing it. New
+  // envelopes only - rejected alongside existingEnvelopeId, which adds
+  // documents to an envelope whose recipients are already set.
+  // excludedDocuments hides those documents from the copy, as on a signer.
+  ccRecipients?: (
+    | string
+    | { email: string; name?: string; excludedDocuments?: number[] }
+  )[];
   fillData?: Record<string, any>;
   emailSubject?: string;
   emailBlurb?: string;
@@ -116,8 +139,8 @@ export type SendDocusignParams = {
   notification?: DocusignNotification;
   // DocuSign brand profile GUID to apply to the envelope
   brandId?: string;
-  // Enforce per-signer document visibility (auto-on when a signer has
-  // excludedDocuments)
+  // Enforce per-recipient document visibility (auto-on when a signer or cc
+  // recipient has excludedDocuments)
   enforceSignerVisibility?: boolean;
   // Fill documents only from fillData, ignoring the template's field mapping
   // to the fuser's stored field values
@@ -125,6 +148,25 @@ export type SendDocusignParams = {
 };
 export type GetDocusignEnvelopeParams = {
   envelopeId: string;
+  // false returns status + timestamps only (no document downloads)
+  includeDocuments?: boolean;
+};
+export type EgnyteFile = {
+  name: string;
+  data: string; // base64
+  // DocuSign's document type (content/summary/certificate), not a MIME type
+  type?: string;
+};
+export type UploadFileToEgnyteParams = {
+  // A getDocusignEnvelope document can be passed straight through
+  file: EgnyteFile;
+  // Relative to the root folder configured on the Egnyte integration
+  path?: string;
+  name?: string; // overrides file.name
+  createFolder?: boolean; // defaults to true
+};
+export type CreateEgnyteFolderParams = {
+  path: string;
 };
 export type UpdateDocusignEnvelopeParams = {
   envelopeId: string;
@@ -132,6 +174,46 @@ export type UpdateDocusignEnvelopeParams = {
   // recycle bin, deleting a draft)
   status: 'sent' | 'voided' | 'discarded';
   voidedReason?: string; // required by the backend when status is 'voided'
+};
+
+// Runtime changes a host embedding the form may react to
+export type FormRuntimeEvent =
+  | { type: 'step'; stepId: string; stepKey: string }
+  | { type: 'identity' };
+
+// Closures formTools uses to write a field like a user change and wait for
+// the rules it queued
+export type FormToolsCallbacks = {
+  // True when the write changed the stored value (and so re-renders the form)
+  changeValue: (value: any, field: any, index?: number | null) => boolean;
+  // Runs a change rule's pending debounced rerender now
+  flushRerender: () => void;
+  fieldOnChange: (args: {
+    fieldID: string;
+    fieldKey: string;
+    servarId: string;
+    elementRepeatIndex?: number;
+  }) => (opts?: Record<string, any>) => void;
+  getNextStepKey: (metadata: {
+    elementType: string;
+    elementIDs: string[];
+  }) => string | null | undefined;
+  buttonOnClick: (button: {
+    id: string;
+    properties: Record<string, any>;
+    repeat?: any;
+  }) => Promise<void>;
+  // Resolves once the change rules queued by the last fieldOnChange finish
+  awaitChangeRules: () => Promise<any>;
+  // limit is the add button's max_repeats
+  addRepeatedRow: (
+    container: Subgrid | undefined,
+    limit?: number | null
+  ) => void;
+  // Submits just these file/signature servars, not the rest of the step
+  submitFiles: (
+    fileEntries: { servar: any; stepKey: string }[]
+  ) => Promise<any>;
 };
 
 export interface FormInternalState {
@@ -142,7 +224,18 @@ export interface FormInternalState {
   backNavMap?: Record<string, string>;
   visiblePositions: any;
   logicRules?: LogicRule[];
-  assistantClient?: AssistantClient;
+  formActions?: FormActionHandlers;
+  tables?: Map<string, TableHandlers>;
+  formToolsCallbacks?: FormToolsCallbacks;
+  // Most recent step save, so feathery_next_step's `saved` reflects its own click
+  formToolsLastSave?: Promise<any>;
+  // Bumped once per <Form/> commit; undefined when no <Form/> is mounted
+  formToolsRenderTick?: number;
+  // What fill_step wrote on the current step, across its calls
+  formToolsStepWrites?: FormToolsStepWrites;
+  // Set when a rerender is requested, cleared by the commit it produces
+  formToolsRenderOwed?: boolean;
+  runtimeListeners?: Set<(event: FormRuntimeEvent) => void>;
   client: FeatheryClient;
   formName: string;
   formId: string;
@@ -157,10 +250,11 @@ export interface FormInternalState {
     props1?: Record<string, unknown>
   ) => (props2?: Record<string, unknown>) => Promise<boolean>;
   navigate: any;
-  inlineErrors: Record<string, { message: string; index: number }>;
-  setInlineErrors: React.Dispatch<
-    React.SetStateAction<Record<string, { message: string; index: number }>>
-  >;
+  inlineErrors: InlineErrors;
+  setInlineErrors: React.Dispatch<React.SetStateAction<InlineErrors>>;
+  // Resolves once an asynchronously-published inline error (e.g. a button
+  // submit error) has been written, so programmatic callers can await it.
+  pendingInlineErrorPublish?: Promise<void>;
   setUserProgress: React.Dispatch<React.SetStateAction<null>>;
   setDataMappingState?: (state: { show: boolean; hubs: any[] }) => void;
   steps: any;
@@ -181,6 +275,10 @@ export interface FormInternalState {
     options: ExtractionActionOptions | boolean,
     pages?: PageSelectionInput
   ) => Promise<Record<string, string>>;
+  runComputerAgent: (
+    agentId: string,
+    options?: RunComputerAgentOptions
+  ) => Promise<Record<string, any>>;
   forwardInboxEmail: (options: ForwardInboxEmailOptions) => Promise<void>;
   fillQuikForms: (params: FillQuikParams) => Promise<void>;
   sendDocusignEnvelope: (params: SendDocusignParams) => Promise<void>;
@@ -188,6 +286,8 @@ export interface FormInternalState {
   updateDocusignEnvelope: (
     params: UpdateDocusignEnvelopeParams
   ) => Promise<any>;
+  uploadFileToEgnyte: (params: UploadFileToEgnyteParams) => Promise<any>;
+  createEgnyteFolder: (params: CreateEgnyteFolderParams) => Promise<any>;
   getDocusignBrands: () => Promise<any>;
   getConfig: GetConfig;
   // Registered by <Form /> so the `feathery.generateDocuments` logic-rule
@@ -199,6 +299,10 @@ export interface FormInternalState {
   // Registered by <Form /> so a document-editor container can report its
   // signing outcome in the same toast the generate flow uses.
   showEnvelopeOutcome?: (label: string, documents?: string[]) => void;
+  // Registered by <Form /> so a document-editor container, which finalizes
+  // its own signing action outside the generate flow, can fire the
+  // `document_review` logic rules for it.
+  runDocumentReviewLogic?: (trigger: DocumentReviewTrigger) => Promise<any>;
 }
 
 type InternalState = {

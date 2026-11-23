@@ -1,38 +1,5 @@
-import {
-  createCheckboxGroupElement,
-  createCheckboxGroupProps,
-  createStatefulOnChange,
-  createStatefulOtherOnChange,
-  createOptionsMetadata,
-  createMaxLengthElement,
-  createOtherOptionElement,
-  getMockFieldValue,
-  resetMockFieldValue,
-  setMockFieldValue,
-  getCheckboxInputs,
-  getCheckboxInputByValue,
-  getSelectAllCheckbox,
-  getOtherCheckbox,
-  getOtherTextInput,
-  getOptionLabels,
-  expectCheckboxToBeChecked,
-  expectCheckboxToBeUnchecked,
-  expectOtherCheckboxToBeChecked,
-  expectOtherCheckboxToBeUnchecked,
-  expectCheckboxGroupToHaveValues,
-  expectCheckboxGroupToHaveOptionCount,
-  expectCheckboxToBeDisabled,
-  expectCheckboxToBeEnabled,
-  expectOtherCheckboxToBeDisabled,
-  expectOtherTextInputToBeDisabled,
-  expectOtherTextInputToBeEnabled,
-  expectOtherTextInputToHaveValue,
-  expectOptionToHaveTooltip,
-  expectOtherToHaveTooltip,
-  expectFieldToBeDisabled,
-  expectFieldToHaveAriaLabel
-} from './test-utils';
 import React from 'react';
+import { createCheckboxGroupElement, createCheckboxGroupProps, createStatefulOnChange, createStatefulOtherOnChange, createOptionsMetadata, createMaxLengthElement, createOtherOptionElement, getMockFieldValue, resetMockFieldValue, setMockFieldValue, getCheckboxInputs, getCheckboxInputByValue, getSelectAllCheckbox, getOtherCheckbox, getOtherTextInput, getOptionLabels, expectCheckboxToBeChecked, expectCheckboxToBeUnchecked, expectOtherCheckboxToBeChecked, expectOtherCheckboxToBeUnchecked, expectCheckboxGroupToHaveValues, expectCheckboxGroupToHaveOptionCount, expectCheckboxToBeDisabled, expectCheckboxToBeEnabled, expectOtherCheckboxToBeDisabled, expectOtherTextInputToBeDisabled, expectOtherTextInputToBeEnabled, expectOtherTextInputToHaveValue, expectOptionToHaveTooltip, expectOtherToHaveTooltip, expectFieldToBeDisabled } from './test-utils';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import CheckboxGroupField from '../index';
 

@@ -518,6 +518,112 @@ describe('IntegrationClient', () => {
   });
 
   describe('generateEnvelopes', () => {
+    it('lets the server resolve saved container actions without dropping overlay signers', async () => {
+      const client = new IntegrationClient('test_form_key');
+      const response = {
+        editor_mode: 'overlay',
+        documents: [{ envelope_id: 'env-1', pdf_url: 'https://x/1.pdf' }]
+      };
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(response)
+      });
+      Object.assign(fieldValues, { signer_field: 'filler@example.com' });
+
+      const result = await client.generateEnvelopes({
+        envelope_action: 'open_in_editor',
+        editor_mode: 'container-abc',
+        documents: ['word', 'slides'],
+        envelope_signer_field_key: 'signer_field',
+        editor_toolbar_actions: ['sign', 'download', 'save'],
+        run_async: false
+      });
+
+      expect(requestBody()).toEqual(
+        expect.objectContaining({
+          envelope_action: 'open_in_editor',
+          editor_mode: 'container-abc',
+          editor_toolbar_actions: ['sign', 'download', 'save'],
+          signers: [
+            { document_id: 'word', email: 'filler@example.com', filler: true },
+            { document_id: 'slides', email: 'filler@example.com', filler: true }
+          ]
+        })
+      );
+      expect(result).toEqual(response);
+    });
+
+    it('forwards signer names, copy-specific signers, SMS and all-copy defaults to the API', async () => {
+      const client = new IntegrationClient('test_form_key');
+      const signers = [
+        {
+          document_id: 'aaf',
+          role_id: 'owner',
+          repeat_index: 0,
+          email: 'shared@example.com',
+          name: 'John',
+          signer_id: 'client-john',
+          phone: '+15551234567',
+          filler: false
+        },
+        {
+          document_id: 'aaf',
+          role_id: 'owner',
+          repeat_index: 1,
+          email: 'shared@example.com',
+          name: 'Mary',
+          signer_id: 'client-mary',
+          filler: false
+        },
+        {
+          document_id: 'aaf',
+          role_id: 'advisor',
+          email: 'advisor@example.com',
+          name: 'Alyssa Advisor',
+          filler: false
+        }
+      ];
+      for (const envelopeAction of ['open_in_editor', 'sign']) {
+        signers[1].email =
+          envelopeAction === 'sign' ? 'mary@example.com' : 'shared@example.com';
+        global.fetch.mockResolvedValue({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ files: [] })
+        });
+        await client.generateEnvelopes({
+          documents: [
+            {
+              kind: 'quik',
+              forms: [
+                { id: 44249, fields: {}, signerIds: { '1own': 'client-john' } }
+              ]
+            },
+            'aaf'
+          ],
+          repeatable: true,
+          sign_method: 'docusign',
+          envelope_action: envelopeAction,
+          editor_toolbar_actions: ['draft'],
+          envelope_signers: signers,
+          run_async: false
+        });
+        const calls = global.fetch.mock.calls;
+        const body = JSON.parse(calls[calls.length - 1][1].body);
+        expect(body.signers).toEqual(signers);
+        expect(body.repeatable).toBe(true);
+        expect(body.sign_method).toBe('docusign');
+        expect(body.documents).toEqual([
+          {
+            kind: 'quik',
+            forms: [
+              { id: 44249, fields: {}, signer_ids: { '1own': 'client-john' } }
+            ]
+          },
+          'aaf'
+        ]);
+      }
+    });
+
     it('calls document generate endpoint with correct parameters', async () => {
       // Arrange
       const formKey = 'test_form_key';
@@ -642,50 +748,74 @@ describe('IntegrationClient', () => {
       expect(result).toEqual(documentsPayload);
     });
 
-    it('polls until complete when open_in_editor runs async', async () => {
+    it.each([
+      [undefined, 'overlay'],
+      ['container-abc', 'overlay'],
+      ['container-abc', 'container-abc']
+    ])(
+      'polls an editor request for %s resolved to %s',
+      async (requestedMode, resolvedMode) => {
+        const formKey = 'test_form_key';
+        const integrationClient = new IntegrationClient(formKey);
+        integrationClient.ENVELOPE_CHECK_INTERVAL = 1;
+        integrationClient.ENVELOPE_MAX_TIME = 20;
+        const action = {
+          documents: ['doc1'],
+          run_async: true,
+          envelope_action: 'open_in_editor',
+          editor_mode: requestedMode
+        };
+
+        const completePayload = {
+          editor_mode: resolvedMode,
+          ...(resolvedMode === 'overlay'
+            ? {
+                documents: [
+                  { envelope_id: 'env-1', pdf_url: 'https://x/1.pdf' }
+                ]
+              }
+            : {
+                envelopes: [
+                  { id: 'env-1', type: 'pptx', file: 'https://x/1.pptx' }
+                ]
+              }),
+          expires_at: '2026-07-15T00:00:00Z',
+          status: 'complete'
+        };
+
+        global.fetch
+          .mockResolvedValueOnce({
+            ok: true,
+            json: jest.fn().mockResolvedValue({ status: 'running' })
+          })
+          .mockResolvedValueOnce({
+            ok: true,
+            status: 200,
+            json: jest.fn().mockResolvedValue(completePayload)
+          });
+
+        const result = await integrationClient.generateEnvelopes(action);
+
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+        expect(global.fetch.mock.calls[1][0]).toBe(
+          `${API_URL}document/form/generate/poll/?fid=test_user_id&dids=${action.documents}`
+        );
+        expect(result).toEqual(completePayload);
+      }
+    );
+
+    it('polls with canonical cache keys for a mixed template/quik/upload array', async () => {
       const formKey = 'test_form_key';
       const integrationClient = new IntegrationClient(formKey);
       integrationClient.ENVELOPE_CHECK_INTERVAL = 1;
       integrationClient.ENVELOPE_MAX_TIME = 20;
       const action = {
-        documents: ['doc1'],
-        run_async: true,
-        envelope_action: 'open_in_editor'
-      };
-
-      const completePayload = {
-        documents: [{ envelope_id: 'env-1', pdf_url: 'https://x/1.pdf' }],
-        expires_at: '2026-07-15T00:00:00Z',
-        status: 'complete'
-      };
-
-      global.fetch
-        .mockResolvedValueOnce({
-          ok: true,
-          json: jest.fn().mockResolvedValue({ status: 'running' })
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          json: jest.fn().mockResolvedValue(completePayload)
-        });
-
-      const result = await integrationClient.generateEnvelopes(action);
-
-      expect(global.fetch).toHaveBeenCalledTimes(2);
-      expect(global.fetch.mock.calls[1][0]).toBe(
-        `${API_URL}document/form/generate/poll/?fid=test_user_id&dids=${action.documents}`
-      );
-      expect(result).toEqual(completePayload);
-    });
-
-    it('polls with canonical cache keys for a mixed template/quik array', async () => {
-      const formKey = 'test_form_key';
-      const integrationClient = new IntegrationClient(formKey);
-      integrationClient.ENVELOPE_CHECK_INTERVAL = 1;
-      integrationClient.ENVELOPE_MAX_TIME = 20;
-      const action = {
-        documents: ['doc1', { kind: 'quik' }, 'doc2'],
+        documents: [
+          'doc1',
+          { kind: 'quik' },
+          { kind: 'file_upload', field_id: 'f1' },
+          'doc2'
+        ],
         run_async: true,
         envelope_action: 'open_in_editor'
       };
@@ -708,11 +838,69 @@ describe('IntegrationClient', () => {
 
       await integrationClient.generateEnvelopes(action);
 
-      // Must mirror the backend document_cache_keys: quik -> "quik", not
-      // "[object Object]".
+      // Must mirror the backend document_cache_keys, not "[object Object]".
       expect(global.fetch.mock.calls[1][0]).toBe(
-        `${API_URL}document/form/generate/poll/?fid=test_user_id&dids=doc1,quik,doc2`
+        `${API_URL}document/form/generate/poll/?fid=test_user_id&dids=doc1,quik,file_upload:f1,doc2`
       );
+    });
+
+    it('rejects source objects on a document editor container', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      const result = await integrationClient.generateEnvelopes({
+        editor_mode: 'container-abc',
+        documents: ['doc1', { kind: 'file_upload', field_id: 'f1' }]
+      });
+
+      expect(result.status).toBe('error');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('sends template objects to a document editor container as plain ids', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: [] })
+      });
+
+      await integrationClient.generateEnvelopes({
+        editor_mode: 'container-abc',
+        run_async: false,
+        documents: ['doc1', { kind: 'template', document_id: 'doc2' }]
+      });
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.documents).toEqual(['doc1', 'doc2']);
+    });
+
+    it('only gives template documents the shared signer field', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      const action = {
+        envelope_signer_field_key: 'signer_field',
+        documents: [
+          'doc1',
+          { kind: 'quik' },
+          { kind: 'file_upload', field_id: 'f1' },
+          { kind: 'template', document_id: 'doc2' },
+          // Kind-less, as the backend accepts it, is a template too.
+          { document_id: 'doc3' }
+        ],
+        run_async: false
+      };
+      Object.assign(fieldValues, { signer_field: 'test@example.com' });
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: [] })
+      });
+
+      await integrationClient.generateEnvelopes(action);
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.documents).toEqual(action.documents);
+      expect(body.signers).toEqual([
+        { document_id: 'doc1', email: 'test@example.com', filler: true },
+        { document_id: 'doc2', email: 'test@example.com', filler: true },
+        { document_id: 'doc3', email: 'test@example.com', filler: true }
+      ]);
     });
 
     it('surfaces an error response from the review generate endpoint', async () => {
@@ -736,6 +924,52 @@ describe('IntegrationClient', () => {
         message: 'Envelope limit exceeded'
       });
     });
+
+    it.each([true, false, undefined])(
+      'forwards draft=%s and preserves the DocuSign result',
+      async (draft) => {
+        const integrationClient = new IntegrationClient('test_form_key');
+        const response = {
+          docusign_envelope_id: 'ds-1',
+          status: draft ? 'created' : 'sent'
+        };
+        global.fetch.mockResolvedValue({
+          ok: true,
+          json: jest.fn().mockResolvedValue(response)
+        });
+        const result = await integrationClient.generateEnvelopes({
+          documents: ['doc1'],
+          sign_method: 'docusign',
+          envelope_action: 'sign',
+          draft,
+          run_async: false,
+          envelope_signers: [
+            {
+              document_id: 'doc1',
+              role_id: 'owner',
+              email: 'owner@example.com'
+            }
+          ]
+        });
+        const [url, options] = global.fetch.mock.calls[0];
+        expect(url).toBe(`${API_URL}document/form/generate/`);
+        const body = JSON.parse(options.body);
+        expect(body.draft).toBe(draft);
+        expect(body.sign_method).toBe('docusign');
+        expect(body.envelope_action).toBe('sign');
+        expect(body.editor_toolbar_actions).toBeUndefined();
+        expect(body.signers).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              document_id: 'doc1',
+              role_id: 'owner',
+              email: 'owner@example.com'
+            })
+          ])
+        );
+        expect(result).toEqual(response);
+      }
+    );
 
     it('sends sign_method to the generate endpoint directly for a plain docusign sign', async () => {
       // client-utils' generateFormDocuments can't forward sign_method any
@@ -768,6 +1002,102 @@ describe('IntegrationClient', () => {
         docusign_envelope_id: 'ds-1',
         status: 'sent'
       });
+    });
+
+    it.each([
+      undefined,
+      [],
+      ['copy@example.com'],
+      [
+        {
+          email: 'custodian@example.com',
+          name: 'Custodian',
+          excluded_documents: [0]
+        }
+      ]
+    ])(
+      'forwards conditional CCs through generation and review finalization: %j',
+      async (ccRecipients) => {
+        const integrationClient = new IntegrationClient('test_form_key');
+        global.fetch.mockResolvedValue({
+          ok: true,
+          json: jest
+            .fn()
+            .mockResolvedValue({ documents: [], docusign_envelope_id: 'ds-cc' })
+        });
+        const action = {
+          documents: ['doc1', 'doc2'],
+          run_async: false,
+          sign_method: 'docusign',
+          envelope_action: 'open_in_editor',
+          cc_recipients: ccRecipients
+        };
+        await integrationClient.generateEnvelopes(action);
+        for (const options of [
+          { draft: true },
+          { draft: true, refreshDraft: true },
+          { draft: false }
+        ]) {
+          await integrationClient.finalizeEnvelopeReview(action, {
+            envelopes: [{ envelopeId: 'env-cc' }],
+            envelopeAction: 'sign',
+            ...options
+          });
+        }
+        for (const [, options] of global.fetch.mock.calls) {
+          const body = JSON.parse(options.body);
+          if (ccRecipients === undefined)
+            expect(body).not.toHaveProperty('cc_recipients');
+          else expect(body.cc_recipients).toEqual(ccRecipients);
+        }
+      }
+    );
+
+    it('forwards email subject and blurb, omitting them when unset', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'ds-2' })
+      });
+
+      await integrationClient.generateEnvelopes({
+        documents: ['doc1'],
+        run_async: false,
+        sign_method: 'docusign',
+        email_subject: 'Please sign this',
+        email_blurb: 'Two signatures needed.',
+        notification: { reminders: { enabled: true, delay: 2, frequency: 3 } },
+        sms_authentication: false,
+        source_element_id: 'button-1',
+        custom_fields: { account_submission_id: 'account-123' }
+      });
+      let body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.sms_authentication).toBe(false);
+      expect(body.source_element_id).toBe('button-1');
+      expect(body.email_subject).toBe('Please sign this');
+      expect(body.email_blurb).toBe('Two signatures needed.');
+      expect(body.notification).toEqual({
+        reminders: { enabled: true, delay: 2, frequency: 3 }
+      });
+      expect(body.custom_fields).toEqual({
+        account_submission_id: 'account-123'
+      });
+
+      // Omitted rather than sent empty, so the backend's default subject wins
+      global.fetch.mockClear();
+      await integrationClient.generateEnvelopes({
+        documents: ['doc1'],
+        run_async: false,
+        sign_method: 'docusign'
+      });
+      body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.email_subject).toBeUndefined();
+      expect(body.email_blurb).toBeUndefined();
+      expect(body.notification).toBeUndefined();
+      expect(body.sms_authentication).toBeUndefined();
+      expect(body.source_element_id).toBeUndefined();
+      expect(body.custom_fields).toBeUndefined();
     });
 
     it('ignores the form signer field for a docusign sign, keeping the role mappings', async () => {
@@ -826,6 +1156,58 @@ describe('IntegrationClient', () => {
 
       delete fieldValues.signer_field;
       delete fieldValues.buyer_field;
+    });
+
+    it('surfaces a rejected SMS phone as the field message', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      const message =
+        "The mobile number for SMS verification isn't valid (123). Enter the full number with the country code, for example 15555550100 or +1 555 555 0100.";
+      global.fetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: jest.fn().mockResolvedValue({ signers: [{ phone: [message] }] })
+      });
+      const result = await integrationClient.generateEnvelopes({
+        documents: ['doc1'],
+        run_async: false,
+        sign_method: 'docusign',
+        envelope_signers: [
+          {
+            document_id: 'doc1',
+            role_id: 'role-1',
+            email: 'buyer@example.com',
+            phone: '123'
+          }
+        ]
+      });
+      expect(result.message).toBe(message);
+
+      // Editor finalize returns the same error as a top-level list.
+      global.fetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: jest.fn().mockResolvedValue([{ phone: [message] }])
+      });
+      await expect(integrationClient.finalizeEnvelope('env-1')).rejects.toThrow(
+        message
+      );
+
+      // Any other field error reads the same way instead of "[object Object]".
+      global.fetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: jest.fn().mockResolvedValue({
+          email_subject: ['Ensure this field has no more than 256 characters.']
+        })
+      });
+      const subjectResult = await integrationClient.generateEnvelopes({
+        documents: ['doc1'],
+        run_async: false,
+        sign_method: 'docusign'
+      });
+      expect(subjectResult.message).toBe(
+        'Ensure this field has no more than 256 characters.'
+      );
     });
 
     it('sends sign_method alongside the editor action when both are present', async () => {
@@ -920,7 +1302,15 @@ describe('IntegrationClient', () => {
         repeatable: true,
         run_async: false,
         envelope_action: 'download',
-        sign_method: 'feathery'
+        sign_method: 'feathery',
+        envelope_signers: [
+          {
+            document_id: 'doc1',
+            email: 'test@example.com',
+            signer_id: '',
+            name: 'Legacy name'
+          }
+        ]
       };
 
       Object.assign(fieldValues, { signer_field: 'test@example.com' });
@@ -930,6 +1320,15 @@ describe('IntegrationClient', () => {
         json: jest.fn().mockResolvedValue({ files: ['file1.pdf', 'file2.pdf'] })
       });
 
+      await expect(
+        integrationClient.generateEnvelopes({
+          ...action,
+          envelope_signers: [
+            { ...action.envelope_signers[0], signer_id: 'person' }
+          ]
+        })
+      ).rejects.toThrow(/signer IDs require/);
+      expect(global.fetch).not.toHaveBeenCalled();
       const result = await integrationClient.generateEnvelopes(action);
 
       expect(global.fetch).toHaveBeenCalledWith(
@@ -967,7 +1366,17 @@ describe('IntegrationClient', () => {
       // to the generate endpoint exactly as configured, without reshaping.
       const formKey = 'test_form_key';
       const integrationClient = new IntegrationClient(formKey);
-      const mixedDocuments = ['uuid-1', { kind: 'quik' }, 'uuid-2'];
+      const mixedDocuments = [
+        'uuid-1',
+        {
+          kind: 'quik',
+          forms: [
+            { id: 44249, fields: { '1own.FName': 'First' } },
+            { id: 44249, fields: {} }
+          ]
+        },
+        'uuid-2'
+      ];
       const action = {
         documents: mixedDocuments,
         run_async: false,
@@ -1009,6 +1418,41 @@ describe('IntegrationClient', () => {
 
       const body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(body.documents).toEqual(mixedDocuments);
+    });
+
+    it('forwards a hub association on both generate paths, omitting it when unset', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: [], documents: [] })
+      });
+      const hubAssociation = {
+        hubId: 'hub-1',
+        entryId: 'entry-1',
+        label: 'NDA'
+      };
+      const actions = [
+        { documents: ['doc1'], run_async: false },
+        {
+          documents: ['doc1'],
+          run_async: false,
+          envelope_action: 'open_in_editor'
+        }
+      ];
+
+      for (const [call, action] of actions.entries()) {
+        await integrationClient.generateEnvelopes(action);
+        expect(requestBody(call * 2)).not.toHaveProperty('hub_association');
+        await integrationClient.generateEnvelopes({
+          ...action,
+          hub_association: hubAssociation
+        });
+        expect(requestBody(call * 2 + 1).hub_association).toEqual({
+          hub_id: 'hub-1',
+          entry_id: 'entry-1',
+          label: 'NDA'
+        });
+      }
     });
   });
 
@@ -1054,6 +1498,33 @@ describe('IntegrationClient', () => {
       expect(result).toEqual({ files: ['merged.pdf'] });
     });
 
+    it('sends refresh_draft only when the review asks to refresh its draft', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ status: 'created' })
+      });
+      const finalize = (refreshDraft) =>
+        integrationClient.finalizeEnvelopeReview(
+          { ...baseAction, run_async: false, sign_method: 'docusign' },
+          {
+            envelopes: [{ envelopeId: 'env-1' }],
+            envelopeAction: 'sign',
+            draft: true,
+            refreshDraft
+          }
+        );
+
+      await finalize(true);
+      await finalize(false);
+
+      const bodies = global.fetch.mock.calls.map(([, options]) =>
+        JSON.parse(options.body)
+      );
+      expect(bodies[0].refresh_draft).toBe(true);
+      expect(bodies[1]).not.toHaveProperty('refresh_draft');
+    });
+
     it('never sends signer_email on finalize (removed from the final contract)', async () => {
       const formKey = 'test_form_key';
       const integrationClient = new IntegrationClient(formKey);
@@ -1078,6 +1549,44 @@ describe('IntegrationClient', () => {
       expect(body.envelopes).toEqual([{ envelope_id: 'env-1' }]);
       expect(body.signer_email).toBeUndefined();
       expect(body.envelope_action).toBe('sign');
+      expect(body.email_subject).toBeUndefined();
+    });
+
+    it('forwards email subject and blurb to finalize', async () => {
+      // An open_in_editor flow does not build the DocuSign envelope until the
+      // filler presses Sign, so finalize has to carry them too.
+      const integrationClient = new IntegrationClient('test_form_key');
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'ds-fin' })
+      });
+
+      await integrationClient.finalizeEnvelopeReview(
+        {
+          run_async: false,
+          sign_method: 'docusign',
+          email_subject: 'Signed, sealed',
+          email_blurb: 'Last step.',
+          notification: { expirations: { enabled: true, after: 30, warn: 5 } },
+          sms_authentication: true,
+          source_element_id: 'button-1',
+          custom_fields: { account_submission_id: 'account-123' }
+        },
+        { envelopes: [{ envelopeId: 'env-1' }], envelopeAction: 'sign' }
+      );
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.sms_authentication).toBe(true);
+      expect(body.source_element_id).toBe('button-1');
+      expect(body.email_subject).toBe('Signed, sealed');
+      expect(body.email_blurb).toBe('Last step.');
+      expect(body.notification).toEqual({
+        expirations: { enabled: true, after: 30, warn: 5 }
+      });
+      expect(body.custom_fields).toEqual({
+        account_submission_id: 'account-123'
+      });
     });
 
     it('polls until complete when finalize runs async', async () => {
@@ -1356,8 +1865,56 @@ describe('IntegrationClient', () => {
       expect(body.wet_sign).toBe(true);
       expect(body.use_disclosure).toBe(true);
       expect(body.signers).toBeUndefined();
+      expect(body.cc_recipients).toBeUndefined();
       expect(body.documents).toEqual(['doc-1']);
       expect(result).toEqual({ docusign_envelope_id: 'wet-1' });
+    });
+
+    it('forwards ccRecipients as cc_recipients in both shapes', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'env-1' })
+      });
+
+      await integrationClient.sendDocusignEnvelope({
+        documents: ['doc-1'],
+        ccRecipients: [
+          'plain@mail.com',
+          { email: 'named@mail.com', name: 'CC' },
+          { email: 'scoped@mail.com', name: 'Scoped', excludedDocuments: [1] }
+        ]
+      });
+
+      expect(requestBody().cc_recipients).toEqual([
+        'plain@mail.com',
+        { email: 'named@mail.com', name: 'CC' },
+        {
+          email: 'scoped@mail.com',
+          name: 'Scoped',
+          excluded_documents: [1]
+        }
+      ]);
+    });
+
+    it('omits cc_recipients when a rule passes null', async () => {
+      // Logic rules are untyped, so `someField || null` is plausible input;
+      // the backend's list field rejects null with a 400.
+      const integrationClient = new IntegrationClient('test_form_key');
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'env-1' })
+      });
+
+      await integrationClient.sendDocusignEnvelope({
+        documents: ['doc-1'],
+        ccRecipients: null
+      });
+
+      expect('cc_recipients' in requestBody()).toBe(false);
     });
 
     it('forwards ignoreTemplateFieldMapping as ignore_template_field_mapping', async () => {
@@ -1421,6 +1978,31 @@ describe('IntegrationClient', () => {
         phone_numbers: [{ country_code: '1', number: '5555555555' }]
       });
       expect(plain.authentication).toBeUndefined();
+    });
+
+    it('forwards libraryDocuments verbatim, skipEsignFields included', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'lib-1' })
+      });
+
+      const libraryDocuments = {
+        library: 'quik',
+        groups: [
+          { forms: [{ id: '44252' }], rolePrefixes: ['1own'], index: 0 }
+        ],
+        field_mapping: [
+          { roleField: '1own.H.Email', featheryField: 'owner_email' }
+        ],
+        skipEsignFields: ['1own.44252.2.Sign', '*.44252.2.SignDate']
+      };
+      await integrationClient.sendDocusignEnvelope({ libraryDocuments });
+
+      // The backend reads these keys as sent, so nothing here is renamed.
+      expect(requestBody().library_documents).toEqual(libraryDocuments);
     });
   });
 

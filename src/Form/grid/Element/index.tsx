@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import Elements from '../../../elements';
 import {
   clearFilePathMapEntry,
@@ -14,8 +14,8 @@ import { justRemove } from '../../../utils/array';
 import { fieldValues, initState } from '../../../utils/init';
 import { isButtonDisabled } from '../../../utils/button';
 import {
-  ACTION_CONNECT_ACCOUNT,
-  ACTION_NEXT
+  ACTION_NEXT,
+  elementHasClickLogic
 } from '../../../utils/elementActions';
 import {
   fileFieldShouldSubmit,
@@ -28,6 +28,7 @@ import {
   textFieldShouldSubmit
 } from './utils/utils';
 import { getVisibleElements } from '../../../utils/hideAndRepeats';
+import { getSliderSources } from '../../../utils/validation';
 import debounce from 'lodash.debounce';
 import { isMobile } from '../../../utils/browser';
 import {
@@ -39,8 +40,21 @@ import {
   getControllingCountryCode,
   stateFieldHasNoOptions
 } from '../../../utils/addressState';
+import { asciiElement, optionValue } from '../../../utils/asciiOptions';
 
-const Element = ({ node: el, form }: any) => {
+const Element = ({ node, form }: any) => {
+  const el = useMemo(
+    () => asciiElement(node, form.formSettings.asciiOnly),
+    [
+      node,
+      node.servar?.metadata,
+      node.servar?.metadata?.options,
+      node.servar?.metadata?.option_labels,
+      node.servar?.metadata?.repeat_options,
+      node.servar?.metadata?.repeat_options?.[node.repeat ?? 0],
+      form.formSettings.asciiOnly
+    ]
+  );
   const { type } = el;
 
   const {
@@ -50,6 +64,7 @@ const Element = ({ node: el, form }: any) => {
     elementProps,
     activeStep,
     buttonLoaders,
+    logicRules,
     customClickSelectionState,
     runElementActions,
     buttonOnClick,
@@ -67,8 +82,7 @@ const Element = ({ node: el, form }: any) => {
     focusRef,
     setCardElement,
     visiblePositions,
-    featheryContext,
-    assistantClient
+    featheryContext
   } = form;
 
   const readOnly =
@@ -109,11 +123,11 @@ const Element = ({ node: el, form }: any) => {
     return (
       <Elements.TableElement
         {...basicProps}
+        formId={form.formInstanceId}
         onClick={(payload: any) => tableOnClick(el, payload)}
         updateFieldValues={updateFieldValues}
         submitCustom={submitCustom}
         buttonLoaders={buttonLoaders}
-        assistantClient={assistantClient}
         client={form.client}
       />
     );
@@ -152,6 +166,7 @@ const Element = ({ node: el, form }: any) => {
           });
         }}
         conditions={activeStep.next_conditions}
+        hasClickLogic={elementHasClickLogic(logicRules, el)}
         {...basicProps}
       />
     );
@@ -166,37 +181,6 @@ const Element = ({ node: el, form }: any) => {
     if (isNum(loaderData?.repeat) && loaderData.repeat !== el.repeat)
       loaderData = null;
 
-    // "Managed by Feathery" (the builder default): once this button has
-    // connected an account, show the connected account instead of the
-    // builder's static label, so the respondent can see which account is
-    // attached. `manage_button_label: false` opts out - the builder composes
-    // their own label with text variables (e.g.
-    // {{feathery.connections.box.email}}), which already resolve on their
-    // own. No connection yet -> nothing to show, so the builder's text wins
-    // regardless.
-    const connectAccountAction = (el.properties.actions ?? []).find(
-      (action: any) => action.type === ACTION_CONNECT_ACCOUNT
-    );
-    let buttonElement = el;
-    if (
-      connectAccountAction &&
-      connectAccountAction.manage_button_label !== false
-    ) {
-      const accountEmail = fieldValues[
-        `feathery.connections.${connectAccountAction.provider}.email`
-      ] as string | undefined;
-      if (accountEmail) {
-        buttonElement = {
-          ...el,
-          properties: {
-            ...el.properties,
-            text: accountEmail,
-            text_formatted: [{ insert: accountEmail }]
-          }
-        };
-      }
-    }
-
     return (
       <Elements.ButtonElement
         active={customClickSelectionState(el)}
@@ -208,8 +192,8 @@ const Element = ({ node: el, form }: any) => {
           buttonOnClick(el);
         }}
         disabled={disabled}
+        hasClickLogic={elementHasClickLogic(logicRules, el)}
         {...basicProps}
-        element={buttonElement}
       />
     );
   } else if (type === 'field') {
@@ -229,7 +213,9 @@ const Element = ({ node: el, form }: any) => {
 
     const isOtherVal = (curVal: string) => {
       if (hasRepeatOptions) {
-        return !servar.metadata.repeat_options[index].includes(curVal);
+        return !servar.metadata.repeat_options[index].some(
+          (option: any) => optionValue(option) === curVal
+        );
       }
       return !servar.metadata.options.includes(curVal);
     };
@@ -381,7 +367,7 @@ const Element = ({ node: el, form }: any) => {
             {...fieldProps}
             rawValue={fieldVal}
             onChange={(value: any) => {
-              const change = changeValue(value, el, index, true, false);
+              const change = changeValue(value, el, index);
               if (change) debouncedOnChange();
             }}
             fieldStyles={el.properties.style}
@@ -599,6 +585,7 @@ const Element = ({ node: el, form }: any) => {
           <Elements.SliderField
             {...fieldProps}
             fieldVal={fieldVal}
+            linkedValues={getSliderSources(activeStep, visiblePositions)}
             onChange={(val: number) => {
               const change = changeValue(val, el, index);
               if (change) debouncedOnChange();
@@ -623,7 +610,7 @@ const Element = ({ node: el, form }: any) => {
             rawValue={stringifyWithNull(fieldVal)}
             onChange={(e: any) => {
               const val = e.target.value;
-              const change = changeValue(val, el, index, true, false);
+              const change = changeValue(val, el, index);
               if (change) debouncedOnChange();
             }}
             setRef={(ref: any) => {
@@ -639,7 +626,7 @@ const Element = ({ node: el, form }: any) => {
             rawValue={stringifyWithNull(fieldVal)}
             onChange={(e: any) => {
               const val = e.target.value;
-              const change = changeValue(val, el, index, true, false);
+              const change = changeValue(val, el, index);
               if (change) debouncedOnChange();
             }}
             setRef={(ref: any) => {
@@ -672,7 +659,7 @@ const Element = ({ node: el, form }: any) => {
             repeatIndex={index}
             onChange={(e: any) => {
               const val = e.target.value;
-              const change = changeValue(val, el, index, true, false);
+              const change = changeValue(val, el, index);
               if (change) debouncedOnChange();
             }}
             onSelect={(address: any, addressId: string) => {
@@ -723,6 +710,7 @@ const Element = ({ node: el, form }: any) => {
                 formRef,
                 fieldKey: el.servar.key,
                 message,
+                index: el.repeat,
                 errorType: formSettings.errorType,
                 servarType: el.servar.type,
                 inlineErrors: { ...inlineErrors },
@@ -750,7 +738,8 @@ const Element = ({ node: el, form }: any) => {
               const isOrWasEmpty = !newVal || !fieldVal;
               const rerender =
                 isOrWasEmpty || (servar.metadata.options ?? []).length > 0;
-              const change = changeValue(val, el, index, rerender, false);
+              // Revalidation updates feedback without reopening native popups.
+              const change = changeValue(val, el, index, rerender);
               if (change) {
                 const submitData =
                   autosubmit && textFieldShouldSubmit(servar, val);

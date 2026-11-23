@@ -1,0 +1,158 @@
+{
+ "source": "rig79 session 19ef359a (2026-10-13), the captain's table split on the Williams form: the committed write",
+ "fixture": "hilb-williams.sfdt.json (private corpus)",
+ "input": {
+  "intent": "Split the Homeowners Coverages and Limits table: move Dwelling, Contents and Water Backup rows into a second table with the same header below the first, and keep the row shading alternating in both tables.",
+  "scope": {
+   "ids": [
+    "n757",
+    "n758",
+    "n768",
+    "n787",
+    "n823",
+    "n754",
+    "n778",
+    "n779",
+    "n782",
+    "n785",
+    "n780",
+    "n783",
+    "n786",
+    "n789",
+    "n792",
+    "n795"
+   ]
+  },
+  "formats": {},
+  "changes": [
+   {
+    "kind": "insert_after",
+    "anchor": "n757",
+    "container": "c3e9b64842cea72c",
+    "node": {
+     "id": "n754",
+     "kind": "paragraph"
+    }
+   },
+   {
+    "kind": "insert_after",
+    "anchor": "n757",
+    "container": "c3e9b64842cea72c",
+    "node": {
+     "kind": "table",
+     "style": "f99",
+     "rows": [
+      {
+       "id": "n758",
+       "kind": "row"
+      },
+      {
+       "id": "n768",
+       "kind": "row"
+      },
+      {
+       "kind": "row",
+       "style": "f98",
+       "cells": [
+        {
+         "kind": "cell",
+         "style": "f101",
+         "blocks": [
+          {
+           "id": "n789",
+           "kind": "paragraph"
+          }
+         ]
+        },
+        {
+         "kind": "cell",
+         "style": "f101",
+         "blocks": [
+          {
+           "id": "n792",
+           "kind": "paragraph"
+          }
+         ]
+        },
+        {
+         "kind": "cell",
+         "style": "f101",
+         "blocks": [
+          {
+           "id": "n795",
+           "kind": "paragraph"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "n823",
+       "kind": "row"
+      }
+     ]
+    }
+   },
+   {
+    "kind": "delete",
+    "id": "n768",
+    "base": "bbbe23fa76c6c872"
+   },
+   {
+    "kind": "delete",
+    "id": "n787",
+    "base": "f330e73b684e8e70"
+   },
+   {
+    "kind": "delete",
+    "id": "n823",
+    "base": "72311292ca2e9444"
+   },
+   {
+    "kind": "replace",
+    "id": "n778",
+    "base": "39e44dcc6c1f6b1d",
+    "node": {
+     "id": "n778",
+     "kind": "row",
+     "style": "f98",
+     "cells": [
+      {
+       "id": "n779",
+       "kind": "cell",
+       "style": "f97",
+       "blocks": [
+        {
+         "id": "n780",
+         "kind": "paragraph"
+        }
+       ]
+      },
+      {
+       "id": "n782",
+       "kind": "cell",
+       "style": "f97",
+       "blocks": [
+        {
+         "id": "n783",
+         "kind": "paragraph"
+        }
+       ]
+      },
+      {
+       "id": "n785",
+       "kind": "cell",
+       "style": "f97",
+       "blocks": [
+        {
+         "id": "n786",
+         "kind": "paragraph"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  ]
+ }
+}

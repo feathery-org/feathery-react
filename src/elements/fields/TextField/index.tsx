@@ -1,8 +1,9 @@
+import { isAsciiTextField, toAscii } from '../../../utils/ascii';
 import React, { memo, useRef, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
-import { resetStyles } from '../../styles';
+import { EYE_ICON_INSET, inputBoxAttrs, resetStyles } from '../../styles';
 import { emailPatternStr } from '../../../utils/validation';
 import useBorder from '../../components/useBorder';
 import TextAutocomplete from './TextAutocomplete';
@@ -140,9 +141,11 @@ function TextField({
   responsiveStyles,
   fieldLabel,
   elementProps = {},
+  errorAttributes = {},
   required = false,
   disabled = false,
   autoComplete,
+  formSettings,
   editMode,
   onAccept = () => {},
   onEnter = () => {},
@@ -151,6 +154,7 @@ function TextField({
   repeatIndex = null,
   children
 }: any) {
+  const asciiOnly = formSettings?.asciiOnly ?? false;
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   // Hide SSNs by default
   const [showPassword, setShowPassword] = useState(false);
@@ -216,7 +220,7 @@ function TextField({
     if (rounded !== current) onAccept(rounded, {});
   };
 
-  const spacing = element.properties.tooltipText ? 30 : 8;
+  const spacing = EYE_ICON_INSET(!!element.properties.tooltipText);
   return (
     <div
       ref={containerRef}
@@ -254,6 +258,7 @@ function TextField({
                 }
           )
         }}
+        {...inputBoxAttrs(element.servar.type)}
       >
         <TextAutocomplete
           allOptions={options}
@@ -297,6 +302,7 @@ function TextField({
             placeholder=''
             value={rawValue}
             aria-label={element.properties.aria_label}
+            {...errorAttributes}
             // Not on focus because if error is showing, it will
             // keep triggering dropdown after blur
             onKeyDown={(e: any) => {
@@ -351,10 +357,13 @@ function TextField({
               // — rounding "-0." would push "0" down and overwrite the sign.
               editingRef.current || Boolean(heldSign)
             )}
+            prepare={
+              asciiOnly && isAsciiTextField(servar.type) ? toAscii : undefined
+            }
             onAccept={handleAccept}
           />
         </TextAutocomplete>
-        {servar.type === 'ssn' && rawValue && (
+        {servar.type === 'ssn' && (rawValue || editMode) && (
           <div
             css={{
               position: 'absolute',
@@ -362,7 +371,8 @@ function TextField({
               insetInlineEnd: `${spacing}px`,
               // We need to subtract half the height of the icon to center it
               top: 'calc(50% - 12px)',
-              zIndex: FORM_Z_INDEX
+              zIndex: FORM_Z_INDEX,
+              ...responsiveStyles.getTarget('endIcon')
             }}
             onClick={() => setShowPassword((prev) => !prev)}
             aria-label='Toggle SSN visibility'

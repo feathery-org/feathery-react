@@ -3,13 +3,14 @@ import React, {
   ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
-  useState,
-  useSyncExternalStore
+  useState
 } from 'react';
 
 import debounce from 'lodash.debounce';
+import { normalizeAsciiFieldValues } from '../utils/ascii';
 
 import { calculateGlobalCSS, calculateStepCSS } from '../utils/hydration';
 import { FeatheryCacheProvider } from '../utils/emotionCache';
@@ -22,6 +23,7 @@ import {
   prioritizeActions,
   processFileValues,
   registerRenderCallback,
+  remountAllForms,
   removeFilePathMapEntry,
   rerenderAllForms,
   setFormElementError,
@@ -62,7 +64,8 @@ import {
 import {
   getContainerById,
   getFieldsInRepeat,
-  getRepeatedContainer
+  getRepeatedContainer,
+  getRepeatErrorOwnerIds
 } from '../utils/repeat';
 import {
   getHideIfReferences,
@@ -70,21 +73,28 @@ import {
   getTextVariableReferences,
   getVisiblePositions
 } from '../utils/hideAndRepeats';
+import { getValueBoundReferences } from '../utils/valueBounds';
 import {
+  ensurePhoneValidator,
   isFieldValueEmpty,
+  getSettledVisiblePositions,
+  storeAlignedSliderValues,
   validateElements,
   validators
 } from '../utils/validation';
 import {
   defaultClient,
+  adoptLinkRedemption,
   FieldValues,
   fieldValues,
   fileRetryStatus,
+  initInfo,
   initState,
   updateUserId
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
-import FeatheryClient, { API_URL } from '../utils/featheryClient';
+import { InlineErrors, shiftInlineErrorRows } from '../utils/inlineErrors';
+import FeatheryClient from '../utils/featheryClient';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
 import {
@@ -119,8 +129,12 @@ import FormOff, {
   COLLAB_COMPLETED,
   COLLAB_DIRECT_DISABLED,
   FILLED_OUT,
+  LINK_REQUIRED,
   NO_BUSINESS_EMAIL
 } from '../elements/components/FormOff';
+import LinkContinue from '../elements/components/LinkContinue';
+import { canPersistLinkSecret } from '../utils/accessLink';
+import type { LinkConfirmOutcome, LinkRedemption } from '../utils/accessLink';
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
 import Grid from './grid';
@@ -128,6 +142,8 @@ import { preloadStepFields } from '../elements/fields';
 import { DEFAULT_MOBILE_BREAKPOINT, getViewport } from '../elements/styles';
 import {
   ContextOnAction,
+  ContextOnDocumentReview,
+  DocumentReviewTrigger,
   ContextOnChange,
   ContextOnError,
   ContextOnSubmit,
@@ -142,11 +158,19 @@ import {
 import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
 import { replaceTextVariables } from '../elements/components/TextNodes';
-import { getFormContext } from '../utils/formContext';
+import {
+  getFormContext,
+  waitForPendingStepSubmission
+} from '../utils/formContext';
+import { FormWebMCPTools, hasWebMCPRuntime } from '../utils/formTools/webmcp';
 import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, {
+  CreateEgnyteFolderParams,
+  FormToolsCallbacks,
   GetDocusignEnvelopeParams,
+  UploadFileToEgnyteParams,
+  RunComputerAgentOptions,
   SendDocusignParams,
   UpdateDocusignEnvelopeParams,
   setFormInternalState
@@ -215,17 +239,29 @@ import { installRecaptcha, verifyRecaptcha } from '../integrations/recaptcha';
 import { fieldAllowedFromList } from './grid/Element/utils/utils';
 import { triggerPersona } from '../integrations/persona';
 import Collaborator from '../utils/entities/Collaborator';
+import { flushFormRerender } from '../utils/entities/Field';
 import {
   useOfflineRequestHandler,
   verifyConnectivity
 } from '../utils/offlineRequestHandler';
 import {
+  isFetchNetworkError,
   removeCustomErrorHandler,
   setCustomErrorHandler
 } from '../utils/error';
 import { verifyAlloyId } from '../integrations/alloy';
 import { useFlinksConnect } from '../integrations/flinks';
-import ConnectAccountModal from '../integrations/connectAccount/ConnectAccountModal';
+import ConnectAccountModal, {
+  SavedAccountCredential
+} from '../integrations/connectAccount/ConnectAccountModal';
+import {
+  CONFIG_COMPONENTS,
+  PROVIDER_LABELS,
+  SALESFORCE_PROVIDER,
+  configFieldKey,
+  connectionFieldKey,
+  hasEmailIdentity
+} from '../integrations/connectAccount/providers';
 import {
   ACCOUNT_CONNECT_POPUP_NAME,
   getPopupFeatures,
@@ -233,9 +269,11 @@ import {
 } from '../integrations/connectAccount/oauthPopup';
 import { isNum } from '../utils/primitives';
 import {
+  documentSourceUploadFields,
   editorContainerId,
   getSignUrl,
-  isDocusignSignAction
+  isDocusignSignAction,
+  buildDocumentReviewTrigger
 } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
 import DataMappingModal from '../elements/components/dataMapping/DataMappingModal';
@@ -252,28 +290,17 @@ import {
 import { useCheckButtonAction } from './hooks/useCheckButtonAction';
 import ActionToast from './components/ActionToast';
 import FileUploadToast from './components/FileUploadToast';
-import {
-  getUploadToastHeight,
-  setUploadIndicatorEnabled,
-  subscribeToUploadToastHeight
-} from '../utils/fileUploadProgress';
+import { setUploadIndicatorEnabled } from '../utils/fileUploadProgress';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
-import { AssistantChat } from '../assistant';
-import type {
-  AssistantLayoutState,
-  AssistantStepSettings
-} from '../assistant/AssistantChat';
-import AssistantClient from '../assistant/AssistantClient';
+import { confirmLeavingUnsavedWork } from '../utils/unsavedWork';
 import {
-  getActiveDocxEditorEnvelopeTarget,
-  getActiveDocxEditorTarget
-} from '../assistant/tools/docx/docxEditorRegistry';
-import { hasDirtyDocxEditors } from '../elements/components/DocxEditor/docxDirtyRegistry';
-
-const UNSAVED_DOCX_MESSAGE =
-  'You have unsaved changes in the document editor. If you leave now, your changes will be lost.';
+  STEP_EVENT_BACK,
+  STEP_EVENT_LOAD,
+  STEP_EVENT_SKIP,
+  STEP_EVENT_SUBMIT
+} from '../utils/stepEvents';
 
 const DocumentViewer = React.lazy(
   () => import('../elements/components/DocumentViewer')
@@ -284,6 +311,13 @@ const DocumentViewer = React.lazy(
 const ENVELOPE_FLOW_TOAST_ID = 'envelope-flow';
 const ENVELOPE_CONTAINER_TOAST_ID = 'envelope-container';
 
+// Shown instead of the closed-form copy when the session request itself fails
+// on a form only the session can open (an access link, or a session-gated
+// form). That path is reachable on an ordinary connectivity failure, where the
+// form is not closed at all and a reload is all the user needs.
+const SESSION_FAILED_MESSAGE =
+  "We couldn't load this form. Please refresh the page.";
+
 // Bottom-right overlays stack rather than overlap: each one clears the boxes
 // already sitting below it, plus a gap. An absent box contributes nothing.
 const BOTTOM_RIGHT_STACK_GAP = 10;
@@ -291,7 +325,12 @@ const stackAbove = (height: number) =>
   height > 0 ? height + BOTTOM_RIGHT_STACK_GAP : 0;
 
 export * from './grid/StyledContainer';
-export type { StyledContainerProps } from './grid/StyledContainer';
+
+// DocuSign's own status, when the backend reports it, says whether the press
+// ended as a draft: a Sign can be held as one, and a retried Draft can find
+// the envelope already sent. Older backends report none, so the press decides.
+const isDocusignDraft = (draft: boolean, data: any) =>
+  data?.docusign_status ? data.docusign_status === 'created' : draft;
 
 export interface Props {
   formId: string;
@@ -303,6 +342,11 @@ export interface Props {
   onError?: null | ((context: ContextOnError) => Promise<any> | void);
   onView?: null | ((context: ContextOnView) => Promise<any> | void);
   onAction?: null | ((context: ContextOnAction) => Promise<any> | void);
+  // Runs after a toolbar action (Sign / Create Draft / Download / Save /
+  // Continue) on the Generate Documents review screen has completed.
+  onDocumentReview?:
+    | null
+    | ((context: ContextOnDocumentReview) => Promise<any> | void);
   onViewElements?: string[];
   saveUrlParams?: boolean;
   initialValues?: FieldValues;
@@ -321,6 +365,9 @@ export interface Props {
   _draft?: boolean;
   readOnly?: boolean;
   hashNavigation?: boolean;
+  // Registers feathery_get_step/fill_step/next_step on document.modelContext
+  // when present
+  enableFormTools?: boolean;
 }
 
 interface InternalProps {
@@ -337,7 +384,7 @@ export interface ClickActionElement {
 }
 
 const getSubmissionErrorMessage = (error: unknown): string => {
-  if (error instanceof TypeError && error.message === 'Failed to fetch') {
+  if (isFetchNetworkError(error)) {
     return 'Unable to upload files. Please check your connection and try again.';
   }
   if (error instanceof Error) {
@@ -350,6 +397,24 @@ function closePreOpenedWindows(windows: Map<number, Window | null>) {
   windows.forEach((win) => win?.close());
 }
 
+type RequiredFlowAction = {
+  type: keyof typeof REQUIRED_FLOW_ACTIONS;
+  provider?: string;
+};
+
+// A step's connect_account requirement is met by the submission's existing,
+// fully configured connection, not only by a flow run in this tab. A
+// collaborator continuing a submission whose owner already connected has the
+// connection fields but has never run the flow themselves, and must still be
+// able to move on. An account that is attached but not yet configured (no Box
+// folder chosen) does not count: uploads would have nowhere to go.
+function isRequiredFlowSatisfied(action: RequiredFlowAction) {
+  if (action.type !== ACTION_CONNECT_ACCOUNT || !action.provider) return false;
+  if (!fieldValues[connectionFieldKey(action.provider)]) return false;
+  const configKey = configFieldKey(action.provider);
+  return !configKey || !!fieldValues[configKey];
+}
+
 // Pre-open windows synchronously within the user-gesture call stack.
 // Connect Account always needs its popup opened this way since the OAuth
 // start call is async; iOS Safari additionally blocks window.open() for any
@@ -358,7 +423,10 @@ function closePreOpenedWindows(windows: Map<number, Window | null>) {
 function preOpenActionWindows(actions: any[]) {
   const windows = new Map<number, Window | null>();
   actions.forEach((action, idx) => {
-    if (action.type === ACTION_CONNECT_ACCOUNT) {
+    if (
+      action.type === ACTION_CONNECT_ACCOUNT &&
+      !['box', SALESFORCE_PROVIDER].includes(action.provider)
+    ) {
       windows.set(
         idx,
         featheryWindow().open(
@@ -393,6 +461,7 @@ function Form({
   onError = null,
   onView = null,
   onAction = null,
+  onDocumentReview = null,
   onViewElements = [],
   saveUrlParams = false,
   hideTestUI = false,
@@ -409,13 +478,13 @@ function Form({
   className = '',
   children,
   readOnly = false,
-  hashNavigation
+  hashNavigation,
+  enableFormTools = false
 }: InternalProps & Props) {
   const [formName, setFormName] = useState('');
   const [formId, setFormId] = useState(formIdProp);
   const clientRef = useRef<any>(undefined);
   const client = clientRef.current;
-  const assistantClientRef = useRef<AssistantClient | undefined>(undefined);
   const navigate = useNavigate();
   const location = useLocation();
   const session = initState.formSessions[formId];
@@ -433,28 +502,34 @@ function Form({
   const [maxDepth, setMaxDepth] = useState(0);
   // No state since off reason is set in two locations almost simultaneously
   const formOffReason = useRef('');
+  // Copy for a blocked state the reason alone doesn't describe well enough.
+  // Empty leaves FormOff on the standard message for the reason.
+  const formOffMessage = useRef('');
+  // A single-use access link that this device hasn't claimed yet: the form
+  // stays behind the Continue screen until the user redeems it.
+  const [linkConfirmRequired, setLinkConfirmRequired] = useState(false);
   const [formSettings, setFormSettings] = useState({
+    formKey: formIdProp,
     readOnly,
+    authSensitiveActionsOnly: false,
     errorType: 'html5',
     autocomplete: 'on',
     autofocus: true,
     showBrand: false,
-    brandPosition: undefined,
+    brandPosition: undefined as string | undefined,
     autoscroll: 'top_of_form',
     rightToLeft: false,
     allowEdits: true,
     saveUrlParams: false,
     saveHideIfFields: false,
     clearHideIfFields: false,
+    asciiOnly: false,
     showFileUploadProgress: true,
     showDocumentProgress: true,
     completionBehavior: '',
     globalStyles: {},
     mobileBreakpoint: DEFAULT_MOBILE_BREAKPOINT,
-    assistantEnabled: false,
-    assistantColor: '#6b7280',
-    assistantWorkflowActions: [],
-    assistantStepSettings: {} as AssistantStepSettings
+    assistantEnabled: false
   });
   const trackHashes = useRef(false);
   const curLanguage = useRef<undefined | string>(undefined);
@@ -474,18 +549,20 @@ function Form({
   const extractionFileFields = useRef<Record<string, Record<string, string[]>>>(
     {}
   );
-  const [inlineErrors, setInlineErrors] = useState<
-    Record<string, { message: string; index: number }>
-  >({});
+  // Whether only the session decides if this form may open (link required,
+  // collaboration, business email). Gated until the form payload says otherwise
+  const sessionGated = useRef(true);
+  const [inlineErrors, setInlineErrors] = useState<InlineErrors>({});
+  const [shouldScrollToError, setShouldScrollToError] = useState(false);
+  const [errorAnnouncement, setErrorAnnouncement] = useState('');
   const [, setRepeatChanged] = useState(false);
 
   const [integrations, setIntegrations] = useState<null | Record<string, any>>(
     null
   );
   const flowCompleted = useRef(false);
-  const [requiredStepAction, setRequiredStepAction] = useState<
-    keyof typeof REQUIRED_FLOW_ACTIONS | ''
-  >('');
+  const [requiredStepAction, setRequiredStepAction] =
+    useState<RequiredFlowAction | null>(null);
   const formLoadRan = useRef(false);
 
   // Lookup utility to find a servar (server field definition) by its key.
@@ -540,15 +617,28 @@ function Form({
       const { servar, step } = found;
       if (!FILE_FIELD_TYPES.includes(servar.type)) continue;
       if (isFieldValueEmpty(fieldValues[fieldKey], servar)) continue;
-      fileEntries.push({
-        servar: {
-          key: servar.key,
-          [servar.type]: fieldValues[fieldKey],
-          repeated: Boolean(servar.repeated)
-        },
-        stepKey: step.key
-      });
+      fileEntries.push(fileSubmitEntry(servar, step));
     }
+    if (fileEntries.length) await client.submitFiles(fileEntries);
+  };
+
+  const fileSubmitEntry = (servar: any, step: any) => ({
+    servar: {
+      key: servar.key,
+      [servar.type]: fieldValues[servar.key],
+      repeated: Boolean(servar.repeated)
+    },
+    stepKey: step.key
+  });
+
+  // Force-submit the file upload fields a Generate Documents action includes,
+  // regardless of the button's submit toggle, so the backend has the files.
+  const submitDocumentSourceFiles = async (action: Record<string, any>) => {
+    // A container rejects upload sources, so there's nothing to send.
+    if (editorContainerId(action)) return;
+    const fileEntries = documentSourceUploadFields(action.documents, steps).map(
+      ({ servar, step }) => fileSubmitEntry(servar, step)
+    );
     if (fileEntries.length) await client.submitFiles(fileEntries);
   };
 
@@ -589,6 +679,13 @@ function Form({
     getViewport(formSettings.mobileBreakpoint)
   );
 
+  // A bottom badge follows mobile content so it cannot cover the last action.
+  const inlineWatermark =
+    viewport === 'mobile' &&
+    formSettings.showBrand &&
+    (!formSettings.brandPosition ||
+      formSettings.brandPosition.startsWith('bottom'));
+
   const prevAuthId = usePrevious(authState.authId);
   const prevStepKey = usePrevious(stepKey);
 
@@ -604,6 +701,12 @@ function Form({
   const [reviewViewerPayload, setReviewViewerPayload] = useState<any>(null);
   type ConnectAccountModalState = {
     provider: string;
+    credentials?: SavedAccountCredential[];
+    chooseCredential?: boolean;
+    canSaveCredential?: boolean;
+    // The submission's connection belongs to another signed-in user; this
+    // user may only replace it with their own, not browse or reconfigure it.
+    lockedByOwner?: boolean;
     // Captured from the triggering runElementActions call: advances the
     // action chain past this action, and ends the button/action's loading
     // state. Each is a closure local to that call, not reachable from here
@@ -632,46 +735,6 @@ function Form({
   // When the active step changes, recalculate the dimensions of the new step
   const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
 
-  const [assistantLayout, setAssistantLayout] = useState<AssistantLayoutState>({
-    mode: 'current',
-    isOpen: false,
-    side: null,
-    width: 0,
-    isResizing: false
-  });
-  const handleAssistantLayoutChange = useCallback(
-    (state: AssistantLayoutState) => setAssistantLayout(state),
-    []
-  );
-  const assistantOffsetCSS = useMemo(() => {
-    const { side, width, isResizing } = assistantLayout;
-    const root = activeStep?.subgrids?.find(
-      (g: any) => g.position?.length === 0
-    );
-    const isFillWidth = root?.width === 'fill' || root?.mobile_width === 'fill';
-    const transition = isResizing
-      ? 'none'
-      : 'max-width 0.25s ease, min-width 0.25s ease, margin 0.25s ease';
-    const left = side === 'left' ? width : 0;
-    const right = side === 'right' ? width : 0;
-    if (isFillWidth) {
-      const calc = `calc(100% - ${left + right}px)`;
-      const sidebarOpen = !!side && width > 0;
-      return {
-        minWidth: calc,
-        maxWidth: calc,
-        marginLeft: `${left}px`,
-        marginRight: `${right}px`,
-        transition,
-        ...(sidebarOpen ? { height: '100vh', overflowY: 'auto' } : {})
-      };
-    }
-    if (!side || !width) return {};
-    return {
-      marginLeft: side === 'left' ? `${width}px` : 'auto',
-      marginRight: side === 'right' ? `${width}px` : 'auto'
-    };
-  }, [assistantLayout, activeStep]);
   const globalCSS = useMemo(
     () => calculateGlobalCSS(formSettings.globalStyles),
     [formSettings.globalStyles]
@@ -803,14 +866,6 @@ function Form({
     }
   }, []);
 
-  // The file upload box is page-level and may be rendered by another form
-  // instance, so its height comes from the shared tracker rather than a ref
-  const fileUploadToastHeight = useSyncExternalStore(
-    subscribeToUploadToastHeight,
-    getUploadToastHeight,
-    getUploadToastHeight
-  );
-
   // The Feathery badge sits in the bottom-right corner, so overlays there start
   // above it
   const bottomRightBase =
@@ -839,6 +894,8 @@ function Form({
   // All mount and unmount logic should live here
   useEffect(() => {
     registerRenderCallback(_internalId, 'form', () => {
+      if (enableFormTools && internalState[_internalId])
+        internalState[_internalId].formToolsRenderOwed = true;
       setRender((render) => ({ ...render }));
     });
     if (
@@ -850,6 +907,8 @@ function Form({
     return () => {
       delete initState.renderCallbacks[_internalId];
       delete initState.redirectCallbacks[_internalId];
+      if (internalState[_internalId])
+        delete internalState[_internalId].formActions;
     };
   }, []);
 
@@ -873,16 +932,10 @@ function Form({
     }
   }, [language]);
 
-  useEffect(() => {
-    if (!clientRef.current) return;
-    clientRef.current.offlineRequestHandler
-      .clearFailedFileUploadRequests()
-      .catch(() => {});
-  }, []);
-
   // Logic to run every time step changes
   useEffect(() => {
     if (!activeStep) return;
+    setErrorAnnouncement('');
 
     setAutoValidate(false); // Each step to initially not auto validate
 
@@ -896,16 +949,43 @@ function Form({
       focusRef.current = 'already focused';
     }
 
-    let requiredStepAction: any = '';
+    let requiredStepAction: RequiredFlowAction | null = null;
     activeStep.buttons.forEach((b: any) =>
       (b.properties.actions ?? []).forEach((action: any) => {
         if (action.type in REQUIRED_FLOW_ACTIONS) {
-          requiredStepAction = action.type;
+          requiredStepAction = action;
         }
       })
     );
     setRequiredStepAction(requiredStepAction);
+
+    internalState[_internalId]?.runtimeListeners?.forEach((listener) =>
+      listener({ type: 'step', stepId: activeStep.id, stepKey: activeStep.key })
+    );
   }, [activeStep?.id]);
+
+  useEffect(() => {
+    if (!shouldScrollToError) return;
+    setShouldScrollToError(false);
+    const firstInvalidField = formRef.current?.querySelector(
+      '[data-feathery-error-id]'
+    );
+    const errorId = firstInvalidField?.getAttribute('data-feathery-error-id');
+    const errorLabel = errorId
+      ? firstInvalidField?.ownerDocument.getElementById(errorId)
+      : null;
+    setErrorAnnouncement(
+      [
+        errorLabel?.getAttribute('data-feathery-error-label'),
+        errorLabel?.textContent
+      ]
+        .filter(Boolean)
+        .join(': ')
+    );
+    if (firstInvalidField && !isElementInViewport(firstInvalidField)) {
+      firstInvalidField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [shouldScrollToError, inlineErrors]);
 
   // viewElements state
   const [viewElements, setViewElements] = useState<string[]>([]);
@@ -928,6 +1008,13 @@ function Form({
       return getTextVariableReferences(getAllElements(activeStep));
     return new Set<string>();
   }, [activeStep?.id]);
+
+  // A slider's range reads its linked min/max fields while rendering, so editing
+  // one of them has to repaint the slider too
+  const valueBoundFieldReferences = useMemo(
+    () => getValueBoundReferences(activeStep),
+    [activeStep?.id]
+  );
 
   // Servar per field key. updateFieldValues runs on every keystroke, so this
   // avoids both the linear scan in getServarByFieldKey and the Field entity,
@@ -972,17 +1059,34 @@ function Form({
     });
 
     setRepeatChanged((repeatChanged) => !repeatChanged);
-    updateFieldValues(updatedValues);
+    // Adding/removing a repeat row is a structural change, not user input on a
+    // field. Don't auto-validate here: a brand-new, untouched row must not show
+    // a required error (inline or browser-native) until the user actually
+    // submits. Submit still validates every row via its own validateElements
+    // call, so validation is not weakened.
+    // clearErrors stays false too: it would wipe custom validity from EVERY
+    // control, so an already-invalid surviving row would silently look valid
+    // until the next validation pass. On the add path no rows move, so
+    // existing validity stays correct; removal shifts rows across DOM nodes,
+    // which removeRepeatedRow handles itself (html5 clear + inline reindex).
+    updateFieldValues(updatedValues, {
+      triggerErrors: false,
+      clearErrors: false
+    });
+    return updatedValues;
   }
 
-  function addRepeatedRow(repeatContainer: Subgrid | undefined, limit = null) {
+  function addRepeatedRow(
+    repeatContainer: Subgrid | undefined,
+    limit: number | null = null
+  ) {
     const getNewVal = (field: any) => {
       const val = fieldValues[field.servar.key];
       if (limit && val && Array.isArray(val) && val.length >= limit) return val;
       return [
         // @ts-expect-error TS(2461): Type 'FeatheryFieldTypes' is not an array type.
         ...val,
-        getDefaultFieldValue(field)
+        getDefaultFieldValue(field, formSettings.asciiOnly)
       ];
     };
     updateRepeatValues(repeatContainer, getNewVal);
@@ -1027,28 +1131,77 @@ function Form({
         removeFilePathMapEntry(field.servar.key, curIndex);
 
       const newRepeatedValues = justRemove(vals, curIndex);
-      const defaultValue = [getDefaultFieldValue(field)];
+      const defaultValue = [
+        getDefaultFieldValue(field, formSettings.asciiOnly)
+      ];
       return newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
     };
-    updateRepeatValues(curRepeatContainer, getNewVal);
+    const updatedValues = updateRepeatValues(curRepeatContainer, getNewVal);
     internalState[_internalId].updateFieldOptions(removeServars, curIndex);
+
+    // HTML5-mode errors live in the DOM as setCustomValidity state, and repeat
+    // rows are keyed by array position, so removal shifts surviving rows into
+    // DOM nodes that keep the previous occupant's validity -- the message would
+    // render on the wrong row. DOM validity can't be reindexed, so clear it
+    // all; the next validation pass restores any real errors.
+    if (formSettings.errorType === 'html5') clearBrowserErrors(formRef);
+
+    // Inline errors for a repeated element live in its `byIndex` map. Drop the
+    // removed row's entry and shift higher-indexed rows down so each remaining
+    // row keeps its own error instead of inheriting a neighbor's. Operating on
+    // `byIndex` (not string keys) means a literal field like `foo-0` is never
+    // mistaken for a row of `foo`.
+    // Every element in the container can own a per-row error, not just servar
+    // fields: buttons (and containers) store submit/action failures under their
+    // element id, so they must be shifted too.
+    const applyShift = () =>
+      setInlineErrors((prev) =>
+        shiftInlineErrorRows(
+          prev,
+          [
+            ...Object.keys(removeServars),
+            ...getRepeatErrorOwnerIds(activeStep, curRepeatContainer)
+          ],
+          curIndex
+        )
+      );
+    // A pending async button-error publish (see setButtonError) still carries
+    // the pre-removal row index. Shift only after it lands so its error gets
+    // reindexed with the surviving rows (or dropped with the removed one)
+    // instead of attaching to whichever row now occupies the stale index.
+    const pendingPublish =
+      internalState[_internalId]?.pendingInlineErrorPublish;
+    if (pendingPublish) pendingPublish.then(applyShift);
+    else applyShift();
+
+    // Every descendant changes position, including fields hidden by the
+    // current row's conditions. A later step submit may omit those fields, so
+    // persist the whole structural edit now.
+    return {
+      values: updatedValues,
+      repeatedFileKeys: fieldsInContainer
+        .filter((field: any) => FILE_FIELD_TYPES.includes(field.servar.type))
+        .map((field: any) => field.servar.key)
+    };
   }
 
   // Debouncing the validateElements call to rate limit calls
   const debouncedValidate = useCallback(
     debounce((setInlineErrors: any) => {
       // default form validation
-      visiblePositions &&
+      activeStep &&
         validateElements({
           step: activeStep,
-          visiblePositions,
+          visiblePositions: getVisiblePositions(activeStep, _internalId),
+          internalId: _internalId,
           triggerErrors: true,
+          reportNativeErrors: false,
           errorType: formSettings.errorType,
           formRef,
           setInlineErrors
         });
     }, 750),
-    [activeStep?.id, formRef]
+    [activeStep, formSettings.errorType, _internalId]
   );
 
   // Debouncing the rerender due to changing values of referenced fields in hide if rules.
@@ -1070,22 +1223,6 @@ function Form({
     }),
     [setRender]
   );
-
-  const getAssistantTargets = useCallback(() => {
-    const targets: { type: string; id: string }[] = [];
-    if (formId) targets.push({ type: 'panel', id: formId });
-    if (initState.userId) targets.push({ type: 'fuser', id: initState.userId });
-    // The mounted editor is the only source of truth. Generation commonly
-    // happens on a previous step, so scanning the current step's actions loses
-    // the document exactly when the editor is open. This is still only the
-    // document template target; the editor separately publishes its real
-    // envelope as the only per-submission index scope.
-    const documentTarget = getActiveDocxEditorTarget(_internalId);
-    if (documentTarget) targets.push(documentTarget);
-    const envelopeTarget = getActiveDocxEditorEnvelopeTarget(_internalId);
-    if (envelopeTarget) targets.push(envelopeTarget);
-    return targets;
-  }, [formId]);
 
   useEffect(() => {
     return () => {
@@ -1112,6 +1249,11 @@ function Form({
     { rerender = true, clearErrors = true, triggerErrors = true } = {}
   ) => {
     if (clearErrors) clearBrowserErrors(formRef);
+    newFieldValues = normalizeAsciiFieldValues(
+      newFieldValues,
+      servarByKey,
+      formSettings.asciiOnly
+    );
     const entries = Object.entries(newFieldValues);
     if (entries.every(([key, val]) => fieldValues[key] === val)) return false;
 
@@ -1122,6 +1264,10 @@ function Form({
     const textVariableDependenciesChanged = entries.some(
       ([key, val]) =>
         fieldValues[key] !== val && textVariableFieldReferences.has(key)
+    );
+    const valueBoundDependenciesChanged = entries.some(
+      ([key, val]) =>
+        fieldValues[key] !== val && valueBoundFieldReferences.has(key)
     );
 
     const fields = internalState[_internalId]?.fields;
@@ -1142,6 +1288,7 @@ function Form({
     );
 
     Object.assign(fieldValues, transformedFieldValues);
+    setErrorAnnouncement('');
 
     // Always rerender from empty state for display purposes
     // If any fields involved in a hideIf have changed, then rerender if
@@ -1150,9 +1297,11 @@ function Form({
     if (rerender || empty) setRender((render) => ({ ...render }));
     else {
       // Not exclusive: a key can drive both a hideIf rule and a text variable,
-      // and the text variable needs the faster repaint either way.
+      // and the text variable needs the faster repaint either way. A slider's
+      // range likewise only repaints a mounted field, so it shares that repaint.
       if (hideIfDependenciesChanged) debouncedRerender();
-      if (textVariableDependenciesChanged) debouncedTextVariableRerender();
+      if (textVariableDependenciesChanged || valueBoundDependenciesChanged)
+        debouncedTextVariableRerender();
     }
 
     // Only validate on each field change if auto validate is enabled due to prev submit attempt
@@ -1163,7 +1312,13 @@ function Form({
 
   // For audio AI only right now
   const [pollFuserData, setPollFuserData] = useState(_pollFuserData);
-  usePollFuserData(pollFuserData, client, updateFieldValues);
+  // An access link leaves the user id empty until the session (or a redeem)
+  // resolves it, and polling without one would fetch a different submission
+  usePollFuserData(
+    pollFuserData && !!initState.userId,
+    client,
+    updateFieldValues
+  );
 
   const eventCallbackMap: Record<string, any> = {
     change: onChange,
@@ -1173,7 +1328,8 @@ function Form({
     submit: onSubmit,
     error: onError,
     view: onView,
-    action: onAction
+    action: onAction,
+    document_review: onDocumentReview
   };
 
   const eventHasUserLogic = (event: string) => {
@@ -1267,7 +1423,14 @@ function Form({
         if (canRunAction(logicRule, currentStepId, props, altMatchId)) {
           logicRan = true;
 
-          if (toAwait) await toAwait;
+          // Client-side rules that run before click actions don't wait on the
+          // step response; the client holds their field writes until the step
+          // answers land. Server-side rules read saved answers, so they wait.
+          if (
+            toAwait &&
+            (logicRule.server_side || logicRule.metadata?.after_click)
+          )
+            await toAwait;
 
           try {
             if (logicRule.server_side) {
@@ -1290,14 +1453,29 @@ function Form({
         }
       }
       // Change event can happen too frequently to flush every time
-      if (event !== 'change' && flush) await defaultClient.flushCustomFields();
+      if (event !== 'change' && flush)
+        await Promise.all([
+          client.flushCustomFields(),
+          defaultClient.flushCustomFields()
+        ]);
     }
 
     // Flush field updates to backend before form completes
-    if (event === 'form_complete') await defaultClient.flushCustomFields();
+    if (event === 'form_complete')
+      await Promise.all([
+        client.flushCustomFields(),
+        defaultClient.flushCustomFields()
+      ]);
 
     return logicRan;
   };
+
+  // Fires the `document_review` rules (and onDocumentReview) once a
+  // review-screen toolbar action has finalized and run its outcome, so a rule
+  // can react to what the filler chose - e.g. mark a record as sent for
+  // signature when they press Sign.
+  const runDocumentReviewLogic = (trigger: DocumentReviewTrigger) =>
+    runUserLogic('document_review', () => ({ trigger }));
 
   const getErrorCallback =
     (props1 = {}) =>
@@ -1412,7 +1590,9 @@ function Form({
                 // completion signal, so all that's left is telling the filler.
                 showEnvelopeOutcome(
                   ENVELOPE_FLOW_TOAST_ID,
-                  draft ? 'Saved as Draft' : 'Sent for Signature',
+                  isDocusignDraft(draft, data)
+                    ? 'Saved as Draft'
+                    : 'Sent for Signature',
                   action.documents
                 );
                 return;
@@ -1435,14 +1615,15 @@ function Form({
                 );
             }
           };
+          await submitDocumentSourceFiles(action);
           const data = await client.generateEnvelopes(action);
           if (!data) throw new Error('Document generation failed');
           if (data.status === 'error') throw new Error(data.message);
           if (action.envelope_action === 'open_in_editor') {
             return await new Promise((resolve, reject) => {
-              // What finalize returned, so the method resolves with the real
-              // outcome ({files: [...]}) — the generate payload here only holds
-              // {documents, expires_at}.
+              // What the completing finalize returned, so the method resolves
+              // with the real outcome ({files: [...]}) — the generate payload
+              // here only holds {documents, expires_at}.
               let finalized: any;
               setReviewViewerPayload({
                 payload: data,
@@ -1450,19 +1631,39 @@ function Form({
                 onFinalize: async ({
                   envelopes,
                   envelopeAction,
-                  draft
+                  draft,
+                  refreshDraft,
+                  completes
                 }: any) => {
                   const result = await client.finalizeEnvelopeReview(action, {
                     envelopes,
                     envelopeAction,
-                    draft
+                    draft,
+                    refreshDraft
                   });
                   if (!result) {
                     return { status: 'error', message: 'Finalize failed' };
                   }
                   if (result.status === 'error') return result;
                   await runEnvelopeAction(result, envelopeAction, draft);
-                  finalized = result;
+                  await runDocumentReviewLogic(
+                    buildDocumentReviewTrigger({
+                      action,
+                      elementId: '',
+                      envelopes,
+                      envelopeAction,
+                      draft,
+                      result
+                    })
+                  );
+                  // A kept-open screen can Download after a Draft; the flow
+                  // still completes with the draft. The toolbar action rides
+                  // along so the awaiting rule can branch on it.
+                  if (completes)
+                    finalized = {
+                      ...result,
+                      reviewAction: draft ? 'draft' : envelopeAction
+                    };
                   return result;
                 },
                 onComplete: () => {
@@ -1479,13 +1680,15 @@ function Form({
               });
             });
           }
-          await runEnvelopeAction(data);
+          await runEnvelopeAction(data, undefined, action.draft === true);
           return data;
         },
         // Lets a document-editor container, which runs its own signing action
         // outside this flow, report the outcome through the same toast.
         showEnvelopeOutcome: (label: string, documents?: string[]) =>
           showEnvelopeOutcome(ENVELOPE_CONTAINER_TOAST_ID, label, documents),
+        // Same for the document_review rules its signing action fires.
+        runDocumentReviewLogic,
         fields,
         products: Object.seal(
           getSimplifiedProducts(integrations?.stripe, updateFieldValues, client)
@@ -1551,12 +1754,14 @@ function Form({
             const { inlineErrors, setInlineErrors } =
               internalState[_internalId];
             let index = null;
-            let message = error;
+            let message: string;
             // If the user provided an object for an error then use the specified index and message
             // This allows users to specify an error on an element in a repeated row
             if (typeof error === 'object') {
               index = error.index;
               message = error.message;
+            } else {
+              message = error;
             }
             setFormElementError({
               formRef,
@@ -1586,6 +1791,7 @@ function Form({
           }
         },
         sendDocusignEnvelope: async (params: SendDocusignParams) => {
+          await waitForPendingStepSubmission(client);
           await Promise.all([
             client.flushCustomFields(),
             defaultClient.flushCustomFields()
@@ -1596,6 +1802,10 @@ function Form({
           client.getDocusignEnvelope(params),
         updateDocusignEnvelope: (params: UpdateDocusignEnvelopeParams) =>
           client.updateDocusignEnvelope(params),
+        uploadFileToEgnyte: (params: UploadFileToEgnyteParams) =>
+          client.uploadFileToEgnyte(params),
+        createEgnyteFolder: (params: CreateEgnyteFolderParams) =>
+          client.createEgnyteFolder(params),
         getDocusignBrands: async () => {
           await Promise.all([
             client.flushCustomFields(),
@@ -1612,6 +1822,7 @@ function Form({
           envelopes,
           attachments
         }: FillQuikParams) => {
+          await waitForPendingStepSubmission(client);
           await Promise.all([
             client.flushCustomFields(),
             defaultClient.flushCustomFields()
@@ -1682,6 +1893,24 @@ function Form({
           }
           return data;
         },
+        runComputerAgent: async (
+          agentId: string,
+          options: RunComputerAgentOptions = {}
+        ) => {
+          const { userId } = initInfo();
+          return client.runComputerAgent(agentId, {
+            ...options,
+            onComplete: (data: any) => {
+              // A run that finishes after the submission changed must not
+              // write into the new session's fields
+              if (data.status === 'complete' && initInfo().userId === userId) {
+                updateFieldValues(data.data ?? {});
+                processFileValues(data.file_values);
+              }
+              options.onComplete?.(data);
+            }
+          });
+        },
         forwardInboxEmail: async (options: ForwardInboxEmailOptions) => {
           return client.forwardInboxEmail({ options });
         }
@@ -1719,7 +1948,7 @@ function Form({
     // Hydrate field descriptions
     newStep.servar_fields.forEach((field: any) => {
       const servar = field.servar;
-      servar.name = replaceTextVariables(servar.name, field.repeat);
+      servar.name = replaceTextVariables(servar.name, field.repeat, true);
       const disabled = !fieldAllowedFromList(allowLists, servar.key);
       const props = field.properties;
       props.disabled = props.disabled || disabled;
@@ -1733,7 +1962,7 @@ function Form({
     client
       .registerEvent({
         step_key: newStep.key,
-        event: 'load',
+        event: STEP_EVENT_LOAD,
         previous_step_key: oldKey
       })
       .catch(() => {});
@@ -1741,7 +1970,10 @@ function Form({
 
   const visiblePositions = useMemo(() => {
     if (!activeStep) return null;
-    const visiblePositions = getVisiblePositions(activeStep, _internalId);
+    const visiblePositions = getSettledVisiblePositions(
+      activeStep,
+      _internalId
+    );
 
     if (formSettings.clearHideIfFields) {
       // Auto-reset hidden fields to defaults when they become hidden via hideIf rules.
@@ -1757,7 +1989,7 @@ function Form({
         if (isRepeated) {
           const currentVal = fieldValues[sf.servar.key];
           if (!Array.isArray(currentVal)) return;
-          const defaultVal = getDefaultFieldValue(sf);
+          const defaultVal = getDefaultFieldValue(sf, formSettings.asciiOnly);
           const defaultJson = JSON.stringify(defaultVal);
           let changed = false;
           const newArray = currentVal.map((val: any, i: number) => {
@@ -1773,7 +2005,7 @@ function Form({
           });
           if (changed) newFieldVals[sf.servar.key] = newArray;
         } else if (!flags[0]) {
-          const newVal = getDefaultFormFieldValue(sf);
+          const newVal = getDefaultFormFieldValue(sf, formSettings.asciiOnly);
           if (
             JSON.stringify(newVal) !== JSON.stringify(getFieldValue(sf).value)
           ) {
@@ -1800,6 +2032,14 @@ function Form({
     }
   }
 
+  // Commit signal for formTools' fillStep (see renderTick.ts)
+  useLayoutEffect(() => {
+    if (!enableFormTools || !internalState[_internalId]) return;
+    internalState[_internalId].formToolsRenderTick =
+      (internalState[_internalId].formToolsRenderTick ?? 0) + 1;
+    internalState[_internalId].formToolsRenderOwed = false;
+  });
+
   useEffect(() => {
     if (clientRef.current) return;
 
@@ -1807,7 +2047,8 @@ function Form({
       formId,
       hasRedirected,
       _draft,
-      _bypassCDN
+      _bypassCDN,
+      enableFormTools
     );
     const newClient = clientRef.current;
     let saveUrlParamsFormSetting = false;
@@ -1840,7 +2081,11 @@ function Form({
           };
         if (res.save_url_params) saveUrlParamsFormSetting = true;
         const mappedSettings = mapFormSettingsResponse(res);
-        setFormSettings({ ...formSettings, ...mappedSettings });
+        setFormSettings({
+          ...formSettings,
+          ...mappedSettings,
+          formKey: newClient.formKey
+        });
         // The upload tracker is keyed by formKey since upload reporting
         // happens in FeatheryClient, outside React state. Read the mapped
         // setting rather than the raw response so the default lives in one place
@@ -1852,6 +2097,8 @@ function Form({
         setLogicRules(res.logic_rules);
         setSharedCodes((prev) => res.shared_codes || prev);
         extractionFileFields.current = res.extraction_file_fields || {};
+        // A payload from before the flag existed can't vouch for the form
+        sessionGated.current = res.session_gated ?? true;
         trackHashes.current =
           hashNavigation !== undefined ? hashNavigation : res.track_hashes;
 
@@ -1884,8 +2131,15 @@ function Form({
     newClient
       .fetchSession(formPromise, true)
       .then(([session, steps]: any) => {
+        // A single-use link carries no form data until this device claims it
+        if (session?.link?.confirm) {
+          setLinkConfirmRequired(true);
+          return;
+        }
+
         if (!session || session.collaborator?.invalid)
           formOffReason.current = CLOSED;
+        else if (session.link?.required) formOffReason.current = LINK_REQUIRED;
         else if (session.collaborator?.completed)
           formOffReason.current = COLLAB_COMPLETED;
         else if (session.collaborator?.direct_submission_disabled)
@@ -1933,6 +2187,7 @@ function Form({
           initialStepId,
           steps,
           sessionCurrentStep: session.current_step_key,
+          collaboratorStartStep: session.collaborator?.start_step_key,
           formId: _internalId
         });
         if (trackHashes.current) setUrlStepHash(navigate, steps, newKey);
@@ -1940,11 +2195,31 @@ function Form({
       })
       .catch(async (error: any) => {
         console.warn(error);
+        // The session can fail before the form payload sets sessionGated. An
+        // origin outage can fail both, and a missing payload is treated as gated.
+        const data = await formPromise.catch(() => null);
+        // Only the session resolves which submission an access link opens, and
+        // whether a gated form may open at all. Block instead of opening the
+        // origin step past checks that never ran. After a login redirect the
+        // auth hook picks the step, but it waits on integrations that only a
+        // loaded session provides, so it would never pick one.
+        if (
+          !data ||
+          initState.linkToken ||
+          sessionGated.current ||
+          authState.redirectAfterLogin ||
+          authState.hasRedirected
+        ) {
+          formOffReason.current = CLOSED;
+          formOffMessage.current = SESSION_FAILED_MESSAGE;
+          setRender((render) => ({ ...render }));
+          return;
+        }
+        if (stepKey) return;
         // Go to first step if origin fails
-        const [data] = await formPromise;
         const newKey = (getOrigin as any)(data).key;
-        if (trackHashes.current) setUrlStepHash(navigate, steps, newKey);
-        else setStepKey(newKey);
+        if (trackHashes.current) setUrlStepHash(navigate, data, newKey);
+        setStepKey(newKey);
       });
   }, [activeStep, setSteps, updateFieldValues]);
 
@@ -1991,7 +2266,7 @@ function Form({
     const servar = field.servar;
     let repeatContainer: Subgrid | undefined;
     if (servar.repeat_trigger === 'set_value') {
-      const defaultValue = getDefaultFieldValue(field);
+      const defaultValue = getDefaultFieldValue(field, formSettings.asciiOnly);
       const { value: previousValue, valueList } = getFieldValue(field);
 
       // Auto-add row when user fills the last field from empty state.
@@ -2042,21 +2317,27 @@ function Form({
 
   const submitStep = async (
     metadata: any,
-    repeat: number,
-    hasNext: boolean
+    // Optional on purpose: undefined means the submitting element is NOT in a
+    // repeated container, which must stay distinguishable from row 0.
+    repeat: number | undefined,
+    hasNext: boolean,
+    // Visibility once the caller has stored the settled slider values
+    settledPositions: any
   ): Promise<[Promise<any>] | undefined> => {
-    const formattedFields = formatStepFields(
+    let formattedFields = formatStepFields(
       activeStep,
-      formSettings.saveHideIfFields ? null : visiblePositions,
+      formSettings.saveHideIfFields ? null : settledPositions,
       false
     );
-    const trigger = lookUpTrigger(
-      activeStep,
-      metadata.elementIDs[0],
-      metadata.elementType
-    );
-    trigger.repeatIndex = repeat;
-    const newInlineErrors: any = {};
+    const trigger = {
+      ...lookUpTrigger(
+        activeStep,
+        metadata.elementIDs[0],
+        metadata.elementType
+      ),
+      // Legacy callback contract is numeric, so fall back to 0 here only.
+      repeatIndex: repeat ?? 0
+    } as Trigger;
 
     if (
       activeStep.servar_fields.find(
@@ -2072,8 +2353,14 @@ function Form({
           fieldKey: errorField.servar.key,
           message: errorMessage,
           servarType: errorField.servar.type,
+          // Scope to the submitted row so a failure from one repeated row
+          // doesn't render on its siblings. Undefined for a non-repeated field,
+          // which stores a field-wide message the non-repeat renderer reads.
+          index: repeat,
           errorType: formSettings.errorType,
-          inlineErrors: newInlineErrors,
+          // Merge into the current error map rather than a fresh one, so
+          // surfacing a payment error doesn't wipe other fields' errors.
+          inlineErrors: internalState[_internalId]?.inlineErrors,
           setInlineErrors,
           triggerErrors: true
         });
@@ -2084,13 +2371,12 @@ function Form({
     const customSubmitCode = async (beforeSubmit: boolean) => {
       let invalid = false;
       // Execute user-provided onSubmit function or submit rules if present
-      if (
-        await runUserLogic('submit', () => ({
-          submitFields: formattedFields,
-          trigger,
-          beforeSubmit
-        }))
-      ) {
+      const logicRan = await runUserLogic('submit', () => ({
+        submitFields: formattedFields,
+        trigger,
+        beforeSubmit
+      }));
+      if (logicRan) {
         // do validation check in case user has manually invalidated the step
         invalid = await setFormElementError({
           formRef,
@@ -2102,11 +2388,48 @@ function Form({
           triggerErrors: true
         });
       }
-      return invalid;
+      return { invalid, logicRan };
     };
 
-    let invalid = await customSubmitCode(true);
+    let { invalid, logicRan } = await customSubmitCode(true);
     if (invalid) return;
+
+    if (logicRan) {
+      // Submit logic can update field values and hide-if state. Validate and
+      // snapshot both from the completed rule's state before persisting it.
+      const latestVisiblePositions = getVisiblePositions(
+        activeStep,
+        _internalId
+      );
+      const { invalid: latestValuesInvalid } = validateElements({
+        step: activeStep,
+        visiblePositions: latestVisiblePositions,
+        internalId: _internalId,
+        triggerErrors: true,
+        errorType: formSettings.errorType,
+        formRef,
+        errorCallback: getErrorCallback({ trigger }),
+        setInlineErrors,
+        trigger
+      });
+      if (latestValuesInvalid) {
+        setErrorAnnouncement('');
+        setShouldScrollToError(formSettings.errorType === 'inline');
+        setAutoValidate(true);
+        return;
+      }
+      // Nothing blocks the submit from here, so these values stay
+      const latestSettledPositions = storeAlignedSliderValues(
+        activeStep,
+        latestVisiblePositions,
+        _internalId
+      ).visiblePositions;
+      formattedFields = formatStepFields(
+        activeStep,
+        formSettings.saveHideIfFields ? null : latestSettledPositions,
+        false
+      );
+    }
 
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
       const servar = servarByKey.get(key);
@@ -2124,6 +2447,8 @@ function Form({
     });
 
     const stepPromise = client.submitStep(featheryFields, activeStep, hasNext);
+    if (enableFormTools)
+      internalState[_internalId].formToolsLastSave = stepPromise;
 
     const fieldData: Record<string, any> = {};
     if (integrations?.segment?.metadata.track_fields)
@@ -2167,7 +2492,7 @@ function Form({
       // If running submit logic rule after, must finish
       // submit data first
       await stepPromise;
-      invalid = await customSubmitCode(false);
+      ({ invalid } = await customSubmitCode(false));
       if (invalid) return;
     }
 
@@ -2219,6 +2544,7 @@ function Form({
       const { invalid, inlineErrors: newInlineErrors } = validateElements({
         step: activeStep,
         visiblePositions,
+        internalId: _internalId,
         triggerErrors: true,
         errorType: formSettings.errorType,
         formRef,
@@ -2227,6 +2553,13 @@ function Form({
         trigger
       });
       if (invalid) return false;
+      // Stripe syncs mapped fields from the stored values, so sliders store what
+      // they show, and get their answers back if the purchase fails
+      const settled = storeAlignedSliderValues(
+        activeStep,
+        visiblePositions,
+        _internalId
+      );
 
       // payment/checkout
       const pmField = activeStep.servar_fields.find(
@@ -2241,6 +2574,7 @@ function Form({
         targetElement: pmField ? getCardElement(pmField.servar.key) : null
       });
       if (errors) {
+        settled.restore();
         const { errorMessage, errorField } = errors;
         await setFormElementError({
           formRef,
@@ -2248,6 +2582,9 @@ function Form({
           fieldKey: errorField.servar ? errorField.servar.key : errorField.id,
           message: errorMessage,
           servarType: errorField.servar ? errorField.servar.type : '',
+          // Scope to the triggering element's row so a purchase failure in one
+          // repeated row doesn't render on its siblings.
+          index: triggerElement.repeat,
           errorType: formSettings.errorType,
           inlineErrors: newInlineErrors,
           setInlineErrors,
@@ -2272,7 +2609,7 @@ function Form({
   }: any) {
     let eventData: Record<string, any> = {
       step_key: activeStep.key,
-      event: submitData ? 'complete' : 'skip'
+      event: submitData ? STEP_EVENT_SUBMIT : STEP_EVENT_SKIP
     };
 
     eventData = { ...eventData, next_step_key: redirectKey };
@@ -2301,10 +2638,9 @@ function Form({
             );
           }
 
-          // Note: We don't check dbHasRequest() here because:
-          // 1. If submitPromise succeeded, the requests were already handled
-          // 2. If submitPromise failed, we threw an error above and won't reach here
-          // 3. Checking dbHasRequest() here would block manual retries after fixing network
+          // The completion event replays answers still queued from earlier
+          // steps and is refused while any remain. The refusal rejects here,
+          // so the message reaches the button and the form is not finished.
 
           eventData.completed = true;
           await client.registerEvent(eventData).then(() => {
@@ -2376,6 +2712,14 @@ function Form({
     await callbackRef.current.all();
     const prevStepKey = getPrevStepKey(activeStep, backNavMap);
     if (prevStepKey) {
+      // Analytics only; a failed request must never block back navigation
+      client
+        .registerEvent({
+          step_key: activeStep.key,
+          next_step_key: prevStepKey,
+          event: STEP_EVENT_BACK
+        })
+        .catch(() => {});
       if (internalState[_internalId])
         internalState[_internalId].latestStepName = prevStepKey;
       pendingScrollRef.current = false;
@@ -2470,19 +2814,48 @@ function Form({
       // Clear loaders before setting errors since buttons are disabled
       // when loaders are showing
       clearLoaders();
-      // Set asynchronously since loaders need to unrender first
-      setTimeout(
-        () =>
-          setFormElementError({
-            formRef,
-            fieldKey: button.id,
-            message,
-            errorType: formSettings.errorType,
-            setInlineErrors,
-            triggerErrors: true
-          }),
-        10
-      );
+      // Set asynchronously since loaders need to unrender first. Publish the
+      // pending write on internalState so programmatic callers (Robin form
+      // actions) can await it instead of racing the timer.
+      const publication = new Promise<void>((resolve) => {
+        setTimeout(() => {
+          // Promise.resolve tolerates a non-promise return (e.g. a mocked
+          // setFormElementError) so the publication always settles.
+          Promise.resolve(
+            setFormElementError({
+              formRef,
+              fieldKey: button.id,
+              message,
+              // Scope to the clicked button's repeat row, and merge into the
+              // current error map (read fresh from internalState, since this
+              // runs async) so a failure in one repeated row doesn't render on
+              // every row or wipe unrelated field errors.
+              index: button.repeat,
+              errorType: formSettings.errorType,
+              inlineErrors: internalState[_internalId]?.inlineErrors,
+              setInlineErrors,
+              triggerErrors: true
+            })
+          )
+            .catch((err) => {
+              // Still resolve so awaiters never hang, but leave a trail: a
+              // swallowed failure here means Robin form actions snapshot inline
+              // errors believing the write landed.
+              console.warn('Failed to set button error', err);
+            })
+            .then(() => resolve());
+        }, 10);
+      });
+      const state = internalState[_internalId];
+      if (state) {
+        state.pendingInlineErrorPublish = publication;
+        // Stop awaiting a settled publication on later calls.
+        publication.then(() => {
+          if (state.pendingInlineErrorPublish === publication)
+            state.pendingInlineErrorPublish = undefined;
+        });
+      }
+      return publication;
     };
 
     try {
@@ -2595,11 +2968,10 @@ function Form({
 
     // Prompted at the Next/Back action itself so validation and submission
     // decide the step is really leaving first. Full-page exits use beforeunload.
-    let docxDiscardDeclined = false;
-    const confirmDocxDiscard = () => {
-      if (!hasDirtyDocxEditors(_internalId)) return true;
-      const proceed = featheryWindow().confirm(UNSAVED_DOCX_MESSAGE);
-      docxDiscardDeclined = !proceed;
+    let leaveDeclined = false;
+    const confirmLeavingStep = () => {
+      const proceed = confirmLeavingUnsavedWork(_internalId);
+      leaveDeclined = !proceed;
       return proceed;
     };
 
@@ -2626,9 +2998,10 @@ function Form({
       if (
         !hasFlowActions(actions) &&
         requiredStepAction &&
-        !flowCompleted.current
+        !flowCompleted.current &&
+        !isRequiredFlowSatisfied(requiredStepAction)
       ) {
-        setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction]);
+        setElementError(REQUIRED_FLOW_ACTIONS[requiredStepAction.type]);
         elementClicks[id] = false;
         clearButtonActionState();
 
@@ -2641,22 +3014,35 @@ function Form({
         await client.resetPendingFileUploads(pendingFileKeys);
       }
 
-      // Clear any previous button error before re-validation
-      // This allows retry after file upload errors
+      // Clear any previous button error before re-validation (allows retry
+      // after e.g. file upload errors). Scope the clear to this button's repeat
+      // row and merge into the current map, and publish it (triggerErrors) so
+      // the cleared state actually reaches the UI.
       if (submit && elementType === 'button') {
         setFormElementError({
           formRef,
           fieldKey: element.id,
           message: '', // Empty message clears the error
+          index: element.repeat,
           errorType: formSettings.errorType,
+          inlineErrors: internalState[_internalId]?.inlineErrors,
           setInlineErrors,
-          triggerErrors: false
+          triggerErrors: true
         });
       }
 
+      // Sliders store what they show before validation and navigation read
+      // them, so no_complete, the next step and the payload agree
+      // If the submit is blocked, the failure returns below restore them
+      const sliders = storeAlignedSliderValues(
+        activeStep,
+        visiblePositions,
+        _internalId
+      );
       const { invalid } = validateElements({
         step: activeStep,
-        visiblePositions,
+        visiblePositions: sliders.visiblePositions,
+        internalId: _internalId,
         triggerErrors: true,
         errorType: formSettings.errorType,
         formRef,
@@ -2666,6 +3052,9 @@ function Form({
       });
 
       if (invalid) {
+        sliders.restore();
+        setErrorAnnouncement('');
+        setShouldScrollToError(formSettings.errorType === 'inline');
         setAutoValidate(true);
         elementClicks[id] = false;
         clearButtonActionState();
@@ -2692,14 +3081,20 @@ function Form({
       try {
         submissionResult = await submitStep(
           metadata,
-          element.repeat || 0,
-          !!hasNext
+          // Pass the optional repeat through: `|| 0` would make a non-repeated
+          // element look like row 0 and scope its errors to a row that the
+          // non-repeat renderer never reads.
+          element.repeat,
+          !!hasNext,
+          sliders.visiblePositions
         );
       } catch (error) {
+        sliders.restore();
         submissionResult = [Promise.reject(error)] as [Promise<any>];
       }
 
       if (!submissionResult) {
+        sliders.restore();
         elementClicks[id] = false;
         clearButtonActionState();
 
@@ -2733,6 +3128,29 @@ function Form({
       );
     }
 
+    // The rest of the chain runs in a nested call over a sliced action array,
+    // so the windows this click pre-opened for those actions have to be handed
+    // across re-keyed to the slice, and dropped from this run's map, which
+    // closes whatever it still owns once the loop ends. Without the handoff the
+    // nested run pre-opens for itself - fine when it resumes from a fresh click
+    // (a modal's save, the Quik viewer's submit), but the connect account chain
+    // resumes straight off the OAuth result with no gesture left, so the browser
+    // blocks the window and the next action reports a popup that was never
+    // actually blocked. Windows already closed mean this run has finished and
+    // the resume is carrying its own gesture, so it is left to open its own.
+    const handOffPreOpenedWindows = (index: number) => {
+      const remaining = new Map<number, Window | null>();
+      let anyOpen = false;
+      preOpenedWindows.forEach((win, idx) => {
+        if (idx <= index) return;
+        remaining.set(idx - index - 1, win);
+        if (win && !win.closed) anyOpen = true;
+      });
+      if (!anyOpen) return undefined;
+      remaining.forEach((_, idx) => preOpenedWindows.delete(idx + index + 1));
+      return remaining;
+    };
+
     const flowOnSuccess = (index: number) => async () => {
       flowCompleted.current = true;
       elementClicks[id] = false;
@@ -2747,7 +3165,8 @@ function Form({
         onAsyncEnd,
         textSpanStart,
         textSpanEnd,
-        triggerPayload
+        triggerPayload,
+        preOpenedWindows: handOffPreOpenedWindows(index)
       });
       if (!running) onAsyncEnd();
     };
@@ -2784,7 +3203,11 @@ function Form({
       initializeEnvelopeGeneration(actions);
     }
     for (i = 0; i < actions.length; i++) {
-      const action = actions[i];
+      // The backend reads this element's signer phones for DocuSign SMS.
+      const action =
+        actions[i].type === ACTION_GENERATE_ENVELOPES && id
+          ? { ...actions[i], source_element_id: id }
+          : actions[i];
       const type = action.type;
 
       if (type === ACTION_ADD_REPEATED_ROW) {
@@ -2792,7 +3215,21 @@ function Form({
         addRepeatedRow(container, action.max_repeats);
       } else if (type === ACTION_REMOVE_REPEATED_ROW) {
         const container = getContainerById(activeStep, action.repeat_container);
-        removeRepeatedRow(element, container);
+        // A button can submit the old step values before its actions run.
+        // Wait for that write so it cannot restore the deleted row afterward.
+        await submitPromise.catch(() => undefined);
+        const removed = removeRepeatedRow(element, container);
+        if (removed) {
+          try {
+            await client.submitCustom(removed.values, {
+              shouldFlush: true,
+              repeatedFileKeys: removed.repeatedFileKeys
+            });
+          } catch (error) {
+            setElementError(getSubmissionErrorMessage(error));
+            break;
+          }
+        }
       } else if (type === ACTION_TRIGGER_PERSONA) {
         await Promise.all([submitPromise, client.flushCustomFields()]);
         const personaMeta = integrations?.persona.metadata ?? {};
@@ -2846,29 +3283,82 @@ function Form({
         // first trigger's flow-advance closure. Ignore this trigger instead;
         // the shared post-loop cleanup below still releases its click lock
         // and closes its own pre-opened popup.
+        // Only covers triggers that open a modal: the ref is set by
+        // openConnectAccountModal, so a provider that connects without one
+        // races here exactly as it did before the modal existed.
         if (connectAccountModalRef.current) break;
 
         await Promise.all([submitPromise, client.flushCustomFields()]);
         const popup = preOpenedWindows.get(i) ?? null;
         preOpenedWindows.delete(i);
         const provider = action.provider;
-        const emailKey = `feathery.connections.${provider}.email`;
+        // Not always an email: a provider with no user identity records only
+        // that a connection exists. Either way a value here means connected.
+        const connectionKey = connectionFieldKey(provider);
 
+        let alreadyConnected = !!fieldValues[connectionKey];
+        let connected = false;
+        let credentials: SavedAccountCredential[] = [];
+        let chooseCredential = false;
+        let canSaveCredential = false;
+        let lockedByOwner = false;
         try {
-          if (fieldValues[emailKey]) {
+          if (['box', SALESFORCE_PROVIDER].includes(provider)) {
+            // Listing saved accounts is optional; a throttle or temporary outage
+            // must not prevent the existing OAuth or change-account flow.
+            const saved = await client
+              .listAccountCredentials(provider)
+              .catch(() => undefined);
+            if (saved === null && formSettings.authSensitiveActionsOnly) {
+              // Hosted forms can provide an inline login surface for optional
+              // form auth. Ask that host to show it before reporting the
+              // sensitive action as unavailable to a guest.
+              const formWindow = featheryWindow();
+              if (typeof formWindow.dispatchEvent === 'function') {
+                formWindow.dispatchEvent(
+                  new CustomEvent('feathery:request-login')
+                );
+              }
+              const label = PROVIDER_LABELS[provider] ?? provider;
+              // A connection made by a signed-in user is locked to them; a
+              // guest cannot open its settings, only sign in as that user.
+              throw new Error(
+                alreadyConnected
+                  ? `This ${label} connection was set up by a signed-in user. Sign in as that user to change it.`
+                  : `Please sign in to connect your ${label} account.`
+              );
+            }
+            credentials = saved?.credentials ?? [];
+            canSaveCredential = !!saved && saved.can_save !== false;
+            lockedByOwner =
+              alreadyConnected && saved?.attached?.owner === false;
+            if (provider === SALESFORCE_PROVIDER) {
+              // A failed credential lookup leaves `saved` undefined, so the
+              // modal opens as "not connected" with an empty list on purpose:
+              // Salesforce requires a reconnect rather than trusting the field.
+              alreadyConnected =
+                saved?.attached?.status === 'connected' &&
+                saved?.attached?.owner === true;
+              lockedByOwner = saved?.attached?.owner === false;
+            }
+            // Always open Box's picker first. If the saved-account lookup is
+            // unavailable, the picker still offers an explicit new-account
+            // action instead of pre-opening and dismissing an OAuth window.
+            chooseCredential = !alreadyConnected;
+          }
+          if (alreadyConnected || chooseCredential) {
             popup?.close();
           } else {
             const result = await runOAuthPopup(client, provider, popup);
-            updateFieldValues({ [emailKey]: result.account_email ?? '' });
+            updateFieldValues({
+              [connectionKey]: hasEmailIdentity(provider)
+                ? result.account_email ?? ''
+                : 'true'
+            });
           }
-          // The flow advances from the modal's onSaved, not here - the
-          // respondent has not finished configuring the account yet.
-          openConnectAccountModal({
-            provider,
-            onFlowSuccess: flowOnSuccess(i),
-            onAsyncEnd
-          });
+          connected = true;
         } catch (error) {
+          popup?.close();
           elementClicks[id] = false;
           clearButtonActionState();
           setElementError(
@@ -2877,6 +3367,38 @@ function Form({
               : 'Unable to connect your account.'
           );
           onAsyncEnd();
+        }
+        // Deliberately outside the try: the modal's setup UI is what advances
+        // the flow, and advancing runs every remaining action in the chain.
+        // A failure in one of those is that action's error, not a failure to
+        // connect, so it must not land in the catch above and get relabelled
+        // "Unable to connect your account."
+        if (connected) {
+          // A repeat click on an already-connected button still opens the
+          // modal - it is the only route to "Change account". On a fresh
+          // connect the modal is worth showing only for a provider with setup
+          // to collect; otherwise connecting is the whole job and the flow
+          // continues straight away.
+          if (
+            alreadyConnected ||
+            chooseCredential ||
+            CONFIG_COMPONENTS[provider]
+          ) {
+            // The flow advances from the modal's onSaved, which only a
+            // provider's config component calls - the respondent has not
+            // finished configuring the account yet.
+            openConnectAccountModal({
+              provider,
+              credentials,
+              chooseCredential,
+              canSaveCredential,
+              lockedByOwner,
+              onFlowSuccess: flowOnSuccess(i),
+              onAsyncEnd
+            });
+          } else {
+            await flowOnSuccess(i)();
+          }
         }
         break;
       } else if (type === ACTION_URL) {
@@ -2897,7 +3419,7 @@ function Form({
           const eventData: Record<string, any> = {
             step_key: activeStep.key,
             next_step_key: '',
-            event: submit ? 'complete' : 'skip',
+            event: submit ? STEP_EVENT_SUBMIT : STEP_EVENT_SKIP,
             completed: true
           };
           await client.registerEvent(eventData);
@@ -2905,6 +3427,7 @@ function Form({
         }
       } else if (type === ACTION_SEND_SMS_MESSAGE) {
         const phoneNum = fieldValues[action.phone_target_field_key] as string;
+        await ensurePhoneValidator();
         if (validators.phone(phoneNum)) {
           try {
             await client.sendSMSMessage(phoneNum, action.sms_message);
@@ -2918,6 +3441,7 @@ function Form({
         }
       } else if (type === ACTION_SEND_SMS_CODE) {
         const phoneNum = fieldValues[action.auth_target_field_key] as string;
+        await ensurePhoneValidator();
         if (validators.phone(phoneNum)) {
           try {
             await Auth.sendSms(phoneNum, client);
@@ -2991,7 +3515,7 @@ function Form({
       } else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
       else if (type === ACTION_NEW_SUBMISSION) await updateUserId(uuidv4());
       else if (type === ACTION_NEXT) {
-        if (!confirmDocxDiscard()) break;
+        if (!confirmLeavingStep()) break;
         await goToNewStep({
           redirectKey: action.next_step_key ?? getNextStepKey(metadata),
           elementType: metadata.elementType,
@@ -3001,7 +3525,7 @@ function Form({
             elementType === 'button' ? (element as ClickActionElement) : null
         });
       } else if (type === ACTION_BACK) {
-        if (!confirmDocxDiscard()) break;
+        if (!confirmLeavingStep()) break;
         await goToPreviousStep();
       } else if (type === ACTION_PURCHASE_PRODUCTS) {
         const actionSuccess = await purchaseProductsAction(element);
@@ -3033,7 +3557,10 @@ function Form({
             typeof invitee === 'string' ? invitee.trim() : invitee
           )
           .filter(Boolean);
-        if (!invitees.length) {
+        // With no email field wired up, this role relies on its configured
+        // default invitees (an email or user group), which the backend
+        // resolves - so only require a value here when a field is configured.
+        if (action.email_field_key && !invitees.length) {
           setElementError('Collaborators required');
           break;
         }
@@ -3149,6 +3676,7 @@ function Form({
         // with, and runEnvelopeAction plus the review-viewer wiring below are
         // self-contained enough to move behind a small interface.
         const envelopeId = `envelope-${i}`;
+        let containerId = editorContainerId(action);
         updateEnvelopeGeneration(envelopeId, { status: 'incomplete' });
         await Promise.all([submitPromise, client.flushCustomFields()]);
         // Shared with the editor's finalize response: runs the same
@@ -3164,7 +3692,7 @@ function Form({
           actingAction?: string,
           draft = false
         ) => {
-          if (editorContainerId(action)) return;
+          if (containerId) return;
           const envAction = actingAction ?? action.envelope_action;
           if (!envAction || envAction === 'sign') {
             if (isDocusignSignAction(action, envAction)) {
@@ -3177,12 +3705,15 @@ function Form({
               //
               // Create Draft finalizes as a sign too, so the label comes off
               // the request — a draft is saved in the sender's DocuSign
-              // account, not delivered to anyone. Not off the response: the
-              // poll endpoint overwrites its status with "complete", so
-              // DocuSign's own "created" never reaches here.
+              // account, not delivered to anyone. A Sign can end as a draft
+              // too (the Quik Joint Agreements hold), which only
+              // `docusign_status` reports: the poll endpoint overwrites
+              // `status` with "complete".
               showEnvelopeOutcome(
                 envelopeId,
-                draft ? 'Saved as Draft' : 'Sent for Signature',
+                isDocusignDraft(draft, data)
+                  ? 'Saved as Draft'
+                  : 'Sent for Signature',
                 action.documents
               );
               return;
@@ -3208,7 +3739,7 @@ function Form({
               const eventData: Record<string, any> = {
                 step_key: activeStep.key,
                 next_step_key: '',
-                event: submit ? 'complete' : 'skip',
+                event: submit ? STEP_EVENT_SUBMIT : STEP_EVENT_SKIP,
                 completed: true
               };
               await client.registerEvent(eventData);
@@ -3229,6 +3760,7 @@ function Form({
           }
         };
         try {
+          await submitDocumentSourceFiles(action);
           const data = await client.generateEnvelopes(action);
           // A missing response is a failure, not a success: _fetch resolves
           // undefined on a network blip / 403 / 409, and reading .status off it
@@ -3245,7 +3777,23 @@ function Form({
           }
           updateEnvelopeGeneration(envelopeId, { status: 'complete' });
 
-          const containerId = editorContainerId(action);
+          // The server can override a saved container target for mixed types.
+          if (data.editor_mode === 'overlay' && containerId) {
+            const win = featheryWindow() as any;
+            const cleared = { containerId, documents: [], envelopes: [] };
+            // Keep an explicitly empty packet so remounting the old container
+            // cannot fall back to its templates' previous generated envelopes.
+            win.__featheryDocxEditorDrafts = {
+              ...(win.__featheryDocxEditorDrafts ?? {}),
+              [containerId]: cleared
+            };
+            win.dispatchEvent(
+              new CustomEvent('feathery-docx-editor-refresh', {
+                detail: cleared
+              })
+            );
+            containerId = '';
+          }
           if (containerId) {
             const refreshDetail = {
               containerId,
@@ -3274,20 +3822,23 @@ function Form({
             // editing surface (and needs the plain generate response).
             setReviewViewerPayload({
               payload: data,
-              action,
+              action: { ...action, editor_mode: 'overlay' },
               onFinalize: async ({
                 envelopes,
                 envelopeAction,
-                draft
+                draft,
+                refreshDraft
               }: {
                 envelopes: { envelopeId: string }[];
                 envelopeAction: 'sign' | 'fill' | 'download' | 'save';
                 draft: boolean;
+                refreshDraft: boolean;
               }) => {
                 const result = await client.finalizeEnvelopeReview(action, {
                   envelopes,
                   envelopeAction,
-                  draft
+                  draft,
+                  refreshDraft
                 });
                 // A missing result is a failure, not a success: _fetch
                 // resolves undefined on a network blip / 403 / 409, and
@@ -3301,13 +3852,22 @@ function Form({
                   };
                 if (result.status === 'error') return result;
                 await runEnvelopeAction(result, envelopeAction, draft);
+                await runDocumentReviewLogic(
+                  buildDocumentReviewTrigger({
+                    action,
+                    elementId: element.id,
+                    envelopes,
+                    envelopeAction,
+                    draft,
+                    result
+                  })
+                );
                 return result;
               },
-              onComplete: () => {
+              onComplete: () =>
                 flowOnSuccess(i)().then(() => {
                   setTimeout(() => setReviewViewerPayload(null), 500);
-                });
-              }
+                })
             });
             break;
           } else {
@@ -3384,7 +3944,9 @@ function Form({
           action.toggle && JSON.stringify(destVal) === JSON.stringify(val);
         if (setToDefaultValue) {
           // could be a hidden field
-          val = servar ? getDefaultFieldValue({ servar }) : '';
+          val = servar
+            ? getDefaultFieldValue({ servar }, formSettings.asciiOnly)
+            : '';
         }
 
         if (servar?.repeated) {
@@ -3393,7 +3955,10 @@ function Form({
           // Repeat index already set via click if retain_click_value
           if (!action.retain_click_value) destVal[curIndex] = val;
           if (action.repeat_single) {
-            const defaultVal = getDefaultFieldValue({ servar });
+            const defaultVal = getDefaultFieldValue(
+              { servar },
+              formSettings.asciiOnly
+            );
             for (let i = 0; i < destVal.length; i++) {
               if (i !== curIndex) destVal[i] = defaultVal;
             }
@@ -3496,9 +4061,9 @@ function Form({
       elementClicks[id] = false;
       clearButtonActionState();
 
-      // The user chose to keep their unsaved docx changes, so nothing is
-      // pending. Return falsy so the caller clears the button loader.
-      if (docxDiscardDeclined) return;
+      // The user chose to keep their unsaved work, so nothing is pending.
+      // Return falsy so the caller clears the button loader.
+      if (leaveDeclined) return;
 
       return true;
     }
@@ -3506,6 +4071,32 @@ function Form({
     await runAction(false);
     elementClicks[id] = false;
     clearButtonActionState();
+  };
+
+  const runFieldChangeLogic = ({
+    fieldKey,
+    servarId,
+    elementRepeatIndex = 0,
+    triggerType = 'field',
+    integrationData = {},
+    relatedServarIds = [],
+    valueRepeatIndex = null
+  }: any) => {
+    if (!eventHasUserLogic('change')) return;
+    const logic = runUserLogic('change', () => ({
+      trigger: {
+        id: fieldKey,
+        _servarId: servarId,
+        _relatedServarIds: relatedServarIds,
+        repeatIndex: elementRepeatIndex,
+        type: triggerType
+      },
+      integrationData,
+      valueRepeatIndex
+    }));
+    callbackRef.current.addCallback(logic);
+    setShouldScrollToTop(false);
+    return logic;
   };
 
   const fieldOnChange =
@@ -3520,22 +4111,15 @@ function Form({
       // Multi-file upload is not a repeated row but a repeated field
       valueRepeatIndex = null
     } = {}) => {
-      if (eventHasUserLogic('change')) {
-        callbackRef.current.addCallback(
-          runUserLogic('change', () => ({
-            trigger: {
-              id: fieldKey,
-              _servarId: servarId,
-              _relatedServarIds: relatedServarIds,
-              repeatIndex: elementRepeatIndex,
-              type: triggerType
-            },
-            integrationData,
-            valueRepeatIndex
-          }))
-        );
-        setShouldScrollToTop(false);
-      }
+      runFieldChangeLogic({
+        fieldKey,
+        servarId,
+        elementRepeatIndex,
+        triggerType,
+        integrationData,
+        relatedServarIds,
+        valueRepeatIndex
+      });
 
       let triggered = false;
       if (submitData) {
@@ -3587,13 +4171,39 @@ function Form({
       buttonOnClick,
       runElementActions,
       tableOnClick,
-      changeValue
+      changeValue,
+      runFieldChangeLogic: (
+        field: any,
+        index: number | null,
+        valueRepeatIndex?: number
+      ) =>
+        runFieldChangeLogic({
+          fieldKey: field.servar.key,
+          servarId: field.servar.id,
+          elementRepeatIndex: index ?? 0,
+          valueRepeatIndex: valueRepeatIndex ?? null
+        }),
+      submitFiles: (fileEntries: { servar: any; stepKey: string }[]) =>
+        client.submitFiles(fileEntries)
     };
-    if (assistantClientRef.current) {
-      assistantClientRef.current.updateCallbacks(callbacks);
-    } else {
-      assistantClientRef.current = new AssistantClient(callbacks);
-      internalState[_internalId].assistantClient = assistantClientRef.current;
+    internalState[_internalId].formActions = callbacks;
+    // Merged into one object: a running tool call holds the object it read at
+    // its start, and still gets each later render's callbacks through it
+    if (enableFormTools) {
+      const formToolsCallbacks: FormToolsCallbacks = {
+        changeValue,
+        flushRerender: flushFormRerender,
+        fieldOnChange,
+        getNextStepKey,
+        buttonOnClick,
+        awaitChangeRules: () => callbackRef.current.all(),
+        addRepeatedRow,
+        submitFiles: (fileEntries) => client.submitFiles(fileEntries)
+      };
+      internalState[_internalId].formToolsCallbacks = Object.assign(
+        internalState[_internalId].formToolsCallbacks ?? {},
+        formToolsCallbacks
+      );
     }
   }
 
@@ -3612,6 +4222,7 @@ function Form({
     tableOnClick,
     fieldOnChange,
     buttonLoaders,
+    logicRules,
     inlineErrors,
     setInlineErrors,
     changeValue,
@@ -3628,8 +4239,7 @@ function Form({
     setCardElement,
     visiblePositions,
     calendly: integrations?.calendly?.metadata,
-    featheryContext: getFormContext(_internalId),
-    assistantClient: internalState[_internalId]?.assistantClient
+    featheryContext: getFormContext(_internalId)
   };
 
   // If form was completed in a previous session and edits are disabled,
@@ -3653,6 +4263,38 @@ function Form({
     handleFormComplete().then(redirectForm);
   }, [anyFinished]);
 
+  // Claim a single-use access link for this device, then restart the load so
+  // the session fetch runs again against the submission the link opens.
+  const confirmAccessLink = async (): Promise<LinkConfirmOutcome> => {
+    const { linkToken } = initState;
+    if (!linkToken || !client) return 'failed';
+
+    // Fail safe: redeeming burns the one opening the link has, so a device that
+    // cannot keep the device secret must not touch the server at all. The link
+    // stays unredeemed and the user can open it somewhere that can store it.
+    if (!canPersistLinkSecret()) return 'storage_blocked';
+
+    let redemption: LinkRedemption | undefined;
+    try {
+      redemption = await client.redeemLink(linkToken);
+    } catch (e) {
+      // A rate limit or server error leaves the link unredeemed, so the user
+      // can simply ask again
+      return 'failed';
+    }
+
+    // A rejected link (expired, used on another device, revoked) answers 403,
+    // which the client has already turned into the blocked form state
+    if (initState.authenticationError) return 'blocked';
+    // Anything else empty is a network failure or a response we can't open the
+    // submission with, both of which are worth retrying
+    if (!redemption?.fuser_key || !redemption.device_secret) return 'failed';
+
+    adoptLinkRedemption(linkToken, redemption);
+    remountAllForms();
+    return 'adopted';
+  };
+
   // Form authentication error (403)
   if (initState.authenticationError) {
     return (
@@ -3665,13 +4307,25 @@ function Form({
   }
   // Form is turned off
   if (formOffReason.current === CLOSED)
-    return <FormOff showCTA={formSettings.showBrand} />;
+    return (
+      <FormOff
+        showCTA={formSettings.showBrand}
+        message={formOffMessage.current}
+      />
+    );
   else if (
-    [COLLAB_COMPLETED, COLLAB_DIRECT_DISABLED, NO_BUSINESS_EMAIL].includes(
-      formOffReason.current
-    )
+    [
+      COLLAB_COMPLETED,
+      COLLAB_DIRECT_DISABLED,
+      LINK_REQUIRED,
+      NO_BUSINESS_EMAIL
+    ].includes(formOffReason.current)
   )
     return <FormOff reason={formOffReason.current} showCTA={false} />;
+  // Checked after the off states so a turned off form never offers to burn the
+  // one opening a single-use link has
+  else if (linkConfirmRequired)
+    return <LinkContinue onContinue={confirmAccessLink} />;
   else if (anyFinished) {
     return formSettings.completionBehavior === 'show_completed_screen' ? (
       <FormOff reason={FILLED_OUT} showCTA={formSettings.showBrand} />
@@ -3682,6 +4336,7 @@ function Form({
     <ReactPortal options={popupOptions}>
       <form
         {...formProps}
+        noValidate={formSettings.errorType === 'inline' || formProps.noValidate}
         autoComplete={formSettings.autocomplete}
         className={`feathery ${className || ''}`}
         ref={formRef}
@@ -3689,13 +4344,30 @@ function Form({
           ...globalCSS.getTarget('form'),
           ...stepCSS,
           ...style,
-          ...assistantOffsetCSS,
           position: 'relative',
           display: 'flex',
+          ...(inlineWatermark ? { flexDirection: 'column' } : {}),
           ...(popupOptions ? { borderRadius: '10px' } : {})
         }}
         dir={formSettings.rightToLeft ? 'rtl' : 'ltr'}
       >
+        {formSettings.errorType === 'inline' && (
+          <span
+            role='status'
+            aria-live='polite'
+            aria-atomic='true'
+            css={{
+              position: 'absolute',
+              width: 1,
+              height: 1,
+              overflow: 'hidden',
+              clipPath: 'inset(50%)',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {errorAnnouncement}
+          </span>
+        )}
         {stepLoader}
         {children}
         {showQuikFormViewer && (
@@ -3728,11 +4400,24 @@ function Form({
               }}
               onComplete={reviewViewerPayload.onComplete}
               onFinalize={reviewViewerPayload.onFinalize}
+              // Persists PDFs whose fields the filler edited in the viewer.
+              // The generic envelope file endpoint validates the extension
+              // against the envelope type, so name the upload as a pdf.
+              onSaveEnvelopeFile={(envelopeId: string, file: Blob) =>
+                clientRef.current.saveEnvelopeFile(
+                  envelopeId,
+                  file,
+                  'document.pdf'
+                )
+              }
             />
           </React.Suspense>
         )}
         {flinksFrame}
         <Grid step={activeStep} form={form} viewport={viewport} />
+        {enableFormTools && hasWebMCPRuntime() && (
+          <FormWebMCPTools formUuid={_internalId} />
+        )}
         {popupOptions && (
           <CloseIcon
             fill='white'
@@ -3767,6 +4452,7 @@ function Form({
         <Watermark
           show={formSettings.showBrand}
           brandPosition={formSettings.brandPosition}
+          inline={inlineWatermark}
         />
         <ActionToast
           ref={setActionToastRef}
@@ -3779,34 +4465,25 @@ function Form({
           bottom={bottomRightBase + stackAbove(actionToastHeight)}
         />
 
-        {formSettings.assistantEnabled && (
-          <AssistantChat
-            instanceId={_internalId}
-            baseUrl={`${new URL(API_URL).origin}/agent/assistant/`}
-            getTargets={getAssistantTargets}
-            bottom={
-              bottomRightBase +
-              stackAbove(actionToastHeight) +
-              stackAbove(fileUploadToastHeight)
-            }
-            color={formSettings.assistantColor}
-            workflowActions={formSettings.assistantWorkflowActions}
-            stepSettings={formSettings.assistantStepSettings}
-            activeStepId={activeStep?.id}
-            onLayoutChange={handleAssistantLayoutChange}
-          />
-        )}
         {connectAccountModal && (
           <ConnectAccountModal
             show
             provider={connectAccountModal.provider}
+            credentials={connectAccountModal.credentials}
+            chooseCredential={connectAccountModal.chooseCredential}
+            canSaveCredential={connectAccountModal.canSaveCredential}
+            lockedByOwner={connectAccountModal.lockedByOwner}
+            onCredentialSelected={updateFieldValues}
+            onDisconnected={updateFieldValues}
             client={client}
             accountEmail={
-              fieldValues[
-                `feathery.connections.${connectAccountModal.provider}.email`
-              ] as string
+              hasEmailIdentity(connectAccountModal.provider)
+                ? (fieldValues[
+                    connectionFieldKey(connectAccountModal.provider)
+                  ] as string)
+                : ''
             }
-            onChangeAccount={async () => {
+            onChangeAccount={async (saveCredential = false) => {
               // window.open must stay the first statement: the modal's
               // button handler invokes this synchronously from a real click,
               // and any await ahead of it would break the user-gesture chain
@@ -3824,11 +4501,14 @@ function Form({
                 const result = await runOAuthPopup(
                   client,
                   connectAccountModal.provider,
-                  popup
+                  popup,
+                  saveCredential
                 );
                 updateFieldValues({
-                  [`feathery.connections.${connectAccountModal.provider}.email`]:
-                    result.account_email ?? ''
+                  [connectionFieldKey(connectAccountModal.provider)]:
+                    hasEmailIdentity(connectAccountModal.provider)
+                      ? result.account_email ?? ''
+                      : 'true'
                 });
               } catch (error) {
                 return error instanceof Error
@@ -3863,10 +4543,8 @@ export function JSForm({
   ...props
 }: Props & InternalProps) {
   const [remount, setRemount] = useState(false);
-  const confirmDocxPopNavigation = useCallback(
-    () =>
-      !hasDirtyDocxEditors(_internalId) ||
-      featheryWindow().confirm(UNSAVED_DOCX_MESSAGE),
+  const confirmPopNavigationGuard = useCallback(
+    () => confirmLeavingUnsavedWork(_internalId),
     [_internalId]
   );
 
@@ -3882,7 +4560,7 @@ export function JSForm({
   if (formId && runningInClient())
     return (
       <FeatheryCacheProvider>
-        <RouterProvider confirmPopNavigation={confirmDocxPopNavigation}>
+        <RouterProvider confirmPopNavigation={confirmPopNavigationGuard}>
           <Form
             {...props}
             formId={formId}

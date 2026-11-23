@@ -1,0 +1,6 @@
+Google Slides marketing-template regression fixture. Source: presentation-2.pptx
+(SHA256 2d8838b1e0d9b05868296e61fa0b90552cc2fcaffd1c828b61bb6492f2b8a49f).
+Only XML/package structure is retained; raster media and embedded font binaries
+are omitted because these tests exercise sparse style inheritance, native shape
+geometry and crop coordinates. Not a standalone presentation for visual review.
+The live/native PowerPoint comparison uses the unmodified original deck.

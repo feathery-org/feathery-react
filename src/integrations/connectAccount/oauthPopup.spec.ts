@@ -13,59 +13,117 @@ describe('runOAuthPopup', () => {
     jest.useRealTimers();
   });
 
-  it('resolves only for the expected popup, origin, and state', async () => {
+  it.each([false, true])(
+    'resolves only for the expected popup, origin, and state (save: %s)',
+    async (saveCredential) => {
+      const client = {
+        startAccountConnect: jest.fn().mockResolvedValue(authorization)
+      };
+      const popup = {
+        closed: false,
+        close: jest.fn(),
+        focus: jest.fn(),
+        location: { href: 'about:blank' }
+      } as unknown as Window;
+      const win = featheryWindow();
+      let messageHandler: ((event: MessageEvent) => void) | undefined;
+      const addEventListener = jest
+        .spyOn(win, 'addEventListener')
+        .mockImplementation((type, listener) => {
+          if (type === 'message') {
+            messageHandler = listener as (event: MessageEvent) => void;
+          }
+        });
+      const removeEventListener = jest
+        .spyOn(win, 'removeEventListener')
+        .mockImplementation(() => {});
+
+      const resultPromise = runOAuthPopup(client, 'box', popup, saveCredential);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(messageHandler).toBeDefined();
+      if (!messageHandler)
+        throw new Error('Message handler was not registered');
+      messageHandler({
+        source: popup,
+        origin: authorization.callback_origin,
+        data: {
+          type: 'feathery-account-connect',
+          state: authorization.state,
+          success: true,
+          account_email: 'respondent@example.com'
+        }
+      } as MessageEvent);
+
+      await expect(resultPromise).resolves.toEqual(
+        expect.objectContaining({
+          success: true,
+          account_email: 'respondent@example.com'
+        })
+      );
+      expect(client.startAccountConnect).toHaveBeenCalledWith(
+        'box',
+        win.location.origin,
+        saveCredential
+      );
+      expect(popup.location.href).toBe(authorization.authorization_url);
+      expect(popup.close).toHaveBeenCalled();
+      expect(addEventListener).toHaveBeenCalled();
+      expect(removeEventListener).toHaveBeenCalled();
+    }
+  );
+
+  it('completes Salesforce only once using the initiating browser secret', async () => {
     const client = {
-      startAccountConnect: jest.fn().mockResolvedValue(authorization)
+      startAccountConnect: jest.fn().mockResolvedValue({
+        ...authorization,
+        completion_secret: 'browser-secret'
+      }),
+      completeAccountConnect: jest
+        .fn()
+        .mockResolvedValue({ success: true, account_email: 'own@example.com' })
     };
     const popup = {
       closed: false,
       close: jest.fn(),
       focus: jest.fn(),
-      location: { href: 'about:blank' }
+      location: { href: '' }
     } as unknown as Window;
-    const win = featheryWindow();
-    let messageHandler: ((event: MessageEvent) => void) | undefined;
-    const addEventListener = jest
-      .spyOn(win, 'addEventListener')
+    let handler: ((event: MessageEvent) => void) | undefined;
+    jest
+      .spyOn(featheryWindow(), 'addEventListener')
       .mockImplementation((type, listener) => {
-        if (type === 'message') {
-          messageHandler = listener as (event: MessageEvent) => void;
-        }
+        if (type === 'message')
+          handler = listener as (event: MessageEvent) => void;
       });
-    const removeEventListener = jest
-      .spyOn(win, 'removeEventListener')
-      .mockImplementation(() => {});
-
-    const resultPromise = runOAuthPopup(client, 'box', popup);
+    const result = runOAuthPopup(
+      client,
+      'salesforce-client-credentials',
+      popup
+    );
     await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(messageHandler).toBeDefined();
-    if (!messageHandler) throw new Error('Message handler was not registered');
-    messageHandler({
+    const event = {
       source: popup,
       origin: authorization.callback_origin,
       data: {
         type: 'feathery-account-connect',
         state: authorization.state,
         success: true,
-        account_email: 'respondent@example.com'
+        requires_completion: true
       }
-    } as MessageEvent);
-
-    await expect(resultPromise).resolves.toEqual(
-      expect.objectContaining({
-        success: true,
-        account_email: 'respondent@example.com'
-      })
+    } as MessageEvent;
+    handler?.(event);
+    handler?.(event);
+    await expect(result).resolves.toEqual({
+      success: true,
+      account_email: 'own@example.com'
+    });
+    expect(client.completeAccountConnect).toHaveBeenCalledTimes(1);
+    expect(client.completeAccountConnect).toHaveBeenCalledWith(
+      'salesforce-client-credentials',
+      authorization.state,
+      'browser-secret'
     );
-    expect(client.startAccountConnect).toHaveBeenCalledWith(
-      'box',
-      win.location.origin
-    );
-    expect(popup.location.href).toBe(authorization.authorization_url);
-    expect(popup.close).toHaveBeenCalled();
-    expect(addEventListener).toHaveBeenCalled();
-    expect(removeEventListener).toHaveBeenCalled();
   });
 
   it('surfaces provider errors from the callback', async () => {

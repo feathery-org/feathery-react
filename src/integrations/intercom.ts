@@ -1,6 +1,6 @@
 import { featheryDoc, featheryWindow } from '../utils/browser';
 
-export let intercomInstalled = false;
+let intercomInstalled = false;
 
 export function installIntercom(intercomConfig: any) {
   if (intercomConfig && !intercomInstalled) {

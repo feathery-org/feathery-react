@@ -2,7 +2,7 @@ import React, { memo, useRef, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
-import { resetStyles } from '../../styles';
+import { inputBoxAttrs, resetStyles } from '../../styles';
 import useBorder from '../../components/useBorder';
 import { hoverStylesGuard } from '../../../utils/browser';
 
@@ -11,6 +11,7 @@ function TextArea({
   responsiveStyles,
   fieldLabel,
   elementProps = {},
+  errorAttributes = {},
   required = false,
   disabled = false,
   editMode,
@@ -68,10 +69,12 @@ function TextArea({
               }
             : {}
         }}
+        {...inputBoxAttrs(servar.type)}
       >
         {customBorder}
         <textarea
           id={servar.key}
+          name={servar.key}
           css={{
             position: 'relative',
             height: '100%',
@@ -88,6 +91,7 @@ function TextArea({
               : { color: 'transparent !important' })
           }}
           aria-label={element.properties.aria_label}
+          {...errorAttributes}
           maxLength={servar.max_length || 4096}
           minLength={servar.min_length}
           required={required}

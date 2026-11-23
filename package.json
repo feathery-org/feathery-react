@@ -1,6 +1,6 @@
 {
   "name": "@feathery/react",
-  "version": "2.85.0",
+  "version": "2.128.1",
   "description": "React library for Feathery",
   "author": "Boyang Dun",
   "license": "MIT",
@@ -39,6 +39,8 @@
     "prepublishOnly": "yarn build",
     "test": "jest",
     "test:ci": "jest --silent --maxWorkers=50% --ci",
+    "test:headless": "jest -c jest.headless.config.js",
+    "test:pptx-fonts": "jest -c jest.pptx-fonts.config.js",
     "test:debug": "npm-run-all -p test:watch jest-preview",
     "test:watch": "jest --watchAll",
     "jest-preview": "jest-preview",
@@ -67,7 +69,6 @@
     "@testing-library/jest-dom": "^5.17.0",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^14.5.0",
-    "@types/acorn": "^6.0.0",
     "@types/jest": "^28.1.6",
     "@types/lodash": "^4.17.24",
     "@types/lodash.debounce": "^4.0.8",
@@ -92,13 +93,13 @@
     "eslint-plugin-promise": "^4.2.1",
     "eslint-plugin-react": "^7.17.0",
     "eslint-plugin-standard": "^4.0.1",
-    "eslint-plugin-typescript": "^0.14.0",
     "husky": "^9.1.6",
     "jest": "^26.6.3",
     "jest-canvas-mock": "2.5.2",
     "jest-preview": "^0.3.1",
     "npm-run-all": "^4.1.5",
     "prettier": "^2.0.4",
+    "puppeteer-core": "^23.11.1",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "rollup": "^4.53.2",
@@ -107,7 +108,7 @@
     "rollup-plugin-typescript2": "^0.36.0",
     "standard-version": "^9.5.0",
     "ts-loader": "^9.3.0",
-    "typescript": "^4.7.3",
+    "typescript": "5.9.3",
     "webpack": "^5.11.0",
     "webpack-bundle-analyzer": "^4.5.0",
     "webpack-cli": "^4.2.0"
@@ -118,26 +119,27 @@
     "umd"
   ],
   "dependencies": {
-    "@ai-sdk/react": "3.0.232",
     "@emotion/babel-preset-css-prop": "11.12.0",
     "@emotion/cache": "^11.14.0",
     "@emotion/react": "11.14.0",
-    "@feathery/client-utils": "0.23.0",
+    "@feathery/client-utils": "0.25.1",
     "@fingerprintjs/fingerprintjs": "5.1.0",
     "@rc-component/slider": "^1.0.0",
-    "@ricky0123/vad-web": "^0.0.30",
     "@segment/analytics-next": "^1.84.0",
     "@stripe/react-stripe-js": "3.7.0",
     "@stripe/stripe-js": "7.3.0",
-    "@stytch/vanilla-js": "5.23.1",
+    "@tanstack/react-hotkeys": "0.10.0",
+    "@tanstack/react-table": "9.2.4",
+    "@tanstack/react-virtual": "3.14.10",
     "@uiw/react-color-sketch": "^2.5.4",
     "acorn": "^8.15.0",
     "acorn-loose": "^8.5.2",
     "acorn-walk": "^8.3.4",
-    "ai": "6.0.230",
     "classnames": "^2.5.1",
     "country-flag-emoji-polyfill": "^0.1.8",
     "date-fns": "^4.1.0",
+    "fast-xml-parser": "^5.2.5",
+    "fflate": "^0.8.2",
     "flat-map-polyfill": "^0.3.8",
     "is-url": "^1.2.4",
     "js-big-decimal": "^1.4.1",
@@ -145,6 +147,7 @@
     "libphonenumber-js": "^1.12.38",
     "lodash.debounce": "^4.0.8",
     "lodash.throttle": "^4.1.1",
+    "mtx-decompressor": "1.8.0",
     "quill-delta": "^4.2.2",
     "react-datepicker": "7.6.0",
     "react-ga4": "^1.4.1",
@@ -156,9 +159,8 @@
     "react-select": "5.10.1",
     "react-signature-canvas": "1.1.0-alpha.2",
     "scriptjs": "^2.5.9",
-    "streamdown": "2.4.0",
     "uuid": "^8.3.2",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   },
   "jest": {
     "collectCoverage": false,
@@ -178,29 +180,18 @@
     ],
     "setupFilesAfterEnv": [
       "<rootDir>/src/setupTests.ts"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "\\.headless\\.spec\\."
+    ],
+    "moduleNameMapper": {
+      "^mtx-decompressor$": "<rootDir>/node_modules/mtx-decompressor/dist/index.js",
+      "^@tanstack/(react-table|table-core)$": "<rootDir>/node_modules/@tanstack/$1/dist/index.js",
+      "^@tanstack/(react-table|table-core)/(.+)$": "<rootDir>/node_modules/@tanstack/$1/dist/$2.js"
+    },
+    "transformIgnorePatterns": [
+      "/node_modules/(?!@tanstack/(react-table|table-core)/)"
     ]
-  },
-  "babel": {
-    "presets": [
-      "@babel/preset-env",
-      "@babel/preset-typescript",
-      "@babel/preset-react",
-      "@emotion/babel-preset-css-prop"
-    ],
-    "plugins": [
-      [
-        "@babel/transform-runtime",
-        {
-          "regenerator": true
-        }
-      ]
-    ],
-    "env": {
-      "test": {
-        "plugins": [
-          "babel-plugin-transform-import-meta"
-        ]
-      }
-    }
   }
 }

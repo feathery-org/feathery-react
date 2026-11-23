@@ -1,5 +1,4 @@
 import React from 'react';
-
 export default function ShowEyeIcon({ width = 30, height = 30, ...props }) {
   return (
     <svg

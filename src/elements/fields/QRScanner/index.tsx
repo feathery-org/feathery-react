@@ -28,6 +28,7 @@ function QRScanner({
   responsiveStyles,
   editMode,
   elementProps = {},
+  errorAttributes = {},
   disabled = false,
   onChange = () => {},
   fieldVal = '',
@@ -234,6 +235,7 @@ function QRScanner({
                   style={{ opacity: '0.8', marginBottom: 10, marginTop: 16 }}
                 />
                 <button
+                  {...errorAttributes}
                   disabled={disabled}
                   type='button'
                   onClick={() => handleStart()}
@@ -319,6 +321,7 @@ function QRScanner({
           {/* This input must always be rendered so we can set field errors */}
           <ErrorInput
             id={servar.key}
+            name={servar.key}
             aria-label={element.properties.aria_label}
           />
         </div>

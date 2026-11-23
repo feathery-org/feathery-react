@@ -25,6 +25,11 @@ module.exports = {
   module: {
     rules: [
       {
+        test: /pptxWorkerSource\.ts$/,
+        enforce: 'pre',
+        use: require.resolve('./scripts/pptx-worker-loader.cjs')
+      },
+      {
         // .d.ts files get matched by ts
         test: /\.(ts|tsx)?$/,
         exclude: /node_modules/,
@@ -32,7 +37,10 @@ module.exports = {
       },
       {
         test: /\.(js|jsx)$/,
-        exclude: /node_modules/,
+        // Linked packages (yarn link) resolve to their real path outside
+        // node_modules, so also skip prebuilt dist output — otherwise
+        // transform-runtime injects @babel/runtime imports into it.
+        exclude: [/node_modules/, /client-utils[\\/]dist/],
         use: ['babel-loader']
       }
     ]

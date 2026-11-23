@@ -1,26 +1,51 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import { keyframes } from '@emotion/react';
 import { ViewerDocument } from './index';
 import TextLayerStyles from './TextLayerStyles';
+import AnnotationLayerStyles from './AnnotationLayerStyles';
 import { loadPdfjs, PDFJS_STANDARD_FONT_DATA_URL } from './pdfjsLoader';
+import { LINK_SERVICE_STUB } from './linkServiceStub';
 import { color, radius, shadow, fontSize } from './tokens';
 import { secondaryButtonCss } from './buttonStyles';
 import { AlertIcon } from './icons';
 import { featheryWindow } from '../../../utils/browser';
+import { scopeReviewAnnotations } from './fieldIsolation';
+import { SigningRecipient, SigningTag, SigningTagLayer } from './SigningTags';
 
 const PAGE_GAP = 24;
 // US Letter aspect for loading placeholders; actual pages size themselves.
 const SKELETON_ASPECT = '8.5 / 11';
 
+const NO_SIGNERS: SigningRecipient[] = [];
+
 interface DocumentCanvasProps {
   documents: ViewerDocument[];
+  // The packet's DocuSign recipients, which each document's signing tags name
+  // by position.
+  signers?: SigningRecipient[];
   pageWidth: number;
   onDocLoad: (pdfUrl: string, pdfProxy: any) => void;
+  // Fires when the filler edits a form widget. pdf.js writes widget values on
+  // these DOM events (text and choice on `input`, checkbox and radio on
+  // `change`), never on render.
+  onUserEdit?: () => void;
   registerPageRef: (
     pdfUrl: string,
     pageIndex: number,
     el: HTMLDivElement | null
   ) => void;
+  // Make every page's form widgets inert (no pointer, keyboard, or focus)
+  // while the viewer persists edits — see DocumentViewer's isInputLocked.
+  inputLocked?: boolean;
+  // Read-only pages paint widget values into the canvas and skip the live
+  // form layer entirely, so nothing on the page is editable.
+  readOnly?: boolean;
 }
 
 interface DocState {
@@ -35,11 +60,16 @@ const shimmer = keyframes({
 
 export default function DocumentCanvas({
   documents,
+  signers = NO_SIGNERS,
   pageWidth,
   onDocLoad,
-  registerPageRef
+  onUserEdit,
+  registerPageRef,
+  inputLocked = false,
+  readOnly = false
 }: DocumentCanvasProps) {
   const [docStates, setDocStates] = useState<Record<string, DocState>>({});
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const generationRef = useRef(0);
   const loadedRef = useRef<Set<string>>(new Set());
   // Every pdfProxy we've opened, so each one can be destroyed. A pdfProxy holds
@@ -147,8 +177,22 @@ export default function DocumentCanvas({
     // would restart in-flight loads.
   }, [docUrlsKey, loadDoc, destroyDoc]);
 
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || !onUserEdit) return undefined;
+    // User-only because pdf.js 5.4.296 dispatches no input/change while
+    // rendering (only `resetform`). Recheck on a pdf.js upgrade.
+    root.addEventListener('input', onUserEdit);
+    root.addEventListener('change', onUserEdit);
+    return () => {
+      root.removeEventListener('input', onUserEdit);
+      root.removeEventListener('change', onUserEdit);
+    };
+  }, [onUserEdit]);
+
   return (
     <div
+      ref={rootRef}
       css={{
         display: 'flex',
         flexDirection: 'column',
@@ -159,6 +203,7 @@ export default function DocumentCanvas({
       }}
     >
       <TextLayerStyles />
+      <AnnotationLayerStyles />
       {documents.map((doc) => {
         const state = docStates[doc.pdf_url];
         if (!state) {
@@ -223,8 +268,12 @@ export default function DocumentCanvas({
             key={doc.pdf_url}
             pdfProxy={state.pdfProxy}
             pdfUrl={doc.pdf_url}
+            signingTags={doc.signing_tags}
+            signers={signers}
             pageWidth={pageWidth}
             registerPageRef={registerPageRef}
+            inputLocked={inputLocked}
+            readOnly={readOnly}
           />
         );
       })}
@@ -235,21 +284,36 @@ export default function DocumentCanvas({
 interface DocumentPagesProps {
   pdfProxy: any;
   pdfUrl: string;
+  signingTags?: SigningTag[];
+  signers: SigningRecipient[];
   pageWidth: number;
   registerPageRef: (
     pdfUrl: string,
     pageIndex: number,
     el: HTMLDivElement | null
   ) => void;
+  inputLocked: boolean;
+  readOnly: boolean;
 }
 
 function DocumentPages({
   pdfProxy,
   pdfUrl,
+  signingTags,
+  signers,
   pageWidth,
-  registerPageRef
+  registerPageRef,
+  inputLocked,
+  readOnly
 }: DocumentPagesProps) {
   const numPages: number = pdfProxy.numPages ?? 0;
+  const tagsByPage = useMemo(() => {
+    const byPage: Record<number, SigningTag[]> = {};
+    (signingTags ?? []).forEach((tag) => {
+      byPage[tag.page] = [...(byPage[tag.page] ?? []), tag];
+    });
+    return byPage;
+  }, [signingTags]);
   return (
     <>
       {Array.from({ length: numPages }, (_, pageIndex) => (
@@ -260,7 +324,11 @@ function DocumentPages({
           <PdfPage
             pdfProxy={pdfProxy}
             pageNumber={pageIndex + 1}
+            signingTags={tagsByPage[pageIndex]}
+            signers={signers}
             pageWidth={pageWidth}
+            inputLocked={inputLocked}
+            readOnly={readOnly}
           />
         </div>
       ))}
@@ -271,13 +339,39 @@ function DocumentPages({
 interface PdfPageProps {
   pdfProxy: any;
   pageNumber: number;
+  signingTags?: SigningTag[];
+  signers: SigningRecipient[];
   pageWidth: number;
+  inputLocked: boolean;
+  readOnly: boolean;
 }
 
-function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
+function PdfPage({
+  pdfProxy,
+  pageNumber,
+  signingTags,
+  signers,
+  pageWidth,
+  inputLocked,
+  readOnly
+}: PdfPageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textLayerRef = useRef<HTMLDivElement | null>(null);
   const annotationDivRef = useRef<HTMLDivElement | null>(null);
+  // CSS pixels per pdf point once the page is measured, which is what places
+  // the signing tags; 0 until then.
+  const [pointScale, setPointScale] = useState(0);
+
+  // `inert` blocks clicks, typing and focus on the widgets (blurring one
+  // that's focused), so nothing can be edited while a save is in flight.
+  // Set imperatively: React 18 doesn't know the attribute and drops a boolean
+  // value for it. The layer div itself survives the render effect's
+  // innerHTML rebuilds, so the attribute persists across them.
+  // AnnotationLayerStyles also turns off pointer-events under
+  // `.annotationLayer[inert]` for browsers that predate inert support.
+  useEffect(() => {
+    annotationDivRef.current?.toggleAttribute('inert', inputLocked);
+  }, [inputLocked]);
 
   useEffect(() => {
     let cancelled = false;
@@ -291,6 +385,7 @@ function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
       const unscaledViewport = page.getViewport({ scale: 1 });
       const scale = pageWidth / unscaledViewport.width;
       const viewport = page.getViewport({ scale });
+      setPointScale(scale);
 
       const canvas = canvasRef.current;
       if (canvas) {
@@ -310,14 +405,15 @@ function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
             canvasContext,
             viewport,
             transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0],
-            // Read-only review: render with print intent so every field's
-            // filled value is baked into the page image. This shows values no
-            // matter where they live — the content stream, a widget appearance,
-            // or only in the field's /V (as Quik-filled fields do, with no baked
-            // appearance). No interactive widget layer is drawn on top (see
-            // below), so nothing can cover the values or be edited.
-            intent: 'print',
-            annotationMode: pdfjs.AnnotationMode.ENABLE
+            // ENABLE_FORMS excludes interactive widget appearances from the
+            // canvas — they're rendered as live HTML inputs by the annotation
+            // layer below, seeded from each field's /V. The default (ENABLE)
+            // would paint them onto the canvas too, doubling prefilled values
+            // under the inputs. A read-only page skips the form layer, so the
+            // widget appearances have to come from the canvas instead.
+            annotationMode: readOnly
+              ? pdfjs.AnnotationMode.ENABLE
+              : pdfjs.AnnotationMode.ENABLE_FORMS
           });
           try {
             await renderTask.promise;
@@ -361,19 +457,67 @@ function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
         if (cancelled) return;
       }
 
-      // Read-only review: no interactive widget layer. The print-intent canvas
-      // above already bakes every filled value into the page image, so drawing
-      // form widgets here would only risk covering those values (blank Quik
-      // widgets did exactly that). Keep the div empty.
+      // Interactive form layer: the PDF's own AcroForm widgets rendered as
+      // HTML inputs, writing edits into pdfProxy.annotationStorage. The viewer
+      // reads that storage back on finalize (see index.tsx) to persist what
+      // the filler changed.
       const annotationDiv = annotationDivRef.current;
-      if (annotationDiv) annotationDiv.innerHTML = '';
+      if (annotationDiv && !readOnly) {
+        // Preserve focus across an annotation-layer rebuild (e.g. on resize):
+        // clearing innerHTML blurs the field the user is editing, so remember
+        // it and restore focus once the widgets are recreated.
+        const activeEl = annotationDiv.ownerDocument
+          .activeElement as HTMLElement | null;
+        const focusedId =
+          activeEl && annotationDiv.contains(activeEl) ? activeEl.id : '';
+        annotationDiv.innerHTML = '';
+        annotationDiv.style.setProperty(
+          '--scale-factor',
+          String(viewport.scale)
+        );
+        // dontFlip: the widget layer positions elements in CSS (y-down)
+        // coordinates; the flipped canvas viewport would mirror them.
+        const annotationViewport = viewport.clone({ dontFlip: true });
+        const annotationLayer = new pdfjs.AnnotationLayer({
+          div: annotationDiv,
+          page,
+          viewport: annotationViewport,
+          accessibilityManager: null,
+          annotationCanvasMap: null,
+          annotationEditorUIManager: null,
+          structTreeLayer: null,
+          // pdf.js 5.x takes these in the constructor (4.x took them in
+          // render() — see the version note in pdfjsLoader.ts).
+          linkService: LINK_SERVICE_STUB,
+          annotationStorage: pdfProxy.annotationStorage
+        });
+        try {
+          const annotations = await page.getAnnotations();
+          if (cancelled) return;
+          await annotationLayer.render({
+            annotations: scopeReviewAnnotations(pdfProxy, annotations),
+            imageResourcesPath: '',
+            renderForms: true,
+            downloadManager: null,
+            enableScripting: false
+          });
+        } catch {
+          // A widget-layer failure degrades the page to read-only; it must
+          // never block the rendered document itself.
+        }
+        if (focusedId && typeof CSS !== 'undefined' && CSS.escape) {
+          annotationDiv
+            .querySelector<HTMLElement>(`#${CSS.escape(focusedId)}`)
+            ?.focus();
+        }
+      }
     })();
 
     return () => {
       cancelled = true;
       if (renderTask) renderTask.cancel();
     };
-  }, [pdfProxy, pageNumber, pageWidth]);
+  }, [pdfProxy, pageNumber, pageWidth, readOnly]);
 
   return (
     <div
@@ -392,6 +536,13 @@ function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
       />
       <div ref={textLayerRef} className='textLayer' />
       <div ref={annotationDivRef} className='annotationLayer' />
+      {!!signingTags?.length && pointScale > 0 && (
+        <SigningTagLayer
+          tags={signingTags}
+          signers={signers}
+          scale={pointScale}
+        />
+      )}
     </div>
   );
 }

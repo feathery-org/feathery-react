@@ -7,6 +7,8 @@ import replace from '@rollup/plugin-replace';
 import babel from '@rollup/plugin-babel';
 import { readFileSync } from 'fs';
 import path from 'path';
+import pptxWorkerBuild from './scripts/pptx-worker-bundle.cjs';
+import bundledPackages from './scripts/release-sbom/bundled-packages.cjs';
 
 // Read package.json
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
@@ -41,6 +43,7 @@ export default {
     'jszip'
   ],
   plugins: [
+    pptxWorkerBuild.pptxWorkerPlugin(),
     del({ targets: ['dist/*', 'cjs/*'] }),
     // Ship the vendored country-flag font beside the bundle. Unlike webpack,
     // rollup leaves `new URL('./TwemojiCountryFlags.woff2', import.meta.url)`
@@ -95,8 +98,15 @@ export default {
     babel({
       include: ['node_modules/@fingerprintjs/fingerprintjs/**'],
       babelHelpers: 'bundled',
+      // The repo's Babel config moved from package.json (file-relative, so it
+      // never reached node_modules) to a root babel.config.js that Jest needs
+      // in order to transform TanStack's ESM-only dist. Opting out here keeps
+      // this transform exactly as it was: preset-env and nothing else.
+      configFile: false,
+      babelrc: false,
       presets: [['@babel/preset-env', { targets: { ie: '11' } }]]
     }),
+    bundledPackages.rollupPlugin('rollup'),
     typescript({
       tsconfig: './tsconfig.json',
       tsconfigOverride: {

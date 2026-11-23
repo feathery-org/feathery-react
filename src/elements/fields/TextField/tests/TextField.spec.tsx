@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   createTextFieldElement,
   createTextFieldProps,
@@ -5,7 +6,6 @@ import {
   getMockFieldValue,
   resetMockFieldValue
 } from './test-utils';
-import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import TextField from '../index';
 
@@ -61,6 +61,22 @@ describe('TextField - Base Functionality', () => {
       );
 
       expect(input().value).toBe('Hello World');
+    });
+
+    it('converts accented input before applying a letters-only mask', () => {
+      const element = createTextFieldElement('text_field', {
+        allowed_characters: 'letters'
+      });
+      render(
+        <TextField
+          {...createTextFieldProps(element)}
+          formSettings={{ asciiOnly: true }}
+          onAccept={createStatefulAcceptHandler()}
+        />
+      );
+      fireEvent.input(input(), { target: { value: 'Sãoİstanbul' } });
+      expect(getMockFieldValue()).toBe('SaoIstanbul');
+      expect(input().value).toBe('SaoIstanbul');
     });
 
     it('handles constrained text input - letters only', () => {

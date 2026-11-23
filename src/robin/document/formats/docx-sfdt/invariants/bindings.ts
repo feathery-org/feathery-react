@@ -1,0 +1,85 @@
+/**
+ * Binding consistency: the change set introduces no error the product's binding engine reports
+ * (a duplicated table or column, a conflicting definition, a dependency cycle, a malformed
+ * expression or tag, a formula that cannot evaluate, a row binding outside its table), and a bound
+ * table's control holds exactly one table (WP2 failure class 3: a second table put inside an
+ * existing bound table's control loses its identity).
+ */
+import type { Invariant } from '../../../pack';
+import type { NfNode, NormalForm } from '../../../tree';
+import { KIND } from '../adapter/keys';
+import { bindingErrors } from '../features/binding';
+import { refusal } from './common';
+import { arr } from '../util';
+
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * The binding errors a change introduces, less a formula failing to evaluate: that one is
+ * orphaned-dependents' to report when what it read was removed
+ */
+export function freshBindingErrors(before: NormalForm, after: NormalForm) {
+  const keyed = (nf: NormalForm) =>
+    new Map(
+      bindingErrors(nf).map((d) => [
+        `${d.code}:${d.id ?? d.message}`,
+        { code: d.code, message: d.message, id: d.id ?? null }
+      ])
+    );
+  const was = keyed(before);
+  return [...keyed(after)]
+    .filter(([k, d]) => !was.has(k) && d.code !== 'evaluation-failed')
+    .map(([, d]) => d);
+}
+
+export const bindingConsistency: Invariant = {
+  name: 'binding',
+  cards: ['binding'],
+  check({ before, after }) {
+    const problems = [];
+    const fresh = freshBindingErrors(before.nf, after.nf);
+    if (fresh.length)
+      problems.push(
+        refusal(
+          'binding',
+          `the change would break bindings: ${fresh
+            .map((d) => `${d.code}${d.id ? ` at ${d.id}` : ''}: ${d.message}`)
+            .join('; ')}.`,
+          fresh,
+          ['binding'],
+          'Give each new binding a name unique in its scope, a new bound table its own table id, and an expression that reads names the document has.'
+        )
+      );
+    const crowded = after
+      .nodes()
+      .filter(
+        (n) =>
+          n.kind === KIND.control &&
+          isObject(n.binding) &&
+          n.binding.table !== undefined
+      )
+      .filter(
+        (n) =>
+          arr<NfNode>(n.blocks).filter((b) => b.kind === KIND.table).length > 1
+      );
+    if (crowded.length)
+      problems.push(
+        refusal(
+          'binding',
+          `bound table control(s) ${crowded
+            .map((n) => n.id)
+            .join(
+              ', '
+            )} would hold more than one table; the extra table would take the first table's identity.`,
+          crowded.map((n) => ({
+            id: n.id,
+            table: (n.binding as Record<string, unknown>).table
+          })),
+          ['binding', 'table'],
+          'Place a new bound table in its own block-level control with its own `table` id, beside the existing one, not inside it.'
+        )
+      );
+    return problems;
+  }
+};

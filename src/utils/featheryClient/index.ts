@@ -1,4 +1,5 @@
 import IntegrationClient from './integrationClient';
+import { isAsciiTextField } from '../ascii';
 import {
   fieldValues,
   fileDeduplicationCount,
@@ -9,8 +10,10 @@ import {
   initState,
   markStepCompleted,
   registerKnownFieldKeys,
-  registerTextVariableFormats,
-  setFieldValues
+  registerTextVariableFields,
+  restoredFileKeys,
+  setFieldValues,
+  normalizeKnownAsciiValues
 } from '../init';
 import { dataURLToFile, isBase64Image } from '../image';
 import { encodeGetParams } from '../primitives';
@@ -33,10 +36,17 @@ import {
 import { initializeIntegrations } from '../../integrations/utils';
 import { loadLottieLight } from '../../elements/components/Lottie';
 import { downloadAllFileUrls, featheryDoc, featheryWindow } from '../browser';
+import {
+  forgetLinkToken,
+  getStoredLinkCredentials,
+  isRejectedLinkMessage,
+  retainLinkToken,
+  type LinkRedemption
+} from '../accessLink';
 import { authState } from '../../auth/LoginForm';
 import { loadQRScanner } from '../../elements/fields/QRScanner/qrLoader';
 import { gatherTrustedFormFields } from '../../integrations/trustedform';
-import { RequestOptions } from '../offlineRequestHandler';
+import { RequestOptions, SUPERSEDED_WRITE } from '../offlineRequestHandler';
 import {
   completeUpload,
   failUpload,
@@ -46,7 +56,7 @@ import {
 import debounce from 'lodash.debounce';
 import type { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
-import { GetConfigParams } from '../internalState';
+import { GetConfigParams, RunComputerAgentOptions } from '../internalState';
 import {
   dataHubAction as apiDataHubAction,
   extractAIDocument,
@@ -59,24 +69,38 @@ import {
   getS3Url,
   getStaticUrl,
   HubActionOptions,
+  HubAssociation,
   inviteFormCollaborator as apiInviteFormCollaborator,
   setTaskStatus as apiSetTaskStatus,
   PageSelectionInput,
   parseAPIError,
+  pollForCompletion,
   setEnvironment,
+  setRequestHeaderProvider,
   URL_ENUM
 } from '@feathery/client-utils';
+import { linkHeadersForUrl } from '../accessLinkRequest';
 import {
   FEATHERY_INTERACTION_EVENT,
   isInteractionDetected,
   setInteractionDetected
 } from '../interactionState';
 import { EventQueue } from '../eventQueue';
+import { STEP_EVENT_LOAD, STEP_EVENT_SUBMIT } from '../stepEvents';
+
+declare const __PACKAGE_VERSION__: string;
 
 setEnvironment('production');
 try {
   setEnvironment((process.env.BACKEND_ENV || 'production') as URL_ENUM);
 } catch (e) {} // process.env won't exist in production build
+
+// client-utils builds the requests behind its own API helpers, so the SDK hands
+// it the credentials it holds and client-utils cannot see: the access link a
+// form was opened with, and the collaborator a session is acting as. Registered
+// beside the environment because this module is the first thing the SDK loads,
+// and the provider has to be in place before the first request goes out.
+setRequestHeaderProvider(linkHeadersForUrl);
 
 export let API_URL = getApiUrl();
 export let CDN_URL = getCdnUrl();
@@ -98,6 +122,12 @@ export const updateRegionApiUrls = (region: string) => {
   STATIC_URL = getStaticUrl();
   S3_URL = getS3Url();
 };
+
+// An event held until the user interacts, with the submit queue it follows
+interface HeldEvent {
+  eventData: any;
+  earlierSubmissions: Promise<any>;
+}
 
 /**
  * The number of milliseconds waited until another submitCustom call
@@ -121,7 +151,7 @@ const getUploadFileNames = (fileValue: any): string[] => {
  * `{"message": ...}` 400 would otherwise be shown to the user as raw JSON.
  * Anything we can't read a message out of falls back to the body as-is.
  */
-export function parseInviteError(body?: string) {
+function parseInviteError(body?: string) {
   if (!body) return 'Failed to invite collaborators';
   try {
     const parsed = JSON.parse(body);
@@ -132,18 +162,53 @@ export function parseInviteError(body?: string) {
   return body;
 }
 
+// Step answers still being submitted. Custom field writes wait on them because
+// some SDK field updates use a shared client while a form submits on its own
+// client, and other writes must follow the form client's offline queue.
+let stepAnswersInFlight: Promise<void> | null = null;
+
+const trackStepAnswers = (answers: Promise<unknown>) => {
+  const settled: Promise<void> = Promise.all([
+    stepAnswersInFlight,
+    answers.catch(() => undefined)
+  ]).then(() => {
+    if (stepAnswersInFlight === settled) stepAnswersInFlight = null;
+  });
+  stepAnswersInFlight = settled;
+};
+
 export default class FeatheryClient extends IntegrationClient {
+  private submissionResults = new WeakMap<
+    Promise<unknown>,
+    Promise<PromiseSettledResult<unknown>[]>
+  >();
+
+  async hasRecoveredSubmission(submission: Promise<unknown>, error: unknown) {
+    if (!this.offlineRequestHandler.hasRecoveredWrite(error)) return false;
+    const results = this.submissionResults.get(submission);
+    if (!results) return false;
+    return (await results).every(
+      (result) =>
+        result.status === 'fulfilled' ||
+        this.offlineRequestHandler.hasRecoveredWrite(result.reason)
+    );
+  }
+
   /**
    * Used to aggregate field value updates for successive calls to
    * submitCustom within the debounce window
    */
   pendingCustomFieldUpdates: { [key: string]: any };
+  pendingRepeatedFileKeys: Set<string>;
 
   /**
    * Debounced implementation of submitCustom
    */
   debouncedSubmitCustom: DebouncedFunc<(override: boolean) => Promise<void>>;
   customSubmitInFlight: Record<string, any>;
+  // A Robin form-fill driver's session, whose saves and events never complete
+  // the form
+  formFill: boolean;
 
   /**
    * Queue for events triggered before user interaction
@@ -154,10 +219,13 @@ export default class FeatheryClient extends IntegrationClient {
     formKey = '',
     ignoreNetworkErrors?: any,
     draft = false,
-    bypassCDN = false
+    bypassCDN = false,
+    formFill = false
   ) {
     super(formKey, ignoreNetworkErrors, draft, bypassCDN);
+    this.formFill = formFill;
     this.pendingCustomFieldUpdates = {};
+    this.pendingRepeatedFileKeys = new Set();
     this.customSubmitInFlight = {};
     this.debouncedSubmitCustom = debounce(
       this._debouncedSubmitCustom.bind(this),
@@ -190,9 +258,23 @@ export default class FeatheryClient extends IntegrationClient {
   private async replayQueuedEvents() {
     if (this.userEventQueue.isEmpty()) return;
 
-    await this.userEventQueue.replayAll(async (eventData) => {
-      return this._registerEventInternal(eventData);
-    });
+    await this.userEventQueue.replayAll(
+      async ({ eventData, earlierSubmissions }: HeldEvent) =>
+        this._registerEventInternal(eventData, earlierSubmissions)
+    );
+  }
+
+  // A submission counts as an interaction, so it releases the held events,
+  // without waiting on them: an event held while it runs waits on it.
+  private releaseHeldEvents() {
+    this.handleInteraction().catch((error) =>
+      console.warn('Error releasing held events', error)
+    );
+  }
+
+  // Resolves once events held for the first interaction have been replayed
+  public whenUserEventsReplayed() {
+    return this.userEventQueue.whenIdle();
   }
 
   public destroy() {
@@ -210,12 +292,26 @@ export default class FeatheryClient extends IntegrationClient {
     const data: Record<string, any> = {
       fuser_key: userId,
       step_key: stepKey,
-      servars,
+      servars: servars.map((servar: any) =>
+        Object.fromEntries(
+          Object.entries(servar).map(([type, value]) => [
+            type,
+            isAsciiTextField(type)
+              ? normalizeKnownAsciiValues(
+                  { [servar.key]: value },
+                  this.formKey
+                )[servar.key]
+              : value
+          ])
+        )
+      ),
       panel_key: this.formKey,
       __feathery_version: this.version,
+      __feathery_sdk_version: __PACKAGE_VERSION__,
       no_complete: noComplete
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
+    if (this.formFill) data.robin_fill = true;
 
     const options: RequestOptions = {
       headers: { 'Content-Type': 'application/json' },
@@ -346,10 +442,15 @@ export default class FeatheryClient extends IntegrationClient {
     if (numFiles === 0) {
       const hasPreviousSuccess = fileRetryStatus[servar.key] !== undefined;
 
-      // Only skip request for optional fields that were never submitted
+      // Skip fields never submitted. A file restored from the server counts as
+      // submitted, so removing it clears the server copy.
       if (
+        !restoredFileKeys.has(servar.key) &&
         fileDeduplicationCount[servar.key] === undefined &&
-        !hasPreviousSuccess
+        !hasPreviousSuccess &&
+        !(await this.offlineRequestHandler
+          .hasRejectedFileWrite(stepKey, servar.key)
+          .catch(() => false))
       ) {
         return Promise.resolve();
       }
@@ -399,6 +500,7 @@ export default class FeatheryClient extends IntegrationClient {
 
     formData.set('__feathery_form_key', this.formKey);
     formData.set('__feathery_step_key', stepKey);
+    formData.set('__feathery_sdk_version', __PACKAGE_VERSION__);
     if (this.version) formData.set('__feathery_version', this.version);
 
     const options: RequestOptions = {
@@ -415,9 +517,13 @@ export default class FeatheryClient extends IntegrationClient {
     let queuedForReplay = false;
     try {
       // Reset retry attempts for this field before retrying so new submissions get the full budget
-      await this.offlineRequestHandler.resetRetryAttemptsByUrl(url, {
-        fieldKey: servar.key
-      });
+      await this.offlineRequestHandler
+        .resetRetryAttemptsByUrl(url, {
+          fieldKey: servar.key
+        })
+        .catch((error) =>
+          console.warn('Error resetting upload retries', error)
+        );
 
       const result = await this.offlineRequestHandler.runOrSaveRequest(
         () => this._fetch(url, options, true, true),
@@ -425,22 +531,27 @@ export default class FeatheryClient extends IntegrationClient {
         options,
         'submit',
         stepKey,
-        {
-          fieldKey: servar.key,
-          preserveStepRequests: true
-        },
+        { fieldKey: servar.key },
         () => {
           queuedForReplay = true;
           // Waiting on connectivity, not stalled mid-upload
           queueUpload(this.formKey, servar.key);
         }
       );
-      // Mark as successful upload - will block duplicate attempts
+      // A newer upload of this field landed first and keeps its status
+      if (result === SUPERSEDED_WRITE) return;
+      // Queuing an offline upload is not a server acknowledgement. Keep its
+      // request and allow the next manual submission to retry the file.
+      if (queuedForReplay) {
+        fileRetryStatus[servar.key] = false;
+        delete fileDeduplicationCount[servar.key];
+        return result;
+      }
+      // Mark as successful upload - will block duplicate attempts. The queue
+      // drops only this user's older uploads of the field itself; a newer one
+      // that failed while this was in flight stays queued.
       fileRetryStatus[servar.key] = true;
-      if (!queuedForReplay) completeUpload(this.formKey, servar.key);
-      await this.offlineRequestHandler.clearFailedRequestByUrl(url, {
-        fieldKey: servar.key
-      });
+      completeUpload(this.formKey, servar.key);
       return result;
     } catch (error) {
       // Mark as failed - allows retry on next submission
@@ -490,11 +601,17 @@ export default class FeatheryClient extends IntegrationClient {
       });
     });
     registerKnownFieldKeys({ servars: Object.keys(values) });
-    Object.assign(fieldValues, {
-      ...values,
-      ...additionalValues,
-      ...fieldValues
-    });
+    Object.assign(
+      fieldValues,
+      normalizeKnownAsciiValues(
+        {
+          ...values,
+          ...additionalValues,
+          ...fieldValues
+        },
+        this.formKey
+      )
+    );
   }
 
   _loadFormPackages(res: any) {
@@ -602,7 +719,7 @@ export default class FeatheryClient extends IntegrationClient {
       // Documents button action that targets it. Otherwise formSchemas is only
       // populated via init({ preloadForms }), which hosted forms don't use.
       if (res.steps) initState.formSchemas[this.formKey] = res;
-      registerTextVariableFormats(res);
+      registerTextVariableFields(res);
       return res;
     });
   }
@@ -642,9 +759,33 @@ export default class FeatheryClient extends IntegrationClient {
     return data.completed_steps ?? [];
   }
 
+  /**
+   * Stop sending a token the server has rejected for good: this device's stored
+   * copy, and the in-memory pair every request reads if it is still that token.
+   */
+  private forgetRejectedLink(token: string) {
+    forgetLinkToken(this.formKey, token);
+    if (initState.linkToken === token) {
+      initState.linkToken = '';
+      initState.linkSecret = '';
+    }
+  }
+
   async fetchSession(formPromise = null, block = false) {
     // Block if there's a chance user id isn't available yet
     await (block ? initFormsPromise : Promise.resolve());
+
+    // The token leaves the address bar as soon as the server accepts it, so a
+    // reload or a new tab arrives with a plain url and nothing to read. The
+    // copy this device kept for the form is what resumes the link session.
+    if (!initState.linkToken) {
+      const { token, secret } = getStoredLinkCredentials(this.formKey);
+      if (token) {
+        initState.linkToken = token;
+        initState.linkSecret = secret;
+      }
+    }
+
     const {
       userId,
       collaboratorId,
@@ -679,8 +820,17 @@ export default class FeatheryClient extends IntegrationClient {
     const url = `${API_URL}panel/session/v3/?${params}`;
     const options = { importance: 'high' };
 
-    const response = await this._fetch(url, options);
-    if (!response) return [];
+    // `_fetch` sends nothing once any form on the page is blocked, and the error
+    // it leaves is page-wide, so only this request's own token can be at fault
+    const sentToken = initState.authenticationError ? '' : initState.linkToken;
+    // Network errors propagate so the form falls back to its origin step,
+    // rather than reading a missing session as a closed form
+    const response = await this._fetch(url, options, true, true);
+    if (!response) {
+      if (sentToken && isRejectedLinkMessage(initState.authenticationError))
+        this.forgetRejectedLink(sentToken);
+      return [];
+    }
 
     const session = await response.json().catch((reason) => {
       throw new Error(
@@ -693,6 +843,34 @@ export default class FeatheryClient extends IntegrationClient {
     if (collab.invalid || collab.completed || collab.direct_submission_disabled)
       // will cause form to be disabled
       return [{ collaborator: collab }];
+
+    // An access link answers with no form data until the device is settled:
+    // `confirm` needs the user to redeem a single-use link here, `required`
+    // means the form only opens from a link and none was presented.
+    const link = session.link ?? {};
+    if (link.confirm || link.required) {
+      if (link.confirm) {
+        // This answer carried no values, and the Continue screen sits here for
+        // as long as the user takes to click it, so the fetch must not pass as
+        // the one that loaded them: a form mounting in that window would be
+        // told to skip values that never arrived. Redeeming resets this too,
+        // through resetSubmissionState. `required` needs neither - it is
+        // terminal for this form, and no fetch follows it.
+        initState.fieldValuesInitialized = false;
+        // The server recognized the token as this form's, so it can move out of
+        // the url now. `required` is the opposite - no usable link was
+        // presented - and leaves both the url and storage alone.
+        retainLinkToken(this.formKey, initState.linkToken);
+      }
+      return [{ link }];
+    }
+
+    // Keep the token only for the form the server actually resolved with it. A
+    // session that came back without `resolved` was opened by the tracked user
+    // instead, which means the token was minted for another form and ignored
+    // here; storing it would send another form's credential on every later
+    // visit to this one.
+    if (link.resolved) retainLinkToken(this.formKey, initState.linkToken);
 
     // If tracking disabled or ID overridden, update user id from backend
     if (!noData && session.new_user_id) initState.userId = session.new_user_id;
@@ -707,7 +885,7 @@ export default class FeatheryClient extends IntegrationClient {
     // Registered even when the session carries no data, since the field keys are
     // returned regardless and text variables need them to resolve empty fields
     registerKnownFieldKeys(trueSession);
-    if (!noData) updateSessionValues(trueSession);
+    if (!noData) updateSessionValues(trueSession, this.formKey);
 
     // submitAuthInfo can set formCompleted before the session is set, so we don't want to override completed flags
     if (initState.formSessions[this.formKey]?.form_completed)
@@ -716,14 +894,41 @@ export default class FeatheryClient extends IntegrationClient {
     initState._internalUserId = trueSession.internal_id;
 
     const formData = await (formPromise ?? Promise.resolve());
+    Object.assign(
+      fieldValues,
+      normalizeKnownAsciiValues(fieldValues, this.formKey)
+    );
     return [trueSession, formData];
   }
 
-  async submitAuthInfo({
-    authId,
-    authData = {},
-    isStytchTemplateKey = false
-  }: any) {
+  /**
+   * Claim a single-use access link for this device, which is what the Continue
+   * screen is gating. Returns the submission the link opens plus the device
+   * secret that lets this browser reopen it; `collaborator_id` is null outside
+   * collaborative forms. A rejected link (expired, already used elsewhere,
+   * revoked) comes back as a 403, which `_fetch` turns into the blocked form
+   * state and reports here as no redemption. Rate limits and server errors
+   * throw instead, since those leave the link unredeemed and are worth retrying.
+   */
+  async redeemLink(token: string): Promise<LinkRedemption | undefined> {
+    const url = `${API_URL}panel/link/redeem/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({ token })
+    };
+    // Same reasoning as the session fetch: only a request this form sent
+    const sent = !initState.authenticationError;
+    const response = await this._fetch(url, options);
+    if (!response) {
+      if (sent && isRejectedLinkMessage(initState.authenticationError))
+        this.forgetRejectedLink(token);
+      return undefined;
+    }
+    return response.json();
+  }
+
+  async submitAuthInfo({ authId, authData = {} }: any) {
     const { userId } = initInfo();
     await authState.onLogin();
 
@@ -731,7 +936,6 @@ export default class FeatheryClient extends IntegrationClient {
       auth_id: authId,
       auth_data: authData,
       auth_form_key: authState.authFormKey,
-      is_stytch_template_key: isStytchTemplateKey,
       // This response also feeds updateSessionValues, so it needs the same
       // hole signal the session fetch sends.
       repeat_holes: true,
@@ -793,68 +997,112 @@ export default class FeatheryClient extends IntegrationClient {
       return;
     }
 
-    const customKeyValues = { ...this.pendingCustomFieldUpdates };
-    this.pendingCustomFieldUpdates = {}; // Clear pending updates after copying them
+    const uniqueId = uuidv4();
+    const req = (async () => {
+      // Keep the whole flush registered as in flight, including this wait and
+      // value resolution, so concurrent flushers cannot mistake it for a
+      // completed request before the custom fields are sent.
+      let stepAnswers = stepAnswersInFlight;
+      while (stepAnswers) {
+        await stepAnswers;
+        if (stepAnswers === stepAnswersInFlight) break;
+        stepAnswers = stepAnswersInFlight;
+      }
 
-    const { userId } = initInfo();
-    const url = `${API_URL}panel/custom/submit/v3/`;
+      const customKeyValues = { ...this.pendingCustomFieldUpdates };
+      this.pendingCustomFieldUpdates = {}; // Clear pending updates after copying them
+      const repeatedFileKeys = this.pendingRepeatedFileKeys;
+      this.pendingRepeatedFileKeys = new Set();
 
-    const jsonKeyVals: Record<string, any> = {};
-    const formData = new FormData();
+      const { userId } = initInfo();
+      const url = `${API_URL}panel/custom/submit/v3/`;
 
-    await Promise.all(
-      Object.entries(customKeyValues).map(async ([key, entry]) => {
-        if (Array.isArray(entry)) {
-          // Need to resolve the promises for successful file upload.
-          const vals = await Promise.all(entry);
-          if (vals.some((val) => val instanceof Blob)) {
-            vals.forEach((val) => {
+      const jsonKeyVals: Record<string, any> = {};
+      const formData = new FormData();
+      const fileIndices: Record<string, { length: number; indices: number[] }> =
+        {};
+
+      await Promise.all(
+        Object.entries(customKeyValues).map(async ([key, entry]) => {
+          if (repeatedFileKeys.has(key)) {
+            const vals = Array.isArray(entry)
+              ? await Promise.all(entry)
+              : entry == null
+              ? []
+              : [await entry];
+            const indices: number[] = [];
+            vals.forEach((val, index) => {
+              if (val === null || val === undefined || val === '') return;
+              if (!(val instanceof Blob))
+                throw new Error(`${key} must contain files or empty rows`);
               formData.append('files', val);
               formData.append('file_keys', key);
+              indices.push(index);
             });
+            fileIndices[key] = { length: vals.length, indices };
+            // The custom endpoint stores new uploads at new paths. It does not
+            // return those paths, so a later step submit must resolve the files
+            // again instead of sending paths from before this save.
+            filePathMap[key] = null;
+            delete fileDeduplicationCount[key];
             return;
           }
-        }
+          if (Array.isArray(entry)) {
+            // Need to resolve the promises for successful file upload.
+            const vals = await Promise.all(entry);
+            if (vals.some((val) => val instanceof Blob)) {
+              vals.forEach((val) => {
+                formData.append('files', val);
+                formData.append('file_keys', key);
+              });
+              return;
+            }
+          }
 
-        entry = await entry;
-        if (entry instanceof Blob) {
-          formData.append('files', entry);
-          formData.append('file_keys', key);
-          return;
-        }
+          entry = await entry;
+          if (entry instanceof Blob) {
+            formData.append('files', entry);
+            formData.append('file_keys', key);
+            return;
+          }
 
-        jsonKeyVals[key] = entry;
-      })
-    );
+          jsonKeyVals[key] = entry;
+        })
+      );
 
-    formData.set('custom_key_values', JSON.stringify(jsonKeyVals));
-    // @ts-expect-error TS(2345): Argument of type 'boolean' is not assignable to pa... Remove this comment to see the full error message
-    formData.set('override', override);
-    if (this.formKey) {
-      formData.set('form_key', this.formKey);
-      if (this.version) formData.set('__feathery_version', this.version);
-    }
-    if (userId) formData.set('fuser_key', userId);
+      formData.set('custom_key_values', JSON.stringify(jsonKeyVals));
+      if (Object.keys(fileIndices).length)
+        formData.set(
+          '__feathery_custom_file_indices',
+          JSON.stringify(fileIndices)
+        );
+      // @ts-expect-error TS(2345): Argument of type 'boolean' is not assignable to pa... Remove this comment to see the full error message
+      formData.set('override', override);
+      if (this.formKey) {
+        formData.set('form_key', this.formKey);
+        if (this.version) formData.set('__feathery_version', this.version);
+      }
+      if (userId) formData.set('fuser_key', userId);
 
-    const options: RequestOptions = {
-      method: 'POST',
-      body: formData,
-      // Ran into a situation with Baldwin where request would not go through
-      // with keepalive = true
-      keepalive: false
-    };
+      const options: RequestOptions = {
+        method: 'POST',
+        body: formData,
+        // Ran into a situation with Baldwin where request would not go through
+        // with keepalive = true
+        keepalive: false
+      };
 
-    // Here we can safely remove the listener because offlineRequestHandler has its own beforeunload
-    this._removeCustomFieldListener();
-    const uniqueId = uuidv4();
-    const req = this.offlineRequestHandler.runOrSaveRequest(
-      () => this._fetch(url, options, true, true),
-      url,
-      options,
-      'submit'
-    );
-    // Clean up on both success and failure so a failed request doesn't
-    // permanently register as in flight and block future flush cycles
+      // Here we can safely remove the listener because offlineRequestHandler has its own beforeunload
+      this._removeCustomFieldListener();
+      return this.offlineRequestHandler.runOrSaveRequest(
+        () => this._fetch(url, options, true, true),
+        url,
+        options,
+        'submit'
+      );
+    })();
+    // Keep the wait and send under the same entry. Flushers only resolve once
+    // the request, including its initial step-answer wait, has settled.
     const removeInFlight = () => delete this.customSubmitInFlight[uniqueId];
     this.customSubmitInFlight[uniqueId] = req.then(
       removeInFlight,
@@ -924,15 +1172,25 @@ export default class FeatheryClient extends IntegrationClient {
     // Options
     {
       override = true,
-      shouldFlush = false
-    }: { override?: boolean; shouldFlush?: boolean } = {}
+      shouldFlush = false,
+      repeatedFileKeys = []
+    }: {
+      override?: boolean;
+      shouldFlush?: boolean;
+      repeatedFileKeys?: string[];
+    } = {}
   ) {
     if (this.draft || this.getNoSave()) return;
     if (Object.keys(customKeyValues).length === 0 && !shouldFlush) return;
     // If there are values passed, aggregate them in the pending queue
-    Object.entries(customKeyValues).forEach(([key, value]) => {
+    Object.entries(
+      this.formKey
+        ? normalizeKnownAsciiValues(customKeyValues, this.formKey)
+        : customKeyValues
+    ).forEach(([key, value]) => {
       if (value !== undefined) this.pendingCustomFieldUpdates[key] = value;
     });
+    repeatedFileKeys.forEach((key) => this.pendingRepeatedFileKeys.add(key));
     // if we don't want to override the existing values or the caller tells us to flush, immediately flush
     if (!override || shouldFlush) {
       return this.flushCustomFields(override);
@@ -967,20 +1225,54 @@ export default class FeatheryClient extends IntegrationClient {
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
 
-    await this.handleInteraction();
-    const waitForPreviousSubmission = this.submitQueue.catch(() => undefined);
-    const submission = Promise.all([
-      waitForPreviousSubmission,
-      this.submitCustom(hiddenFields, { shouldFlush: true }),
-      this._submitJSONData(jsonServars, step.key, hasNext),
-      ...fileServars.map((servar: any) =>
-        this._submitFileData(servar, step.key)
-      )
-    ]);
+    this.releaseHeldEvents();
+    const earlierSubmissions = this.submitQueue;
+    // Resolved once every answer request for this step settles. Registered before
+    // anything is awaited so a rule that runs right after this call sees it.
+    let answersSent: () => void = () => {};
+    trackStepAnswers(
+      new Promise<void>((resolve) => {
+        answersSent = resolve;
+      })
+    );
+    let answersStarted = false;
+    const runSubmission = async (): Promise<unknown[]> => {
+      // A step submission is the user's manual retry for answers still queued
+      // from earlier steps, including a confirmation step with no fields.
+      await this.offlineRequestHandler
+        .resetAnswerWriteRetries()
+        .catch((error) =>
+          console.warn('Error resetting saved answer retries', error)
+        );
+      const answerRequests = [
+        this._submitJSONData(jsonServars, step.key, hasNext),
+        ...fileServars.map((servar: any) =>
+          this._submitFileData(servar, step.key)
+        )
+      ];
+      answersStarted = true;
+      // A failed request must not release custom writes while a sibling upload
+      // can still finish and overwrite them. Keep submission rejection separate.
+      Promise.allSettled(answerRequests).then(answersSent);
+      const tasks = [
+        earlierSubmissions.catch(() => undefined),
+        this.submitCustom(hiddenFields, { shouldFlush: true }),
+        ...answerRequests
+      ];
+      this.submissionResults.set(submission, Promise.allSettled(tasks));
+      return Promise.all([tasks[0], tasks[1], Promise.all(answerRequests)]);
+    };
+    const submission = runSubmission();
+    submission.catch(() => {
+      // Setup can fail before any answer requests exist; those failures must
+      // release the gate too, without bypassing the all-settled wait above.
+      if (!answersStarted) answersSent();
+    });
 
     // Maintain submitQueue semantics so downstream consumers (like registerEvent)
     // still see actual success/failure while preventing previous rejections
-    // from blocking new submit attempts.
+    // from blocking new submit attempts. It is set before anything is awaited,
+    // so an event registered right after this call waits behind this save.
     this.submitQueue = submission;
 
     return submission;
@@ -996,13 +1288,15 @@ export default class FeatheryClient extends IntegrationClient {
     if (this.draft || this.getNoSave()) return;
     if (!fileEntries.length) return;
 
-    await this.handleInteraction();
-    const submission = Promise.all([
+    this.releaseHeldEvents();
+    const tasks = [
       this.submitQueue.catch(() => undefined),
       ...fileEntries.map(({ servar, stepKey }) =>
         this._submitFileData(servar, stepKey)
       )
-    ]);
+    ];
+    const submission = Promise.all(tasks);
+    this.submissionResults.set(submission, Promise.allSettled(tasks));
     this.submitQueue = submission;
     return submission;
   }
@@ -1010,31 +1304,47 @@ export default class FeatheryClient extends IntegrationClient {
   async registerEvent(eventData: any) {
     if (this.draft) return;
 
-    // A 'complete' event means the step was submitted — record it so the
+    // A submit event means the step was submitted — record it so the
     // stepper reflects which steps are completed vs merely skipped over.
-    if (eventData.event === 'complete') markStepCompleted(eventData.step_key);
+    if (eventData.event === STEP_EVENT_SUBMIT)
+      markStepCompleted(eventData.step_key);
+
+    // Stamp now so queued or replayed events keep when they actually happened
+    const timedEvent = { ...eventData, timestamp: new Date().toISOString() };
 
     if (!isInteractionDetected() || this.userEventQueue.isReplayingEvents()) {
-      return this.userEventQueue.enqueue(eventData);
+      // It waits behind the submissions made so far once replayed, not the
+      // ones in flight when it is replayed
+      const heldEvent: HeldEvent = {
+        eventData: timedEvent,
+        earlierSubmissions: this.submitQueue
+      };
+      return this.userEventQueue.enqueue(heldEvent);
     }
 
-    return this._registerEventInternal(eventData);
+    return this._registerEventInternal(timedEvent);
   }
 
-  private async _registerEventInternal(eventData: any) {
+  // `earlierSubmissions` is the submit queue the event waits behind; by default
+  // the current one, read when the event is about to go out
+  private async _registerEventInternal(
+    eventData: any,
+    earlierSubmissions?: Promise<any>
+  ) {
     await initFormsPromise;
 
     const { userId, collaboratorId } = initInfo();
 
     const url = `${API_URL}event/`;
-    const data: Record<string, string> = {
+    const data: Record<string, any> = {
       form_key: this.formKey,
       ...eventData,
       ...(userId ? { fuser_key: userId } : {}),
-      event_id: uuidv4(),
-      timestamp: new Date().toISOString()
+      __feathery_sdk_version: __PACKAGE_VERSION__,
+      event_id: uuidv4()
     };
     if (collaboratorId) data.collaborator_user = collaboratorId;
+    if (this.formFill) data.robin_fill = true;
     if (this.version) data.__feathery_version = this.version;
     const options = {
       headers: { 'Content-Type': 'application/json' },
@@ -1044,37 +1354,59 @@ export default class FeatheryClient extends IntegrationClient {
 
     let prom = null;
     let stepKey = '';
-    if (eventData.event === 'load') {
+    if (eventData.event === STEP_EVENT_LOAD) {
       stepKey = eventData.previous_step_key;
     } else {
       stepKey = eventData.step_key;
       prom = this.flushCustomFields();
     }
 
-    const triggerEvent = () =>
-      this.offlineRequestHandler.runOrSaveRequest(
-        // Ensure events complete before user exits page. Submit and load event of
-        // next step must happen after the previous step is done submitting
-        () =>
-          this.submitQueue
-            // Swallow TypeErrors (network failures) so _fetch proceeds regardless
-            .catch((error) => {
-              if (error instanceof TypeError) return;
-              throw error;
-            })
-            .then(() => this._fetch(url, options, true, true)),
+    const triggerEvent = async () => {
+      // Let a failed submit enter the offline queue before the event handler
+      // checks that queue. The event itself may proceed after a network error,
+      // but only after its save has been queued for replay.
+      await (earlierSubmissions ?? this.submitQueue).catch((error) => {
+        if (!(error instanceof TypeError)) throw error;
+      });
+      return this.offlineRequestHandler.runOrSaveRequest(
+        () => this._fetch(url, options, true, true),
         url,
         options,
         'registerEvent',
-        stepKey
+        stepKey,
+        { requireAcknowledgement: !!eventData.completed }
       );
+    };
 
+    // Completion must not be acknowledged before the custom field writes
+    // settle; on a network failure the queued write makes completion refuse.
+    // Any other event goes out regardless of the flush, as step tracking and
+    // backend integrations depend on it.
     let eventPromise: Promise<any>;
-    if (eventData.completed && prom)
-      eventPromise = prom.then(() => triggerEvent());
-    else eventPromise = Promise.all([prom, triggerEvent()]);
+    if (!prom) eventPromise = triggerEvent();
+    else if (eventData.completed)
+      eventPromise = prom
+        .catch((error) => {
+          if (!(error instanceof TypeError)) throw error;
+        })
+        .then(triggerEvent);
+    else {
+      const sending = triggerEvent();
+      // Its outcome reaches the caller through eventPromise, which may only
+      // pick it up once the flush settles
+      sending.catch(() => {});
+      // Settles once the event is out, then reports a failed flush
+      eventPromise = prom.then(
+        () => sending,
+        async (flushError) => {
+          await sending;
+          throw flushError;
+        }
+      );
+    }
 
-    this.eventQueue = this.eventQueue.then(() => eventPromise);
+    // Callers still see the rejection; the shared chain must not stay rejected
+    this.eventQueue = this.eventQueue.then(() => eventPromise.catch(() => {}));
     return eventPromise;
   }
 
@@ -1102,6 +1434,7 @@ export default class FeatheryClient extends IntegrationClient {
 
   AI_CHECK_INTERVAL = 2000;
   AI_MAX_TIME = 10 * 60 * 1000;
+  COMPUTER_AGENT_MAX_TIME = 30 * 60 * 1000;
 
   // AI
   async runAIExtraction({
@@ -1134,8 +1467,11 @@ export default class FeatheryClient extends IntegrationClient {
     );
   }
 
-  async runComputerAgent(agentId: string) {
-    const { userId } = initInfo();
+  async runComputerAgent(
+    agentId: string,
+    options: RunComputerAgentOptions = {}
+  ) {
+    const { userId, sdkKey } = initInfo();
     await this.submitQueue;
     const url = `${API_URL}computer-agent/run/`;
     const reqOptions = {
@@ -1148,9 +1484,27 @@ export default class FeatheryClient extends IntegrationClient {
       })
     };
     const res = await this._fetch(url, reqOptions, false);
-    if (res && res.status === 201)
-      return { ok: true, payload: await res.json() };
-    else return { ok: false, error: (await res?.text()) ?? '' };
+    if (!res || res.status !== 201)
+      return { ok: false, error: (await res?.text()) ?? '' };
+
+    const payload = await res.json();
+    const pollUrl =
+      `${API_URL}computer-agent/run/completion/` +
+      `?fid=${userId}&rid=${payload.run_id}`;
+    const poll = pollForCompletion(
+      sdkKey,
+      pollUrl,
+      this.AI_CHECK_INTERVAL,
+      this.COMPUTER_AGENT_MAX_TIME,
+      'Computer agent',
+      options.onStatusUpdate
+    ).then((data) => {
+      options.onComplete?.(data);
+      return data;
+    });
+
+    if (!options.waitForCompletion) return { ok: true, payload };
+    return { ok: true, payload: { ...payload, ...(await poll) } };
   }
 
   async forwardInboxEmail({ options }: { options: ForwardInboxEmailOptions }) {
@@ -1287,7 +1641,8 @@ export default class FeatheryClient extends IntegrationClient {
     merge = false,
     repeatable = false,
     zipName,
-    mergedFileName
+    mergedFileName,
+    hubAssociation
   }: {
     documentIds: string[];
     download?: boolean;
@@ -1295,6 +1650,7 @@ export default class FeatheryClient extends IntegrationClient {
     repeatable?: boolean;
     zipName?: string;
     mergedFileName?: string;
+    hubAssociation?: HubAssociation;
   }) {
     const { userId, sdkKey } = initInfo();
     const payload = await apiGenerateFormDocuments({
@@ -1305,7 +1661,8 @@ export default class FeatheryClient extends IntegrationClient {
       envelopeAction: 'fill',
       mergeDocuments: merge,
       repeatable,
-      mergedFileName
+      mergedFileName,
+      hubAssociation
     });
     if (payload.status === 'error') throw Error(payload.message);
 
@@ -1342,11 +1699,14 @@ export default class FeatheryClient extends IntegrationClient {
       options.operation === 'create' && options.idFieldId && !options.idValue
         ? { ...options, idValue: userId }
         : options;
-    return apiDataHubAction(sdkKey, resolved, this.formKey);
+    return apiDataHubAction(sdkKey, resolved, this.formKey, userId);
   }
 
-  async getHubSchemas(hubIds: string[]) {
+  // `hubKeys` resolves hubs by key as well as id, for a table whose hub is
+  // named at runtime by a hidden field's value.
+  async getHubSchemas(hubIds: string[], hubKeys: string[] = []) {
     const params = new URLSearchParams({ hub_ids: hubIds.join(',') });
+    if (hubKeys.length) params.set('hub_keys', hubKeys.join(','));
     if (this.formKey) params.set('form_key', this.formKey);
     const url = `${API_URL}hub/schema/?${params.toString()}`;
     const res = await this._fetch(

@@ -15,6 +15,7 @@ function MatrixField({
   repeatIndex = null,
   onChange = () => {},
   elementProps = {},
+  errorAttributes = {},
   disabled = false,
   children
 }: any) {
@@ -78,18 +79,25 @@ function MatrixField({
                 textAlign: 'center'
               }}
             >
-              {replaceTextVariables(opt, repeatIndex)}
+              {replaceTextVariables(opt, repeatIndex, true)}
             </div>
           );
         })}
       </div>
       {servar.metadata.questions.map((q: any, i: number) => {
+        const questionVal = fieldVal[q.id];
+        const isUnanswered = !questionVal?.length;
         const highlight = q.highlight_color
           ? `#${q.highlight_color}`
           : backgroundColor;
         return (
           <div
             key={i}
+            role={allowMultiple ? 'group' : 'radiogroup'}
+            aria-label={replaceTextVariables(q.label, repeatIndex, true)}
+            {...(isUnanswered
+              ? errorAttributes
+              : { 'aria-describedby': elementProps['aria-describedby'] })}
             style={{
               display: 'flex',
               flexDirection: 'row',
@@ -99,14 +107,17 @@ function MatrixField({
             }}
           >
             <TextHoverTooltip
-              text={replaceTextVariables(q.tooltip, repeatIndex)}
+              text={replaceTextVariables(q.tooltip, repeatIndex, true)}
             >
               <div css={firstColStyle}>
-                {replaceTextVariables(q.label, repeatIndex)}
+                {replaceTextVariables(q.label, repeatIndex, true)}
               </div>
             </TextHoverTooltip>
             {options.map((opt: any, j: number) => {
-              const questionVal = fieldVal[q.id];
+              const questionName =
+                repeatIndex !== null
+                  ? `${servar.key}-${i}-${repeatIndex}`
+                  : `${servar.key}-${i}`;
               const isChecked =
                 Array.isArray(questionVal) && questionVal.includes(opt);
 
@@ -122,12 +133,11 @@ function MatrixField({
                 >
                   <input
                     type={inputType}
-                    name={
-                      repeatIndex !== null
-                        ? `${servar.key}-${i}-${repeatIndex}`
-                        : `${servar.key}-${i}`
-                    }
-                    aria-label={element.properties.aria_label}
+                    name={questionName}
+                    // Each option is identifiable on its own, not only
+                    // through the group name it shares with its siblings
+                    id={`${questionName}-${j}`}
+                    aria-label={replaceTextVariables(opt, repeatIndex, true)}
                     data-question-id={q.id}
                     value={opt}
                     disabled={disabled || q.read_only}

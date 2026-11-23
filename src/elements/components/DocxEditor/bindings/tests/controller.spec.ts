@@ -1,3 +1,6 @@
+import { createCommitTriggers } from '../commitTriggers';
+import { watchRowCommands } from '../rowCommandWatch';
+import { SyncfusionEditorLike } from '../editorAdapter';
 // Ported from the POC's test/controller.test.js. The FakeEditor is the point of
 // this suite: it fires contentChange on every write exactly as Syncfusion does,
 // so the loop-prevention, sequence-guard and patch-versus-reload decisions are
@@ -38,6 +41,10 @@ class FakeEditor implements EditorPort {
   /** Set to false to model an editor without the in-place patch API. */
   supportsPatching = true;
 
+  supportsStructuralPatching = true;
+
+  supportsValuePatching = true;
+
   serialize(): string {
     return JSON.stringify(this.doc);
   }
@@ -49,8 +56,21 @@ class FakeEditor implements EditorPort {
     this.controller?.notifyContentChange();
   }
 
+  withNativeTransaction(run: () => boolean): boolean {
+    const before = this.doc && JSON.parse(JSON.stringify(this.doc));
+    try {
+      const succeeded = run() === true;
+      if (!succeeded) this.doc = before;
+      return succeeded;
+    } catch (error) {
+      this.doc = before;
+      throw error;
+    }
+  }
+
   applyStructuralMutations(mutations: NativeStructuralMutation[]): boolean {
-    if (!this.supportsPatching) return false;
+    if (!this.supportsPatching || !this.supportsStructuralPatching)
+      return false;
     try {
       for (const mutation of mutations) {
         if (mutation.kind === 'insert-row') {
@@ -87,7 +107,7 @@ class FakeEditor implements EditorPort {
   }
 
   updateValues(writes: EngineWrite[]): boolean {
-    if (!this.supportsPatching) return false;
+    if (!this.supportsPatching || !this.supportsValuePatching) return false;
     // Empty text would show the editor's placeholder instead.
     if (writes.some((write) => !write.text)) return false;
     for (const write of writes) {
@@ -187,6 +207,31 @@ describe('loading', () => {
     expect(controller.dirty).toBe(false);
     clock.fire(); // Any echoed contentChange debounce.
     expect(editor.opens).toBe(1); // Reconcile found no changes: no reload.
+  });
+});
+
+describe('a document replaced from outside (the engine splice)', () => {
+  it('re-reads the opened document as its baseline, without writing to the editor or marking dirty', () => {
+    const { editor, clock, controller, events } = setup(null);
+    controller.loadInitial(buildCostsFixture());
+    clock.fire();
+    // the engine opens a document with the costs table's second row removed
+    const next = JSON.parse(JSON.stringify(editor.doc)) as SfdtDocument;
+    const table = scanBindings(next).tables.get('costs')!;
+    const rowsPath = [...(table.tablePath as Array<string | number>), 'rows'];
+    const rows = [...(getAt(next, rowsPath) as SfdtRow[])];
+    rows.splice(1, 1);
+    const replaced = setAt(next, rowsPath, rows);
+    editor.doc = replaced;
+    const opens = editor.opens;
+    const patches = editor.patches;
+    controller.notifyReopened();
+    expect(editor.opens).toBe(opens);
+    expect(editor.patches).toBe(patches);
+    expect(controller.dirty).toBe(false);
+    expect(controller.index?.tables.get('costs')?.rows).toHaveLength(1);
+    expect(events[events.length - 1]).toBe('reopen');
+    expect(controller.workingSfdt).toEqual(editor.doc);
   });
 });
 
@@ -313,9 +358,9 @@ describe('runCommands', () => {
     controller.runCommands([
       { type: 'set-value', name: 'project.name', value: 'Rebrand' }
     ]);
-    for (const occurrence of scanBindings(editor.doc as SfdtDocument).fields.get(
-      'project.name'
-    )!) {
+    for (const occurrence of scanBindings(
+      editor.doc as SfdtDocument
+    ).fields.get('project.name')!) {
       expect(occurrence.text).toBe('Rebrand');
     }
 
@@ -332,6 +377,25 @@ describe('runCommands', () => {
     expect(table.rows[2].bindings.get('line_total')!.text).toBe('$0.00');
     expect(editor.opens).toBe(1);
     clock.fire();
+  });
+
+  it('restores structure when a later derived write cannot be applied', () => {
+    const { editor, controller } = setup();
+    controller.loadInitial(buildCostsFixture());
+    const baseline = editor.serialize();
+    editor.supportsValuePatching = false;
+
+    controller.runCommands([
+      { type: 'remove-row', tableId: 'costs', rowId: 'r-2' }
+    ]);
+
+    expect(editor.serialize()).toBe(baseline);
+    expect(JSON.stringify(controller.workingSfdt)).toBe(baseline);
+    expect(controller.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'native-mutation-failed' })
+      ])
+    );
   });
 });
 
@@ -377,6 +441,44 @@ describe('saving', () => {
   });
 });
 
+describe('inserted-row hints', () => {
+  it('survives a non-adopting self-heal and steers the next adopting reconcile', () => {
+    // The redo shape: insertRow replays and re-clones the row (the wrap notes
+    // the hint), the post-replay self-heal runs with adoptRows false, and only
+    // a later ordinary reconcile adopts.
+    const { editor, clock, controller } = setup();
+    controller.loadInitial(buildCostsFixture(), 1);
+    clock.fire();
+    const tablePath = scanBindings(editor.doc as SfdtDocument).tables.get(
+      'costs'
+    )!.tablePath!;
+    const rows = (getAt(editor.doc, tablePath) as { rows: SfdtRow[] }).rows;
+    rows.splice(2, 0, JSON.parse(JSON.stringify(rows[2]))); // twin ABOVE r-2
+    controller.noteInsertedRows({
+      sectionIndex: Number(tablePath[1]),
+      blockIndex: Number(tablePath[3]),
+      rowIndices: [2]
+    });
+
+    controller.flush({ mode: 'self-heal', adoptRows: false });
+    clock.fire();
+    controller.flush();
+    clock.fire();
+
+    const tableRows = scanBindings(editor.doc as SfdtDocument).tables.get(
+      'costs'
+    )!.rows;
+    expect(tableRows).toHaveLength(3);
+    const original = tableRows.find((row) => row.rowId === 'r-2')!;
+    expect(original.bindings.get('quantity')!.text).toBe('30');
+    expect(original.bindings.get('line_total')!.text).toBe('$6,000.00');
+    // Document order: the fresh default row landed ABOVE the original.
+    expect(tableRows[1].rowId).not.toBe('r-2');
+    expect(tableRows[1].bindings.get('quantity')!.text).toBe('0');
+    expect(grandTotals(editor)).toEqual(['$7,800.00', '$7,800.00']);
+  });
+});
+
 describe('failure handling', () => {
   it('surfaces a serialize failure as a diagnostic and stays usable', () => {
     // A real editor can throw mid-serialize while tearing down; the controller
@@ -397,5 +499,63 @@ describe('failure handling', () => {
     editor.userEdit(isQuantityRow1, '13');
     controller.flush();
     expect(costsRow(editor, 'line_total')).toBe('$1,950.00');
+  });
+});
+
+describe('native insert event ordering', () => {
+  it('preserves original when insertRow moves selection before returning', () => {
+    const { editor, controller } = setup(null);
+    controller.loadInitial(buildCostsFixture(), 1);
+    const tablePath = scanBindings(editor.doc as SfdtDocument).tables.get(
+      'costs'
+    )!.tablePath!;
+    const prefix = `${tablePath[1]};${tablePath[3]}`;
+    const live: any = {
+      serialize: () => editor.serialize(),
+      selection: {
+        startOffset: `${prefix};2;1;0;0`,
+        endOffset: `${prefix};2;1;0;0`
+      },
+      documentHelper: { contentControlCollection: [{}] },
+      editorModule: {}
+    };
+    const triggers = createCommitTriggers(
+      live as SyncfusionEditorLike,
+      controller
+    );
+    live.editorModule.insertRow = () => {
+      const rows = (getAt(editor.doc, tablePath) as { rows: SfdtRow[] }).rows;
+      rows.splice(2, 0, JSON.parse(JSON.stringify(rows[2])));
+      live.selection.startOffset = `${prefix};2;0;0;0`;
+      live.selection.endOffset = `${prefix};2;0;0;0`;
+      triggers.onSelectionChange();
+    };
+    watchRowCommands(live, (hint) => {
+      controller.noteInsertedRows(hint ?? null);
+      if (!triggers.onRowCommandComplete())
+        controller.flush({ mode: 'self-heal' });
+    });
+    editor.userEdit(
+      (occurrence) =>
+        occurrence.def.name === 'quantity' && occurrence.rowId === 'r-2',
+      '31'
+    );
+    editor.userEdit(
+      (occurrence) =>
+        occurrence.def.name === 'unit_cost' && occurrence.rowId === 'r-2',
+      '201'
+    );
+    triggers.onContentChange(); // pending edit before native row insert
+    live.editorModule.insertRow(true);
+    const tableRows = scanBindings(editor.doc as SfdtDocument).tables.get(
+      'costs'
+    )!.rows;
+    expect(tableRows[2].rowId).toBe('r-2');
+    expect(tableRows[2].bindings.get('quantity')!.text).toBe('31');
+    expect(tableRows[2].bindings.get('unit_cost')!.text).toBe('$201.00');
+    expect(grandTotals(editor)).toEqual(['$8,031.00', '$8,031.00']);
+    expect(tableRows[1].bindings.get('quantity')!.text).toBe('0');
+    expect(triggers.hasPendingEdit()).toBe(false);
+    triggers.dispose();
   });
 });

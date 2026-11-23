@@ -67,14 +67,14 @@ export interface ReorderEditor {
   };
 }
 
-export interface ApplyReorderCallbacks {
+interface ApplyReorderCallbacks {
   /** Mark the document dirty — the SDK writes may not fire a gated contentChange. */
   markDirty?: () => void;
   /** Every move's diagnostics (refusal errors, or warnings on a move). */
   onDiagnostics?: (diagnostics: Diagnostic[]) => void;
 }
 
-export interface ApplyReorderResult {
+interface ApplyReorderResult {
   moved: boolean;
   diagnostics: Diagnostic[];
 }

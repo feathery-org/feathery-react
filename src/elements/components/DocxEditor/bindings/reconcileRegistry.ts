@@ -12,9 +12,7 @@
 // registration with it even if dispose never runs.
 
 import type { ApplyRulesResult } from './core/engine';
-import { getAt, scanBindings } from './core/sfdtAdapter';
-import { parseDisplay } from './core/valueTypes';
-import type { SfdtBlock, SfdtDocument } from './core/sfdtTypes';
+import type { SfdtBlock } from './core/sfdtTypes';
 
 export type BindingCommand =
   | {
@@ -37,7 +35,34 @@ export type BindingCommand =
       afterTag: string;
       block: SfdtBlock;
     }
-  | { type: 'remove-table'; tableId: string; tag: string };
+  | {
+      type: 'replace-table';
+      tableId: string;
+      tag: string;
+      block: SfdtBlock;
+    }
+  | { type: 'remove-table'; tableId: string; tag: string }
+  | {
+      /**
+       * A formula's expression changed in a control that already exists.
+       *
+       * `set-value` cannot carry this and `add-table` cannot either: the first
+       * moves text, the second only ever carries a WHOLE table being added or
+       * removed. An expression rewritten in an existing control produced no
+       * command at all, so it was dropped between the in-memory projection and
+       * the live document and the two disagreed about what the document said.
+       *
+       * Both tags travel because the old one is the address - it is what the
+       * live control still wears - and the new one is the payload.
+       */
+      type: 'set-expression';
+      name: string;
+      previousTag: string;
+      tag: string;
+      tableId: string | null;
+      rowId: string | null;
+      global: boolean;
+    };
 
 /**
  * Present only for an authored assistant batch. Ordinary commands omit this so
@@ -55,6 +80,8 @@ export interface BindingCommandOptions {
 
 export interface BindingCommandSurface {
   flush(): void;
+  /** The document was replaced from outside: re-read it as the baseline (no write, no dirty). */
+  reopened?(): void;
   runCommands(
     commands: BindingCommand[],
     options?: BindingCommandOptions
@@ -96,102 +123,4 @@ export function bindingCommandSurfaceFor(
 ): BindingCommandSurface | null {
   if (!editor || typeof editor !== 'object') return null;
   return reconcilers.get(editor as object) ?? null;
-}
-export function diffBindingCommands(
-  before: SfdtDocument,
-  after: SfdtDocument
-): BindingCommand[] {
-  const previous = scanBindings(before);
-  const next = scanBindings(after);
-  const previousTables = [...previous.tables.keys()].sort();
-  const nextTables = [...next.tables.keys()].sort();
-  const commands: BindingCommand[] = [];
-
-  for (const tableId of previousTables) {
-    if (next.tables.has(tableId)) continue;
-    const table = previous.tables.get(tableId);
-    if (!table) continue;
-    const marker = getAt(before, table.markerPath) as any;
-    commands.push({
-      type: 'remove-table',
-      tableId,
-      tag: String(marker?.contentControlProperties?.tag || '')
-    });
-  }
-  for (const tableId of nextTables) {
-    if (previous.tables.has(tableId)) continue;
-    const table = next.tables.get(tableId);
-    if (!table) continue;
-    const parent = table.markerPath.slice(0, -1);
-    const at = Number(table.markerPath[table.markerPath.length - 1]);
-    const anchor = [...previous.tables.values()]
-      .filter(
-        (candidate) =>
-          JSON.stringify(candidate.markerPath.slice(0, -1)) ===
-            JSON.stringify(parent) &&
-          Number(candidate.markerPath[candidate.markerPath.length - 1]) < at
-      )
-      .sort(
-        (a, b) =>
-          Number(b.markerPath[b.markerPath.length - 1]) -
-          Number(a.markerPath[a.markerPath.length - 1])
-      )[0];
-    if (!anchor) throw new Error(`no insertion anchor for table ${tableId}`);
-    const anchorBlock = getAt(before, anchor.markerPath) as any;
-    commands.push({
-      type: 'add-table',
-      afterTableId: anchor.tableId,
-      afterTag: String(anchorBlock?.contentControlProperties?.tag || ''),
-      block: getAt(after, table.markerPath) as SfdtBlock
-    });
-  }
-
-  for (const tableId of nextTables.filter((id) => previous.tables.has(id))) {
-    const beforeTable = previous.tables.get(tableId);
-    const afterTable = next.tables.get(tableId);
-    if (!beforeTable || !afterTable) continue;
-    const beforeIds = new Set(beforeTable.rows.map((row) => row.rowId));
-    const afterIds = new Set(afterTable.rows.map((row) => row.rowId));
-    for (const row of beforeTable.rows)
-      if (row.rowId && !afterIds.has(row.rowId))
-        commands.push({ type: 'remove-row', tableId, rowId: row.rowId });
-    for (let i = 0; i < afterTable.rows.length; i++) {
-      const row = afterTable.rows[i];
-      if (row.rowId && !beforeIds.has(row.rowId))
-        commands.push({
-          type: 'add-row',
-          tableId,
-          afterRowId: i ? afterTable.rows[i - 1].rowId : null,
-          rowId: row.rowId
-        });
-    }
-    for (const row of afterTable.rows) {
-      if (!row.rowId) continue;
-      for (const occurrence of row.bindings.values()) {
-        if (occurrence.def.kind !== 'field') continue;
-        const prior = beforeTable.rows
-          .find((candidate) => candidate.rowId === row.rowId)
-          ?.bindings.get(occurrence.name);
-        if (prior?.text === occurrence.text) continue;
-        commands.push({
-          type: 'set-value',
-          tableId,
-          rowId: row.rowId,
-          name: occurrence.name,
-          value: parseDisplay(occurrence.def.fieldType, occurrence.text)
-        });
-      }
-    }
-  }
-  for (const [name, occurrences] of next.fields) {
-    const occurrence = occurrences[0];
-    if (!occurrence || previous.fields.get(name)?.[0]?.text === occurrence.text)
-      continue;
-    commands.push({
-      type: 'set-value',
-      name,
-      value: parseDisplay(occurrence.def.fieldType, occurrence.text)
-    });
-  }
-  return commands;
 }

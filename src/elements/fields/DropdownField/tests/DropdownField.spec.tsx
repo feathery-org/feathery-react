@@ -1,23 +1,17 @@
+import React from 'react';
 import {
   createDropdownElement,
   createDropdownProps,
   createStatefulOnChange,
   createOptionsMetadata,
-  createRepeatOptionsMetadata,
   getMockFieldValue,
   resetMockFieldValue,
-  getSelectElement,
-  getOptionElements,
   getOptionByValue,
-  getOptionByText,
   expectOptionToHaveTooltip,
   expectSelectToHaveValue,
   expectSelectToHaveOptionCount,
-  expectFieldToBeDisabled,
-  expectFieldToBeRequired,
-  expectFieldToHaveAriaLabel
+  expectFieldToBeDisabled
 } from './test-utils';
-import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import DropdownField from '../index';
 
@@ -27,6 +21,23 @@ describe('DropdownField - Base Functionality', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resetMockFieldValue();
+  });
+
+  it('keeps Brazilian state selections after their values are converted to ASCII', () => {
+    const props = createDropdownProps(createDropdownElement('gmap_state'), {
+      formSettings: { asciiOnly: true },
+      countryCode: 'BR'
+    });
+    const { rerender } = render(<DropdownField {...props} />);
+    fireEvent.change(dropdown(), { target: { value: 'Sao Paulo' } });
+    expect(props.onChange).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <DropdownField {...props} fieldVal='Sao Paulo' countryCode='br' />
+    );
+    expect(dropdown().value).toBe('Sao Paulo');
+    expect(dropdown().selectedOptions[0].textContent).toBe('São Paulo');
+    expect(props.onChange).toHaveBeenCalledTimes(1);
   });
 
   describe('Basic Rendering', () => {
@@ -67,6 +78,29 @@ describe('DropdownField - Base Functionality', () => {
       render(<DropdownField {...props} />);
 
       expectFieldToBeDisabled(dropdown());
+    });
+  });
+
+  describe('Placeholder styles', () => {
+    // Spreading two getTarget() results drops the resting @media block.
+    it('merges the resting and pinned placeholder targets with getTargets', () => {
+      const element = createDropdownElement(
+        'dropdown',
+        createOptionsMetadata(['Option 1'])
+      );
+      element.properties.placeholder = 'Pick one';
+      const props = createDropdownProps(element, { fieldVal: 'Option 1' });
+      const getTargets = props.responsiveStyles.getTargets as jest.Mock;
+      getTargets.mockClear();
+      render(<DropdownField {...props} />);
+      expect(getTargets).toHaveBeenCalledWith(
+        'placeholder',
+        'placeholderFocus'
+      );
+      expect(getTargets).toHaveBeenCalledWith(
+        'placeholderFocus',
+        'placeholderActive'
+      );
     });
   });
 
@@ -412,5 +446,25 @@ describe('DropdownField - Base Functionality', () => {
 
       expectSelectToHaveValue('');
     });
+  });
+});
+
+describe('DropdownField - DOM naming', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('names the select with the field key', () => {
+    const element = createDropdownElement(
+      'dropdown',
+      createOptionsMetadata(['a', 'b'])
+    );
+    const { container } = render(
+      <DropdownField {...createDropdownProps(element)} />
+    );
+
+    const select = container.querySelector('select') as HTMLSelectElement;
+    expect(select.name).toBe(element.servar.key);
+    expect(select.id).toBe(element.servar.key);
   });
 });

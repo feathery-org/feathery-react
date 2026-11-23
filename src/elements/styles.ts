@@ -1,3 +1,4 @@
+import { iconGlyphDataUrl } from './components/icons/iconGlyph';
 import { DEFAULT_MIN_SIZE } from '../Form/grid/StyledContainer/styles';
 import { featheryWindow } from '../utils/browser';
 import {
@@ -15,11 +16,577 @@ export const getViewport = (breakpoint = DEFAULT_MOBILE_BREAKPOINT) => {
   return featheryWindow().innerWidth > breakpoint ? 'desktop' : 'mobile';
 };
 
-export const borderWidthProps = [
-  'border_top_width',
-  'border_right_width',
-  'border_bottom_width',
-  'border_left_width'
+// A text area's placeholder has always sat slightly below its padding edge
+// (top 0.6rem against 0.5rem of padding). Keep that gap when the placeholder
+// starts following the padding, so existing text areas don't shift.
+const TEXT_AREA_PLACEHOLDER_TOP_OFFSET = 1.6;
+
+// resetStyles' input padding (0.375rem / 0.75rem at a 16px root) -- the
+// effective value of a side the theme doesn't set.
+const RESET_INPUT_PADDING_Y = 6;
+const RESET_INPUT_PADDING_X = 12;
+
+// A text area's own padding shorthand, applied after resetStyles.
+const RESET_TEXT_AREA_PADDING_Y = 8;
+
+// react-select's block padding on the container holding a multiselect's chips
+// once they wrap. Its non-wrapped value is smaller, but a multiselect centers
+// its chips, so a symmetric block padding does not move them either way.
+const RESET_MULTISELECT_PADDING_Y = 8;
+
+// A dropdown draws its chevron inside the inline end of the input, so that
+// strip stays reserved however little inner padding the theme asks for.
+export const DROPDOWN_CHEVRON_RESERVE = 30;
+export const DROPDOWN_FIELDS = ['dropdown', 'gmap_state', 'gmap_country'];
+
+// dropdown_multi lays its chips out with react-select rather than in an input,
+// so its padding lands on the value container and its chevron strip is its own
+// width. It takes the same keys as an input box everywhere else.
+export const MULTISELECT_FIELD = 'dropdown_multi';
+export const MULTISELECT_CHEVRON_RESERVE = 28;
+
+// The gap the chevron kept from the border before inner padding existed, and
+// what it falls back to when a theme sets none.
+export const DEFAULT_CHEVRON_GAP = 10;
+
+// The chevron glyph is 6px tall. A length places its top edge, so centre it on
+// the value line; `calc(100% - x)` already subtracts the glyph once.
+const CHEVRON_HALF_HEIGHT = 3;
+const lessHalfChevron = (n: string) =>
+  Math.round((Number(n) - CHEVRON_HALF_HEIGHT) * 100) / 100;
+const chevronSeat = (y: string | null) => {
+  if (y === null) return 'center';
+  const px = /^(-?[\d.]+)px$/.exec(y);
+  if (px) return `${lessHalfChevron(px[1])}px`;
+  const fromBottom = /^calc\(100% - ([\d.]+)px\)$/.exec(y);
+  if (fromBottom) return `calc(100% - ${lessHalfChevron(fromBottom[1])}px)`;
+  return y;
+};
+
+// The production seats of the icons on an input's inline end -- the zero the
+// theme's right padding moves them from. The eye toggle steps aside when a
+// tooltip trigger shares the edge. Shared with the components, whose own
+// anchors stay live for the types the theme does not place.
+export const EYE_ICON_INSET = (hasTooltip: boolean) => (hasTooltip ? 30 : 8);
+export const TOOLTIP_TRIGGER_INSET = 10;
+
+// The strip between a multiselect's chips and its chevron: the glyph plus the
+// breathing room the chips always kept from it. The right padding places the
+// chevron, and the chips stop this much further in, so a full row can never
+// slide under the glyph. The defaults compose the same way -- 10 + 18 is the
+// 28px inset an untouched multiselect always had.
+const MULTISELECT_CHEVRON_CLEARANCE =
+  MULTISELECT_CHEVRON_RESERVE - DEFAULT_CHEVRON_GAP;
+
+// The same strip for a single dropdown: its value stops at the reserved inline
+// end, and the glyph sits this much further out. 30 - 20 is the 10px gap an
+// untouched dropdown always kept from its border.
+export const DROPDOWN_CHEVRON_CLEARANCE =
+  DROPDOWN_CHEVRON_RESERVE - DEFAULT_CHEVRON_GAP;
+
+const chevronClearance = (type: string) => {
+  if (DROPDOWN_FIELDS.includes(type)) return DROPDOWN_CHEVRON_CLEARANCE;
+  if (type === MULTISELECT_FIELD) return MULTISELECT_CHEVRON_CLEARANCE;
+  return 0;
+};
+
+// Whether a field renders a placeholder label. Every applyPlaceholderStyles
+// call site and pinnedTopFloor must share this so the floor matches the label.
+const ALWAYS_PLACEHOLDER_STYLED = ['phone_number', 'payment_method'];
+
+export const rendersPlaceholderStyles = (type: string, properties: any) =>
+  ALWAYS_PLACEHOLDER_STYLED.includes(type) || !!properties?.placeholder;
+
+const takesInnerPadding = (type: string) =>
+  INPUT_BOX_FIELDS.includes(type) || type === MULTISELECT_FIELD;
+
+// Marks the element whose border box an input-box field's inner padding insets
+// from -- the box that carries the border, corners and background, which the
+// field's input then fills. A stable hook for tooling that has to find that box
+// in the rendered DOM: the builder's padding band anchors its hatching here
+// rather than inferring the box by walking a field's private nesting, which
+// differs per type and includes react-select's internals for a multiselect.
+export const INPUT_BOX_ATTR = 'data-feathery-input-box';
+
+export const inputBoxAttrs = (type: string) =>
+  takesInnerPadding(type) ? { [INPUT_BOX_ATTR]: '' } : {};
+
+// The six keys an input box's inner spacing lives in. They exist in their own
+// namespace with no default at any level of the theme cascade -- not global,
+// not level_2 `field`, not level_1 -- which is what makes an absent key mean
+// "nobody ever set this" rather than "inherited from somewhere". feathery-
+// backend pins that invariant in apps/theme/tests/
+// test_inner_spacing_has_no_default.py; the legacy geometry below is only
+// reachable while it holds.
+//
+// uploader_padding_* is a different feature on a different sub-element (the
+// file_upload dropzone, button_group buttons) and horizontal_align /
+// vertical_align are pinned to center/center by level_2 `field` for every
+// field, so neither could ever express "unset" here.
+const INNER_PADDING_TOP = 'inner_padding_top';
+export const INNER_PADDING_RIGHT = 'inner_padding_right';
+const INNER_PADDING_BOTTOM = 'inner_padding_bottom';
+export const INNER_PADDING_LEFT = 'inner_padding_left';
+const CONTENT_HORIZONTAL_ALIGN = 'content_horizontal_align';
+const CONTENT_VERTICAL_ALIGN = 'content_vertical_align';
+
+export const INNER_PADDING_KEYS = [
+  INNER_PADDING_TOP,
+  INNER_PADDING_RIGHT,
+  INNER_PADDING_BOTTOM,
+  INNER_PADDING_LEFT
+];
+
+// RESET SEMANTICS -- read before adding a conditional style below.
+//
+// apply() can only merge: the mobile pass runs when any of its keys carries an
+// override and merges whatever the callback returns onto the breakpoint block.
+// Returning {} therefore cannot *undo* a desktop declaration, so a callback
+// that emits a property for some values of a key has to emit that property's
+// neutral value for the rest, or a mobile override can never take a field back
+// to the default. Every neutral below is the value the field renders with when
+// the property is not declared at all, so emitting it changes no pixels.
+//
+// The one case that emits nothing is every key a callback reads being absent:
+// there is then no declaration to undo. The desktop pass has emitted nothing,
+// and the mobile pass cannot even run -- apply() returns early unless some key
+// carries an override, and an override the builder deleted resolves back to the
+// desktop value rather than to undefined. So `isSet` gates the callbacks below
+// on exactly the values handed to that invocation.
+const isSet = (...values: any[]) => values.some((v) => v !== undefined);
+
+// horizontal_align carries flex values; text needs the logical text-align
+// equivalents so alignment follows the writing direction. 'start' is the
+// neutral: input, select and textarea all compute text-align: start from the UA
+// stylesheet, so declaring it is a no-op -- including on PhoneField's dir='ltr'
+// input inside an RTL form, which computes start (not right) today. Note
+// text-align: inherit is NOT neutral there: the UA declaration blocks
+// inheritance, so inherit would pull the RTL wrapper's `right` in.
+const ALIGN_TO_TEXT_ALIGN: Record<string, string> = {
+  center: 'center',
+  'flex-end': 'end'
+};
+
+const TEXT_ALIGN_NEUTRAL = 'start';
+
+const textAlignFor = (align: any) =>
+  ALIGN_TO_TEXT_ALIGN[align] ?? TEXT_ALIGN_NEUTRAL;
+
+// Only these two need the content box spanned to place their text; start-
+// aligned text is placed by anchoring the inline start alone.
+const spansContentBox = (align: any) => !!ALIGN_TO_TEXT_ALIGN[align];
+
+// resetStyles' padding, as authored -- rem, so a form on a page with a non-16px
+// root keeps the scale it renders with today whenever a side goes unset. This is
+// why the legacy geometry stays in the renderer instead of being written into
+// every theme as px: 6 and 12 are only what 0.375rem and 0.75rem happen to
+// resolve to at the default root.
+const resetBlockPaddingCss = (type: string) =>
+  type === 'text_area' ? '0.5rem' : '0.375rem';
+
+export const RESET_INLINE_PADDING_CSS = '0.75rem';
+
+const blockPaddingCss = (type: string, value: any) =>
+  isNum(value) ? `${Number(value)}px` : resetBlockPaddingCss(type);
+
+// A shrunken floating label never renders larger than this, whatever the
+// field's font size.
+const SHRINK_LABEL_MAX_FONT_SIZE = 10;
+
+// The backend serializer's default font size. The reserve needs a number, or
+// it emits `padding-top: NaNpx`, which the browser drops.
+const DEFAULT_INPUT_FONT_SIZE = 16;
+
+const fontSizePx = (fontSize: any) => {
+  const n = Number(fontSize);
+  return isNum(fontSize) && Number.isFinite(n) ? n : DEFAULT_INPUT_FONT_SIZE;
+};
+
+// What a pinned label occupies: its marginTop (half the shrunken font) plus its
+// line box, which inherits the field's font size.
+export const shrinkLabelFootprint = (fontSize: any) => {
+  const size = fontSizePx(fontSize);
+  return Math.min(size, SHRINK_LABEL_MAX_FONT_SIZE) / 2 + size;
+};
+
+// Top padding a pinned label needs when none is stored, clamped so a short box
+// fits a line. Rounded to match the builder's integer inner_padding_top seed.
+const shrinkLabelReservePx = (
+  type: string,
+  height: any,
+  heightUnit: any,
+  fontSize: any,
+  lineHeight?: any
+): number => {
+  const size = fontSizePx(fontSize);
+  if (type === 'text_area')
+    return Math.round(Math.min(size, SHRINK_LABEL_MAX_FONT_SIZE) * 2.5);
+  const footprint = shrinkLabelFootprint(size);
+  // A percentage or fit height has no pixel box to clamp against.
+  if (heightUnit !== 'px' || !isNum(height)) return Math.round(footprint);
+  const line = inputLineHeight(lineHeight, size);
+  const room = Number(height) - line - RESET_INPUT_PADDING_Y;
+  return Math.round(Math.max(0, Math.min(footprint, room)));
+};
+
+const shrinkLabelReserve = (
+  type: string,
+  height: any,
+  heightUnit: any,
+  fontSize: any,
+  lineHeight?: any
+) =>
+  `${shrinkLabelReservePx(type, height, heightUnit, fontSize, lineHeight)}px`;
+
+// A builder-seeded reserve (matching its ownership record) is re-derived from
+// current typography; a padding the record does not match is the user's.
+const withLiveOwnedReserve = (element: any, own: any, desktop?: any) => {
+  const type = element?.servar?.type;
+  const owned = element?.properties?._floating_label_reserve ?? {};
+  const ownsAt = (viewport: string, styles: any) =>
+    typeof owned[viewport] === 'number' &&
+    styles?.inner_padding_top === owned[viewport];
+  if (!own || !takesInnerPadding(type)) return own;
+  const livePx = (styles: any) =>
+    shrinkLabelReservePx(
+      type,
+      styles.height,
+      styles.height_unit,
+      styles.font_size,
+      styles.line_height
+    );
+  const pinned =
+    element.styles?.placeholder_transition === 'shrink_top' &&
+    rendersPlaceholderStyles(type, element.properties);
+  if (desktop && own.inner_padding_top === undefined) {
+    // Mobile inheriting an owned desktop reserve needs its own where its
+    // typography differs, as the builder's refresh would seed.
+    if (!pinned || !ownsAt('desktop', desktop)) return own;
+    const mobilePx = livePx({ ...desktop, ...own });
+    return mobilePx === livePx(desktop)
+      ? own
+      : { ...own, inner_padding_top: mobilePx };
+  }
+  if (!ownsAt(desktop ? 'mobile' : 'desktop', own)) return own;
+  if (!pinned) {
+    const rest = { ...own };
+    delete rest.inner_padding_top;
+    return rest;
+  }
+  return {
+    ...own,
+    inner_padding_top: livePx(desktop ? { ...desktop, ...own } : own)
+  };
+};
+
+// The neutral for a companion that rides the value line with a transform.
+// 'none' rather than a zero translation: any transform other than none creates
+// a stacking context and a containing block for positioned descendants, so
+// translateY(0px) would change how these elements contain and stack even though
+// it moves nothing.
+const NO_TRANSLATE = 'none';
+
+// An unset line height renders as CSS 'normal', which has no fixed pixel
+// value; 1.2 x font-size is the canonical approximation, and both stored
+// values are px. A browser's real 'normal' differs by a pixel at most, which
+// only nudges the synthesized offsets, never a box's size.
+const inputLineHeight = (lineHeight: any, fontSize: any) =>
+  isNum(lineHeight)
+    ? Number(lineHeight)
+    : isNum(fontSize)
+    ? Number(fontSize) * 1.2
+    : 0;
+
+const paddingSide = (value: any, fallback: number) =>
+  isNum(value) ? Number(value) : fallback;
+
+// The block padding a field rendered with before it became themeable -- the
+// effective value of a side left unset, for the arithmetic that needs a number
+// rather than a CSS length.
+const legacyPaddingY = (type: string) => {
+  if (type === 'text_area') return RESET_TEXT_AREA_PADDING_Y;
+  if (type === MULTISELECT_FIELD) return RESET_MULTISELECT_PADDING_Y;
+  return RESET_INPUT_PADDING_Y;
+};
+
+// The top padding a placement measures against. A floor replaces the block
+// reset; null means no floor, while 0 is a real floor from a too-short box.
+const flooredTopPadding = (
+  type: string,
+  padTop: any,
+  topFloor: number | null
+) => (topFloor === null ? paddingSide(padTop, legacyPaddingY(type)) : topFloor);
+
+// What a multiselect's value container already insets its chips by: react-
+// select's own 8px inline start, the 10px that composes to the chips' 28px
+// chevron strip, and the block padding it uses once the chips wrap.
+const MULTISELECT_LEGACY_PADDING = {
+  top: RESET_MULTISELECT_PADDING_Y,
+  right: DEFAULT_CHEVRON_GAP,
+  bottom: RESET_MULTISELECT_PADDING_Y,
+  left: 8
+};
+
+// A shrink_top label is a fixed overlay pinned to the box top: it takes no room
+// in the content box. Unset, its reserve stands in for inner_padding_top, and
+// pinnedTopFloor stops an alignment from cancelling it.
+const offsetFromCenter = (d: number) =>
+  d ? `calc(50% ${d > 0 ? '+' : '-'} ${Math.abs(d)}px)` : '50%';
+
+// How much taller the box has to get to hold a raised inner padding. Zero
+// while the theme sets no block padding, and zero for a padding at or below
+// what the field already rendered with: reducing it never needs more room.
+const raisedPaddingY = (type: string, padTop: any, padBottom: any) => {
+  const legacy = legacyPaddingY(type);
+  return (
+    Math.max(0, paddingSide(padTop, legacy) - legacy) +
+    Math.max(0, paddingSide(padBottom, legacy) - legacy)
+  );
+};
+
+type VerticalPlacement = {
+  align: string;
+  top: number;
+  bottom: number;
+  line: number;
+  height: number;
+  // The flex-end top offset: as low as the box allows, floored at `top` so a
+  // bottom alignment can never run the value into a pinned label's reserve.
+  end: number;
+};
+
+// A single-line input centers its text in its content box and ignores any
+// alignment on its parent, so top/bottom alignment has to be synthesized by
+// padding one side out. Returns null whenever the field should keep the
+// centered default. Stored padding is authoritative; an unset top can use the
+// pinned label's floor so alignment leaves room for the label.
+const inputBoxVertical = (
+  type: string,
+  align: any,
+  height: any,
+  heightUnit: any,
+  padTop: any,
+  padBottom: any,
+  lineHeight: any,
+  fontSize: any,
+  topFloor: number | null = null
+): VerticalPlacement | null => {
+  // A text area's text already starts at its top padding.
+  if (type === 'text_area') return null;
+  if (align !== 'flex-start' && align !== 'flex-end') return null;
+  // Synthesizing the offset needs a resolved pixel height. Percentage padding
+  // resolves against width, so there is no CSS-only equivalent.
+  if (heightUnit !== 'px' || !isNum(height)) return null;
+  const line = inputLineHeight(lineHeight, fontSize);
+  if (!line) return null;
+
+  const legacy = legacyPaddingY(type);
+  // The pinned label's floor applies only when no top padding is stored.
+  const top = flooredTopPadding(type, padTop, topFloor);
+  const bottom = paddingSide(padBottom, legacy);
+  // The box grows to fit a raised padding; must use the same raise as
+  // applyInputBoxMinHeight so the text stays inside the box.
+  const box = raisedPaddingY(type, padTop, padBottom)
+    ? Math.max(Number(height), top + bottom + line)
+    : Number(height);
+  return {
+    align,
+    top,
+    bottom,
+    line,
+    height: box,
+    // Never above the top-aligned spot, so the value cannot run into the
+    // pinned label in a box too short for both.
+    end: Math.max(top, box - bottom - line)
+  };
+};
+
+// Whether a different content_vertical_align, on its own, could have placed
+// this box's value -- inputBoxVertical's preconditions with the alignment left
+// out. Where it holds, the centred branch emits the block padding as its reset
+// so a mobile override can undo a synthesized offset; where it does not, an
+// alignment the box cannot resolve says nothing at all.
+const canSynthesizeVertical = (
+  type: string,
+  height: any,
+  heightUnit: any,
+  lineHeight: any,
+  fontSize: any
+) => {
+  if (type === 'text_area') return false;
+  if (heightUnit !== 'px' || !isNum(height)) return false;
+  return !!inputLineHeight(lineHeight, fontSize);
+};
+
+// Whether a percentage-height box can be placed with container units (100cqh
+// is its resolved height). Multiselect and text area never are.
+const canContainerSynthesizeVertical = (
+  type: string,
+  heightUnit: any,
+  lineHeight: any,
+  fontSize: any
+) => {
+  if (type === 'text_area' || type === MULTISELECT_FIELD) return false;
+  if (heightUnit !== '%') return false;
+  return !!inputLineHeight(lineHeight, fontSize);
+};
+
+// Where the value sits vertically, as a length against the box. The chevron
+// rides this so it stays with the content instead of floating at the box's
+// midline. Null means the box's own centre, which is the CSS default.
+const valueLineY = (
+  type: string,
+  align: any,
+  height: any,
+  heightUnit: any,
+  padTop: any,
+  padBottom: any,
+  lineHeight: any,
+  fontSize: any,
+  topFloor: number | null = null,
+  controlTop = 0
+): string | null => {
+  const line = inputLineHeight(lineHeight, fontSize);
+  if (!line) return null;
+  const legacy = legacyPaddingY(type);
+  const top = flooredTopPadding(type, padTop, topFloor);
+  const bottom = paddingSide(padBottom, legacy);
+
+  if (type === MULTISELECT_FIELD) {
+    // Its chips are placed by flexbox, so the line follows the alignment
+    // directly at any height.
+    if (align === 'flex-start') return `${controlTop + top + line / 2}px`;
+    if (align === 'flex-end') return `calc(100% - ${bottom + line / 2}px)`;
+    // Centred means the middle of the padded area, not of the box -- the two
+    // are the same distance apart as the paddings are uneven.
+  }
+
+  const placement = inputBoxVertical(
+    type,
+    align,
+    height,
+    heightUnit,
+    padTop,
+    padBottom,
+    lineHeight,
+    fontSize,
+    topFloor
+  );
+  if (placement)
+    return placement.align === 'flex-start'
+      ? `${placement.top + placement.line / 2}px`
+      : `${placement.end + placement.line / 2}px`;
+
+  // Centred between the paddings, the same shift the placeholder takes.
+  const delta =
+    (top - bottom + (type === MULTISELECT_FIELD ? controlTop : 0)) / 2;
+  return delta
+    ? `calc(50% ${delta > 0 ? '+' : '-'} ${Math.abs(delta)}px)`
+    : null;
+};
+
+// The value's midline as a pixel offset from the box centre -- the numeric
+// twin of valueLineY, for companions that ride the line with a transform.
+const inputValueDelta = (
+  type: string,
+  align: any,
+  height: any,
+  heightUnit: any,
+  padTop: any,
+  padBottom: any,
+  lineHeight: any,
+  fontSize: any,
+  topFloor: number | null = null
+): number | null => {
+  const line = inputLineHeight(lineHeight, fontSize);
+  if (!line) return null;
+  const placement = inputBoxVertical(
+    type,
+    align,
+    height,
+    heightUnit,
+    padTop,
+    padBottom,
+    lineHeight,
+    fontSize,
+    topFloor
+  );
+  if (placement)
+    return placement.align === 'flex-start'
+      ? placement.top + placement.line / 2 - placement.height / 2
+      : placement.end + placement.line / 2 - placement.height / 2;
+  const delta =
+    (flooredTopPadding(type, padTop, topFloor) -
+      paddingSide(padBottom, legacyPaddingY(type))) /
+    2;
+  return delta || null;
+};
+
+// inputValueDelta as a container-unit length, for a percentage box. Null
+// wherever the pixel path or the centre default already answers.
+const containerValueDelta = (
+  type: string,
+  align: any,
+  heightUnit: any,
+  padTop: any,
+  padBottom: any,
+  lineHeight: any,
+  fontSize: any,
+  topFloor: number | null = null
+): string | null => {
+  if (align !== 'flex-start' && align !== 'flex-end') return null;
+  if (!canContainerSynthesizeVertical(type, heightUnit, lineHeight, fontSize))
+    return null;
+  const line = inputLineHeight(lineHeight, fontSize) as number;
+  if (align === 'flex-start') {
+    const top = flooredTopPadding(type, padTop, topFloor);
+    return `calc(${top + line / 2}px - 50cqh)`;
+  }
+  const bottom = paddingSide(padBottom, legacyPaddingY(type));
+  return `calc(50cqh - ${bottom + line / 2}px)`;
+};
+
+const VERTICAL_PLACEMENT_KEYS = [
+  CONTENT_VERTICAL_ALIGN,
+  'height',
+  'height_unit',
+  INNER_PADDING_TOP,
+  INNER_PADDING_BOTTOM,
+  'line_height',
+  'font_size'
+];
+
+// The subset of the above the theme has to have set for anything to be placed.
+// height, line_height and font_size are resolution inputs every field carries,
+// so they cannot stand in for intent.
+const verticalPlacementAsked = (align: any, padTop: any, padBottom: any) =>
+  isSet(align, padTop, padBottom);
+
+// Field types rendered as a single input box, whose inner padding comes from
+// inner_padding_*. file_upload and button_group are not here: they spend
+// uploader_padding_* on a different sub-element, which is a separate feature
+// that keeps its own keys. Mirrored by the type list in the backend's style
+// serializers (apps/robin/serializers/styles.py, pinned in
+// apps/robin/tests/test_style_serializers.py) and by feathery-frontend
+// (utils/boxSpacingHelper.tsx); nothing here can read those copies, so this one
+// is pinned literally in innerPadding.spec.ts.
+export const INPUT_BOX_FIELDS = [
+  'text_field',
+  'text_area',
+  'integer_field',
+  'email',
+  'password',
+  'ssn',
+  'url',
+  'phone_number',
+  'date_selector',
+  'dropdown',
+  'gmap_line_1',
+  'gmap_line_2',
+  'gmap_city',
+  'gmap_state',
+  'gmap_country',
+  'gmap_zip'
 ];
 
 export const borderColorProps = [
@@ -50,14 +617,18 @@ export default class ResponsiveStyles {
     mobileBreakpoint = DEFAULT_MOBILE_BREAKPOINT
   ) {
     this.element = element;
-    this.styles = element.styles;
+    this.styles = withLiveOwnedReserve(element, element.styles);
     this.targets = objectFromEntries(targets.map((t: string) => [t, {}]));
     this.handleMobile = handleMobile;
     this.mobileBreakpoint = mobileBreakpoint;
     this.mobileBreakpointKey = `@media (max-width: ${mobileBreakpoint}px)`;
 
     if (handleMobile) {
-      this.mobileStyles = element.mobile_styles ?? {};
+      this.mobileStyles = withLiveOwnedReserve(
+        element,
+        element.mobile_styles ?? {},
+        element.styles
+      );
       this.mobileTargets = objectFromEntries(
         targets.map((t: string) => [t, {}])
       );
@@ -340,6 +911,20 @@ export default class ResponsiveStyles {
     );
   }
 
+  // Falls back to the caller's default object-fit when unset
+  applyObjectFit(target: string, prefix = '') {
+    this.apply(target, `${prefix}object_fit`, (a: any) =>
+      a ? { objectFit: a } : {}
+    );
+  }
+
+  // Leaves the browser default (center) when unset
+  applyObjectPosition(target: string, prefix = '') {
+    this.apply(target, `${prefix}object_position`, (a: any) =>
+      a ? { objectPosition: a } : {}
+    );
+  }
+
   applyColor(target: string, jsonProp: any, cssProp: any, important = false) {
     this.apply(target, jsonProp, (color: any) => {
       if (!color) return {};
@@ -521,6 +1106,701 @@ export default class ResponsiveStyles {
     return styles;
   }
 
+  // Pixel room a pinned label needs when no top padding is stored, so an
+  // alignment cannot cancel its reserve. null means no floor; 0 is a real one.
+  private pinnedTopFloor(
+    type: string,
+    height: any,
+    heightUnit: any,
+    padTop: any,
+    align: any,
+    padBottom: any,
+    fontSize: any,
+    lineHeight: any
+  ): number | null {
+    // Only an asked-for placement needs the floor. The phone flag anchor is
+    // always emitted, so a leaked floor would move untouched phone fields.
+    if (!verticalPlacementAsked(align, padTop, padBottom)) return null;
+    if (isSet(padTop)) return null; // a stored padding stands as set
+    // Not a multiselect (its flexbox chips ignore this floor) or a text area
+    // (its text starts at the top padding, so there is no midline to move).
+    if (!INPUT_BOX_FIELDS.includes(type) || type === 'text_area') return null;
+    // Desktop styles on purpose: applyPlaceholderStyles pins the label from
+    // this desktop key, so a per-breakpoint read would disagree with it.
+    if (this.element?.styles?.placeholder_transition !== 'shrink_top')
+      return null;
+    if (!rendersPlaceholderStyles(type, this.element?.properties)) return null;
+    // A px box clamps the reserve and a % box uses the bare footprint; other
+    // units have no reserve.
+    if ((heightUnit !== 'px' || !isNum(height)) && heightUnit !== '%')
+      return null;
+    // Uses the breakpoint-resolved values apply() passes, so the floor matches
+    // the reserve; the element's own styles would give mobile the desktop font.
+    return shrinkLabelReservePx(type, height, heightUnit, fontSize, lineHeight);
+  }
+
+  // Content alignment for the text inside an input box. Horizontal rides on
+  // text-align; vertical has to be synthesized -- see inputBoxVertical.
+  applyInputBoxAlignment(type: string) {
+    // Unset leaves text-align undeclared, which is how every input box renders
+    // today: the UA stylesheet computes `start` for input, select and textarea.
+    this.apply('field', CONTENT_HORIZONTAL_ALIGN, (a: any) =>
+      isSet(a) ? { textAlign: textAlignFor(a) } : {}
+    );
+
+    this.apply(
+      'field',
+      VERTICAL_PLACEMENT_KEYS,
+      (
+        align: any,
+        height: any,
+        heightUnit: any,
+        padTop: any,
+        padBottom: any,
+        lineHeight: any,
+        fontSize: any
+      ) => {
+        // Nothing set: the field keeps resetStyles' own block padding, exactly
+        // as authored.
+        if (!verticalPlacementAsked(align, padTop, padBottom)) return {};
+
+        // Gated on the raw padTop above, so an untouched field still emits
+        // nothing at all; the floor only shapes the geometry once asked.
+        const topFloor = this.pinnedTopFloor(
+          type,
+          height,
+          heightUnit,
+          padTop,
+          align,
+          padBottom,
+          fontSize,
+          lineHeight
+        );
+        const placement = inputBoxVertical(
+          type,
+          align,
+          height,
+          heightUnit,
+          padTop,
+          padBottom,
+          lineHeight,
+          fontSize,
+          topFloor
+        );
+        // flooredTopPadding as a length, so the padding emitted and the
+        // placement measured against it cannot describe different geometry.
+        const paddingTopCss =
+          topFloor === null ? blockPaddingCss(type, padTop) : `${topFloor}px`;
+
+        // A percentage height is placed with cqh units against the size
+        // container below, each with a fallback for browsers without them.
+        if (
+          !placement &&
+          (align === 'flex-start' || align === 'flex-end') &&
+          canContainerSynthesizeVertical(type, heightUnit, lineHeight, fontSize)
+        ) {
+          const line = inputLineHeight(lineHeight, fontSize);
+          const top = flooredTopPadding(type, padTop, topFloor);
+          const bottom = paddingSide(padBottom, legacyPaddingY(type));
+          return align === 'flex-end'
+            ? {
+                // Floored at the top padding so the value never runs into a
+                // pinned label's reserve.
+                paddingTop: [
+                  paddingTopCss,
+                  `max(${top}px, calc(100cqh - ${bottom + line}px))`
+                ],
+                paddingBottom: blockPaddingCss(type, padBottom)
+              }
+            : {
+                paddingTop: paddingTopCss,
+                paddingBottom: [
+                  blockPaddingCss(type, padBottom),
+                  `max(0px, calc(100cqh - ${top + line}px))`
+                ]
+              };
+        }
+
+        // Centred, or a top/bottom alignment this box cannot resolve an offset
+        // for. The padding the theme asked for stands on its own, and both
+        // sides are emitted so a mobile override can undo a synthesized one --
+        // but an unresolvable alignment with no padding behind it has nothing
+        // to say, and saying resetStyles' own value back would only add noise.
+        if (!placement) {
+          if (
+            !isSet(padTop, padBottom) &&
+            !canSynthesizeVertical(
+              type,
+              height,
+              heightUnit,
+              lineHeight,
+              fontSize
+            ) &&
+            // A container-synthesized alignment also needs undoing on the
+            // breakpoint that re-centres, or its cqh paddings bleed through.
+            !canContainerSynthesizeVertical(
+              type,
+              heightUnit,
+              lineHeight,
+              fontSize
+            )
+          )
+            return {};
+          return {
+            paddingTop: paddingTopCss,
+            paddingBottom: blockPaddingCss(type, padBottom)
+          };
+        }
+
+        const { top, line, height: box } = placement;
+        // A box shorter than one line of text leaves nothing to pad out, and a
+        // negative padding is not a value CSS will take. The side that is not
+        // padded out is emitted raw, so switching alignment across a breakpoint
+        // replaces both sides rather than leaving one behind.
+        return placement.align === 'flex-start'
+          ? {
+              paddingTop: paddingTopCss,
+              paddingBottom: `${Math.max(0, box - top - line)}px`
+            }
+          : {
+              paddingTop: `${placement.end}px`,
+              paddingBottom: blockPaddingCss(type, padBottom)
+            };
+      }
+    );
+
+    // The size container the cqh units above resolve against. Safe because a
+    // percentage-height box is sized by its cell, never by its content.
+    this.apply(
+      'sub-fc',
+      VERTICAL_PLACEMENT_KEYS,
+      (
+        align: any,
+        height: any,
+        heightUnit: any,
+        t: any,
+        b: any,
+        lineHeight: any,
+        fontSize: any
+      ) =>
+        (align === 'flex-start' || align === 'flex-end') &&
+        canContainerSynthesizeVertical(type, heightUnit, lineHeight, fontSize)
+          ? { containerType: 'size' }
+          : align
+          ? { containerType: 'normal' }
+          : {}
+    );
+  }
+
+  // dropdown_multi's element becomes a column -- so the box below the label
+  // can claim the leftover height rather than a percentage of the whole
+  // element, with flex-start keeping the label the shrink-to-fit box it is in
+  // normal flow, and flexShrink: 0 letting wrapped chips overflow a capped
+  // element rather than be compressed across its bottom border -- but only
+  // once the theme moves the padding or alignment. Untouched forms keep
+  // master's plain block layout, its label-overflow behavior deliberately
+  // included: restructuring them would shift chips that asked for nothing.
+  applyMultiselectLayout() {
+    const gateKeys = [...INNER_PADDING_KEYS, CONTENT_VERTICAL_ALIGN];
+    // One direction only. The restructure is keyed on the theme having spoken at
+    // all, and a mobile pass cannot see fewer keys than the desktop one -- an
+    // override the builder deleted resolves back to the desktop value, not to
+    // undefined -- so an element restructured on desktop stays restructured
+    // across the breakpoint, and there is no return path to emit neutrals for.
+    this.apply('fc', gateKeys, (t: any, r: any, b: any, l: any, align: any) =>
+      isSet(t, r, b, l, align)
+        ? {
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start'
+          }
+        : {}
+    );
+    this.apply(
+      'sub-fc',
+      gateKeys,
+      (t: any, r: any, b: any, l: any, align: any) =>
+        isSet(t, r, b, l, align) ? { flexShrink: 0 } : {}
+    );
+    // The box can grow in height as more options are selected, so its height
+    // is a floor rather than fixed.
+    this.apply(
+      'sub-fc',
+      ['height', 'height_unit', ...gateKeys],
+      (h: any, unit: any, t: any, r: any, b: any, l: any, align: any) => {
+        if (unit !== '%') return { minHeight: `${h}${unit}` };
+        const minHeight = `${DEFAULT_MIN_SIZE}px`;
+        // In the column, the box fills what the label leaves rather than the
+        // whole element. A percentage would measure the box from the
+        // element's top, so a label made it that much too tall and dropped
+        // everything centred in it -- chips, placeholder, chevron -- by half
+        // of the label.
+        return isSet(t, r, b, l, align)
+          ? { minHeight, flexGrow: 1, height: 'auto' }
+          : { minHeight, height: '100%', flexGrow: 0 };
+      }
+    );
+  }
+
+  // dropdown_multi's chips are laid out by react-select's value container, so
+  // its inner padding and alignment go there rather than on the input the
+  // other types use. Being a flex container, it takes both alignment values
+  // directly -- no offset has to be synthesized, and it holds at any height.
+  applyMultiselectInnerStyles() {
+    // react-select lets the value container hug its content and centers it on
+    // the control, so there is no box for a block padding to inset from and no
+    // free space for the chips to align within vertically. Filling the control
+    // gives it both -- but it also moves the chips to the top of that box, so
+    // it is spent only once the theme asks for a placement react-select's own
+    // layout cannot express. At the values every existing multiselect resolves
+    // to, its own layout still holds and the chips stay where they were.
+    this.apply(
+      'valueContainer',
+      [...INNER_PADDING_KEYS, CONTENT_VERTICAL_ALIGN],
+      (t: any, r: any, b: any, l: any, align: any) =>
+        // Unset emits nothing, leaving react-select's own layout in place.
+        isSet(t, r, b, l, align) ? { alignSelf: 'stretch' } : {}
+    );
+
+    this.apply(
+      'valueContainer',
+      INNER_PADDING_KEYS,
+      (t: any, r: any, b: any, l: any) => {
+        const padding: any = {};
+        if (isNum(t)) padding.paddingTop = `${t}px`;
+        if (isNum(b)) padding.paddingBottom = `${b}px`;
+        if (isNum(l)) padding.paddingInlineStart = `${l}px`;
+        // The right padding places the chevron, and the chips stop a chevron
+        // strip further in so a full row can never slide under the glyph. One
+        // value moves both together -- a Math.max floor here pinned the chevron
+        // in place for every padding below it. Unset, selectStyles' own
+        // paddingInlineEnd stands: the same 28px, straight from react-select.
+        if (isSet(r))
+          padding.paddingInlineEnd = `${
+            paddingSide(r, DEFAULT_CHEVRON_GAP) + MULTISELECT_CHEVRON_CLEARANCE
+          }px`;
+        return padding;
+      }
+    );
+
+    this.apply('valueContainer', CONTENT_HORIZONTAL_ALIGN, (a: any) =>
+      isSet(a)
+        ? {
+            // 'flex-start' is how a flex container distributes with no
+            // declaration (initial 'normal' behaves as flex-start), and 'start'
+            // is the text-align the UA already computes.
+            justifyContent: spansContentBox(a) ? a : 'flex-start',
+            textAlign: textAlignFor(a)
+          }
+        : {}
+    );
+
+    // alignItems places chips within a row, alignContent the rows themselves
+    // once they wrap. 'center' for the centred case: while the container still
+    // hugs its content there is no free space for either to distribute, so it
+    // is inert, and once a moved padding stretches the container it is what
+    // centring the chips means. Unset defers to selectStyles, which sets both
+    // from whether the chips wrap.
+    this.apply('valueContainer', CONTENT_VERTICAL_ALIGN, (a: any) => {
+      if (!isSet(a)) return {};
+      const placed = a === 'flex-start' || a === 'flex-end' ? a : 'center';
+      return { alignItems: placed, alignContent: placed };
+    });
+  }
+
+  // Multiselect padding is split between the control's pinned-label reserve
+  // and the value container's author padding. Companions measure both.
+  multiselectControlTop(
+    type: string,
+    height: any,
+    heightUnit: any,
+    padTop: any,
+    fontSize: any,
+    lineHeight: any
+  ) {
+    if (
+      type !== MULTISELECT_FIELD ||
+      this.element.styles.placeholder_transition !== 'shrink_top' ||
+      !rendersPlaceholderStyles(type, this.element.properties)
+    )
+      return 0;
+    return Math.max(
+      paddingSide(padTop, 0),
+      shrinkLabelReservePx(type, height, heightUnit, fontSize, lineHeight)
+    );
+  }
+
+  // A dropdown's chevron is painted on the box, so without this it floats at
+  // the box's midline while the value sits wherever the padding put it. Only
+  // the vertical half is emitted here: which inline edge it hangs off depends
+  // on the form's direction, which the field component knows.
+  applyDropdownChevronPlacement(type: string) {
+    // The right padding is the border-to-glyph gap for both types, so the
+    // glyph's inline offset is that value directly -- plus the strip a
+    // tooltip trigger occupies. A custom property rather than a resolved
+    // number so a mobile padding override moves the chevron under the same
+    // media query, which a value computed from the desktop target could not.
+    // Unset leaves the property undeclared and the components' own inline
+    // anchors -- the production 10px gap -- in place.
+    this.apply('field', INNER_PADDING_RIGHT, (r: any) =>
+      isSet(r)
+        ? {
+            '--fe-chevron-x': `${
+              paddingSide(r, DEFAULT_CHEVRON_GAP) +
+              (this.element?.properties?.tooltipText ? 20 : 0)
+            }px`
+          }
+        : {}
+    );
+
+    this.apply(
+      'field',
+      VERTICAL_PLACEMENT_KEYS,
+      (
+        align: any,
+        height: any,
+        heightUnit: any,
+        padTop: any,
+        padBottom: any,
+        lineHeight: any,
+        fontSize: any
+      ) => {
+        if (!verticalPlacementAsked(align, padTop, padBottom)) return {};
+        const floor = this.pinnedTopFloor(
+          type,
+          height,
+          heightUnit,
+          padTop,
+          align,
+          padBottom,
+          fontSize,
+          lineHeight
+        );
+        const y = valueLineY(
+          type,
+          align,
+          height,
+          heightUnit,
+          padTop,
+          padBottom,
+          lineHeight,
+          fontSize,
+          floor,
+          this.multiselectControlTop(
+            type,
+            height,
+            heightUnit,
+            padTop,
+            fontSize,
+            lineHeight
+          )
+        );
+        // Container-unit seat for the glyph, with the pixel seat as the
+        // fallback for browsers without container units.
+        if (
+          (align === 'flex-start' || align === 'flex-end') &&
+          canContainerSynthesizeVertical(type, heightUnit, lineHeight, fontSize)
+        ) {
+          const line = inputLineHeight(lineHeight, fontSize);
+          const top = flooredTopPadding(type, padTop, floor);
+          const bottom = paddingSide(padBottom, legacyPaddingY(type));
+          return {
+            backgroundPositionY: [
+              chevronSeat(y),
+              align === 'flex-end'
+                ? `calc(100cqh - ${bottom + line / 2 + CHEVRON_HALF_HEIGHT}px)`
+                : `${top + line / 2 - CHEVRON_HALF_HEIGHT}px`
+            ]
+          };
+        }
+        // 'center' is the neutral -- what both components declare inline before
+        // spreading this target -- so a mobile override can bring the glyph
+        // back to the box midline.
+        return { backgroundPositionY: chevronSeat(y) };
+      }
+    );
+  }
+
+  // The eye toggle and tooltip icon sit on the input's inline end: they
+  // follow the right padding in and out -- their production seats are the
+  // zero -- and ride the value's line once it leaves the box centre. The
+  // components' own anchors stay in place until a value here overrides them.
+  applyInlineIconPlacement(type: string) {
+    this.addTargets('endIcon', 'tooltipTrigger');
+
+    // A dropdown's right padding is its border-to-chevron gap, so its legacy
+    // zero differs from a plain input's.
+    const legacyEnd = DROPDOWN_FIELDS.includes(type)
+      ? DEFAULT_CHEVRON_GAP
+      : RESET_INPUT_PADDING_X;
+    const eyeBase = EYE_ICON_INSET(!!this.element?.properties?.tooltipText);
+    this.apply('endIcon', INNER_PADDING_RIGHT, (r: any) =>
+      isSet(r)
+        ? {
+            insetInlineEnd: `${Math.max(
+              0,
+              eyeBase + paddingSide(r, legacyEnd) - legacyEnd
+            )}px`
+          }
+        : {}
+    );
+    this.apply('tooltipTrigger', INNER_PADDING_RIGHT, (r: any) =>
+      isSet(r)
+        ? {
+            insetInlineEnd: `${Math.max(
+              0,
+              TOOLTIP_TRIGGER_INSET + paddingSide(r, legacyEnd) - legacyEnd
+            )}px`
+          }
+        : {}
+    );
+
+    ['endIcon', 'tooltipTrigger'].forEach((target) => {
+      this.apply(
+        target,
+        VERTICAL_PLACEMENT_KEYS,
+        (
+          align: any,
+          height: any,
+          heightUnit: any,
+          t: any,
+          b: any,
+          lineHeight: any,
+          fontSize: any
+        ) => {
+          if (!verticalPlacementAsked(align, t, b)) return {};
+          const delta = inputValueDelta(
+            type,
+            align,
+            height,
+            heightUnit,
+            t,
+            b,
+            lineHeight,
+            fontSize,
+            this.pinnedTopFloor(
+              type,
+              height,
+              heightUnit,
+              t,
+              align,
+              b,
+              fontSize,
+              lineHeight
+            )
+          );
+          // A zero translation is the neutral, so a mobile override can
+          // bring the icon back to the box midline; % boxes add a cqh layer.
+          const base = delta ? `translateY(${delta}px)` : NO_TRANSLATE;
+          const container = containerValueDelta(
+            type,
+            align,
+            heightUnit,
+            t,
+            b,
+            lineHeight,
+            fontSize,
+            this.pinnedTopFloor(
+              type,
+              height,
+              heightUnit,
+              t,
+              align,
+              b,
+              fontSize,
+              lineHeight
+            )
+          );
+          return {
+            transform: container ? [base, `translateY(${container})`] : base
+          };
+        }
+      );
+    });
+  }
+
+  // A phone's flag is a flex sibling of its input, centred on the box. The
+  // left padding is the border-to-flag gap -- the number keeps the fixed 12px
+  // gap it has always had from the flag, so one value moves both together --
+  // and once the value's line leaves the box centre, the flag rides with it.
+  // Only the glyph rides: the toggle column is full height and carries the
+  // divider as its border, so translating it pushed the line out of the box.
+  applyPhoneFlagPlacement() {
+    // Unset means the flag keeps sitting flush on the border, which is where it
+    // has always sat -- no margin declared at all.
+    this.apply('fieldToggle', INNER_PADDING_LEFT, (l: any) =>
+      isSet(l) ? { marginInlineStart: `${isNum(l) ? Number(l) : 0}px` } : {}
+    );
+    this.apply(
+      'fieldFlag',
+      VERTICAL_PLACEMENT_KEYS,
+      (
+        align: any,
+        height: any,
+        heightUnit: any,
+        t: any,
+        b: any,
+        lineHeight: any,
+        fontSize: any
+      ) => {
+        const delta = inputValueDelta(
+          'phone_number',
+          align,
+          height,
+          heightUnit,
+          t,
+          b,
+          lineHeight,
+          fontSize,
+          this.pinnedTopFloor(
+            'phone_number',
+            height,
+            heightUnit,
+            t,
+            align,
+            b,
+            fontSize,
+            lineHeight
+          )
+        );
+        // Neutral zero translation, so a mobile override can re-centre the
+        // flag; a percentage box rides the line through container units.
+        const base = delta ? `translateY(${delta}px)` : NO_TRANSLATE;
+        const container = containerValueDelta(
+          'phone_number',
+          align,
+          heightUnit,
+          t,
+          b,
+          lineHeight,
+          fontSize,
+          this.pinnedTopFloor(
+            'phone_number',
+            height,
+            heightUnit,
+            t,
+            align,
+            b,
+            fontSize,
+            lineHeight
+          )
+        );
+        return {
+          transform: container ? [base, `translateY(${container})`] : base
+        };
+      }
+    );
+  }
+
+  // Fits a %-height input box into the room its label leaves, so it cannot
+  // hang out of the cell. Input-box types only: others lay out 'fc' as a row.
+  applyInputBoxLabelFlow() {
+    // Non-% units emit neutrals, not nothing, so a mobile px override can take
+    // the box back off the flex path; see RESET SEMANTICS.
+    this.apply('fc', 'height_unit', (unit: any) => {
+      if (!isSet(unit)) return {};
+      return unit === '%'
+        ? { display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }
+        : { display: 'block', flexDirection: 'row', alignItems: 'normal' };
+    });
+    this.apply('sub-fc', 'height_unit', (unit: any) => {
+      if (!isSet(unit)) return {};
+      // Basis auto, not 0: under a Fit container `height: 100%` falls back to
+      // auto, and a 0 basis would collapse the cell's intrinsic height.
+      // Stretch keeps the full width a block box had before the column.
+      return unit === '%'
+        ? { flex: '1 1 auto', alignSelf: 'stretch' }
+        : { flex: '0 1 auto', alignSelf: 'auto' };
+    });
+  }
+
+  // The input box never shrinks below what its own inner padding plus a line
+  // of text needs, so padding can't push the text out of the box.
+  applyInputBoxMinHeight(type: string) {
+    this.apply(
+      'sub-fc',
+      // The floor itself does not depend on vertical_align, but the key stays
+      // in the list: a multiselect's floor is applyMultiselectLayout's, whose
+      // own apply is gated on it, so dropping it here would let a mobile
+      // alignment override reach that floor and not this one.
+      VERTICAL_PLACEMENT_KEYS,
+      (
+        align: any,
+        height: any,
+        heightUnit: any,
+        t: any,
+        b: any,
+        lineHeight: any,
+        fontSize: any
+      ) => {
+        if (!verticalPlacementAsked(align, t, b)) return {};
+        const line = inputLineHeight(lineHeight, fontSize);
+        if (!line) return {};
+
+        const legacy = legacyPaddingY(type);
+        const top = flooredTopPadding(
+          type,
+          t,
+          this.pinnedTopFloor(
+            type,
+            height,
+            heightUnit,
+            t,
+            align,
+            b,
+            fontSize,
+            lineHeight
+          )
+        );
+        const bottom = paddingSide(b, legacy);
+
+        // Matches inputBoxVertical's effective padding, label reserve included.
+        // Only a raised authored padding needs a larger box.
+        if (!raisedPaddingY(type, t, b)) {
+          // A multiselect's floor is applyMultiselectLayout's, whose apply
+          // covers these same keys and so reaches the breakpoint on its own.
+          // Emitting anything here would clobber it.
+          if (type === MULTISELECT_FIELD) return {};
+          // Size containment stops the box growing to fit, so floor it on the
+          // label's room plus a line; a Fit parent leaves it nothing else.
+          if (
+            (align === 'flex-start' || align === 'flex-end') &&
+            canContainerSynthesizeVertical(
+              type,
+              heightUnit,
+              lineHeight,
+              fontSize
+            )
+          )
+            return {
+              minHeight: `${Math.max(top + bottom + line, DEFAULT_MIN_SIZE)}px`
+            };
+          // Otherwise hand the clamp back, so a mobile override that lowers a
+          // raised padding lets the box shrink again: 'auto' is the initial
+          // value, and a percentage-height box keeps applyHeight's own floor.
+          return {
+            minHeight: heightUnit === '%' ? `${DEFAULT_MIN_SIZE}px` : 'auto'
+          };
+        }
+
+        // A multiselect spends its whole height on a floor so the box can grow
+        // with the chips, which makes that height the content area rather than
+        // the box. Padding adds to it instead of eating into it -- otherwise
+        // the first (height - line) of padding only moves the chips down.
+        if (type === MULTISELECT_FIELD && heightUnit !== '%' && isNum(height))
+          return {
+            minHeight: `${top + bottom + Math.max(Number(height), line)}px`
+          };
+
+        let min = top + bottom + line;
+        // applyHeight gives a percentage-height box a floor of its own; keep
+        // the larger rather than replacing it.
+        if (heightUnit === '%') min = Math.max(min, DEFAULT_MIN_SIZE);
+        return { minHeight: `${min}px` };
+      }
+    );
+  }
+
   applyPlaceholderStyles(type: any, styles: any) {
     this.addTargets('placeholder', 'placeholderActive', 'placeholderFocus');
     this.applyFontStyles('placeholder', true);
@@ -532,24 +1812,332 @@ export default class ResponsiveStyles {
         marginTop: `-${a / 2}px`
       }));
     }
+    // The placeholder is positioned over the content rather than laid out
+    // inside it, so it has to track the padding itself or it detaches from the
+    // text it stands in for.
+    if (takesInnerPadding(type)) {
+      this.apply(
+        'placeholder',
+        [INNER_PADDING_LEFT, INNER_PADDING_RIGHT, CONTENT_HORIZONTAL_ALIGN],
+        (l: any, r: any, align: any) => {
+          // Unset leaves the component's own inline anchors alone -- the
+          // production 12px, or 0.75rem as the components author it.
+          if (!isSet(l, r, align)) return {};
+          const placed: any = {};
+          // A phone's left padding places its flag, not its text: the number
+          // and its placeholder keep the fixed 12px gap they have always had
+          // from the flag.
+          let start = l;
+          if (type === 'phone_number') start = RESET_INPUT_PADDING_X;
+          // A multiselect's placeholder has always sat at 0.75rem = 12px --
+          // 4px inside react-select's own 8px inline start for the chips -- so
+          // it keeps that offset as the padding moves the chips.
+          else if (type === MULTISELECT_FIELD)
+            start = paddingSide(l, MULTISELECT_LEGACY_PADDING.left) + 4;
+          if (isNum(start)) placed.insetInlineStart = `${start}px`;
+
+          // Anchoring the inline start only holds while the text starts there.
+          // Centered and end-aligned text needs the span to span the content
+          // box and align its own text the same way.
+          placed.textAlign = textAlignFor(align);
+          if (spansContentBox(align)) {
+            placed.insetInlineStart = `${paddingSide(
+              start,
+              RESET_INPUT_PADDING_X
+            )}px`;
+            // A placeholder stands in for the content, so it stops where the
+            // content does: a chevron strip past the padding on the types
+            // that paint a glyph there, the padding itself everywhere else.
+            placed.insetInlineEnd =
+              chevronClearance(type) > 0
+                ? `${
+                    paddingSide(r, DEFAULT_CHEVRON_GAP) + chevronClearance(type)
+                  }px`
+                : `${paddingSide(r, RESET_INPUT_PADDING_X)}px`;
+          } else {
+            // 'auto' is the neutral: an unspanned placeholder is anchored by
+            // its inline start alone, exactly as when the property is absent.
+            placed.insetInlineEnd = 'auto';
+          }
+          return placed;
+        }
+      );
+      if (type === MULTISELECT_FIELD) {
+        // Its value container aligns the chips with flexbox, so the placeholder
+        // only has to meet them -- no pixel height needed, unlike an input.
+        this.apply(
+          'placeholder',
+          [
+            CONTENT_VERTICAL_ALIGN,
+            'height',
+            'height_unit',
+            INNER_PADDING_TOP,
+            INNER_PADDING_BOTTOM,
+            'line_height',
+            'font_size'
+          ],
+          (
+            align: any,
+            height: any,
+            heightUnit: any,
+            t: any,
+            b: any,
+            lineHeight: any,
+            fontSize: any
+          ) => {
+            if (!verticalPlacementAsked(align, t, b)) return {};
+            // Same placement the chevron takes, so the two can't disagree.
+            const y = valueLineY(
+              MULTISELECT_FIELD,
+              align,
+              height,
+              heightUnit,
+              t,
+              b,
+              lineHeight,
+              fontSize,
+              null,
+              this.multiselectControlTop(
+                type,
+                height,
+                heightUnit,
+                t,
+                fontSize,
+                lineHeight
+              )
+            );
+            // '50%' is the neutral Placeholder declares inline for an input.
+            return { top: y ?? '50%' };
+          }
+        );
+      } else if (type === 'text_area') {
+        this.apply('placeholder', INNER_PADDING_TOP, (a: any) =>
+          // Raw, whether a label floats above or none does: the resting label
+          // stands in for the text, which starts at the padding. Unset leaves
+          // the '0.6rem' the component declares inline -- the same 9.6px the
+          // 8px reset padding composes to, and rem so it holds at any root.
+          isSet(a)
+            ? {
+                top: isNum(a)
+                  ? `${Number(a) + TEXT_AREA_PLACEHOLDER_TOP_OFFSET}px`
+                  : '0.6rem'
+              }
+            : {}
+        );
+      } else {
+        // A single-line input centers its text in the content box, so an
+        // asymmetric vertical padding shifts that midline off the box's 50%
+        // anchor by half the top/bottom difference, and a synthesized
+        // top/bottom alignment moves it onto the aligned text's line. One apply
+        // resolves both cases: two would fight over `top`, since the neutral
+        // each needs for its own inactive case is the other's answer.
+        this.apply(
+          'placeholder',
+          VERTICAL_PLACEMENT_KEYS,
+          (
+            align: any,
+            height: any,
+            heightUnit: any,
+            t: any,
+            b: any,
+            lineHeight: any,
+            fontSize: any
+          ) => {
+            if (!verticalPlacementAsked(align, t, b)) return {};
+            // Computed from the same values as the input's own placement, so
+            // the two can never disagree: where the input cannot be aligned,
+            // this falls through and both stay centered.
+            const topFloor = this.pinnedTopFloor(
+              type,
+              height,
+              heightUnit,
+              t,
+              align,
+              b,
+              fontSize,
+              lineHeight
+            );
+            const placement = inputBoxVertical(
+              type,
+              align,
+              height,
+              heightUnit,
+              t,
+              b,
+              lineHeight,
+              fontSize,
+              topFloor
+            );
+            if (placement) {
+              const { top, end, line } = placement;
+              return {
+                top:
+                  placement.align === 'flex-start'
+                    ? `${top + line / 2}px`
+                    : `${end + line / 2}px`
+              };
+            }
+
+            // A percentage box: the input's container-unit value line, floored
+            // so it stays below a pinned label's reserve.
+            if (
+              (align === 'flex-start' || align === 'flex-end') &&
+              canContainerSynthesizeVertical(
+                type,
+                heightUnit,
+                lineHeight,
+                fontSize
+              )
+            ) {
+              const line = inputLineHeight(lineHeight, fontSize) as number;
+              const top = flooredTopPadding(type, t, topFloor);
+              if (align === 'flex-start') return { top: `${top + line / 2}px` };
+              const bottom = paddingSide(b, legacyPaddingY(type));
+              return {
+                top: `max(${top + line / 2}px, calc(100% - ${
+                  bottom + line / 2
+                }px))`
+              };
+            }
+
+            // '50%' is Placeholder's inline neutral and what an untouched
+            // field renders, so no floor: only a stored padding moves it.
+            if (!isNum(t) && !isNum(b)) return { top: '50%' };
+            const delta =
+              (paddingSide(t, RESET_INPUT_PADDING_Y) -
+                paddingSide(b, RESET_INPUT_PADDING_Y)) /
+              2;
+            return { top: offsetFromCenter(delta) };
+          }
+        );
+      }
+    }
     if (styles.placeholder_transition === 'shrink_top') {
-      this.apply('placeholderFocus', 'font_size', (a: any) => {
-        const minFontSize = Math.min(a, 10);
-        return {
-          top: 0,
-          marginTop: `${minFontSize / 2}px`,
-          fontSize: `${minFontSize}px`
+      // The shrunken label is an overlay pinned to the box top, at fixed
+      // offsets the padding never moves -- production geometry.
+      this.apply(
+        'placeholderFocus',
+        [
+          'font_size',
+          'corner_top_left_radius',
+          'corner_top_right_radius',
+          'height',
+          'height_unit',
+          'width',
+          'width_unit'
+        ],
+        (
+          fontSize: any,
+          radiusLeft: any,
+          radiusRight: any,
+          height: any,
+          heightUnit: any,
+          width: any,
+          widthUnit: any
+        ) => {
+          const minFontSize = Math.min(fontSize, 10);
+          const pinned: any = {
+            // Half a shrunken font down, in the resting label's own line box.
+            top: 0,
+            marginTop: `${minFontSize / 2}px`,
+            fontSize: `${minFontSize}px`
+          };
+          // Placeholder's inline 0.75rem seat, kept in rem so non-16px roots
+          // match. Always emitted so a mobile pass can restore it.
+          if (takesInnerPadding(type)) {
+            const seat = RESET_INLINE_PADDING_CSS;
+            // Move the seat past a rounded top corner's curve at the label's
+            // top edge. RTL uses the other corner, so clear the larger radius.
+            let r = Math.max(
+              isNum(radiusLeft) ? Number(radiusLeft) : 0,
+              isNum(radiusRight) ? Number(radiusRight) : 0
+            );
+            // CSS caps a radius at half the box, so a 999px pill corner on a
+            // 100px box curves as 50px; seat against what actually renders.
+            if (heightUnit === 'px' && isNum(height))
+              r = Math.min(r, Number(height) / 2);
+            if (widthUnit === 'px' && isNum(width))
+              r = Math.min(r, Number(width) / 2);
+            const yTop = minFontSize / 2;
+            const sweep =
+              r > yTop ? r - Math.sqrt(2 * r * yTop - yTop * yTop) : 0;
+            const clear = Math.round((sweep + 2) * 10) / 10;
+            pinned.insetInlineStart =
+              clear > 10 ? [seat, `max(${seat}, ${clear}px)`] : seat;
+          }
+          return pinned;
+        }
+      );
+      // Resting mobile placement must not override the pinned desktop anchor
+      // when the breakpoint has no font override of its own.
+      if (this.handleMobile)
+        this.mobileTargets.placeholderFocus = {
+          ...this.targets.placeholderFocus,
+          ...this.mobileTargets.placeholderFocus
         };
-      });
+      // A pinned label is a fixed overlay taking no room in the content box, so
+      // the value needs a reserve behind it: the label's footprint when unset,
+      // else the theme's own padding as stored.
       this.apply(
         'field',
-        ['height', 'height_unit', 'font_size'],
-        (a: number, b: string, c: number) => {
-          const minFontSize = Math.min(c, 10);
-          return {
-            paddingTop:
-              type === 'text_area' ? `${minFontSize * 2.5}px` : `${a / 3}${b}`
-          };
+        [
+          'height',
+          'height_unit',
+          'font_size',
+          INNER_PADDING_TOP,
+          CONTENT_VERTICAL_ALIGN,
+          'line_height'
+        ],
+        (
+          height: any,
+          heightUnit: any,
+          fontSize: any,
+          t: any,
+          align: any,
+          lineHeight: any
+        ) => {
+          const reserve = shrinkLabelReserve(
+            type,
+            height,
+            heightUnit,
+            fontSize,
+            lineHeight
+          );
+          if (!takesInnerPadding(type)) return { paddingTop: reserve };
+          // applyInputBoxAlignment already placed a resolvable alignment.
+          // Not a multiselect: its flexbox chips still need this reserve.
+          if (
+            type !== MULTISELECT_FIELD &&
+            isSet(align) &&
+            (canSynthesizeVertical(
+              type,
+              height,
+              heightUnit,
+              lineHeight,
+              fontSize
+            ) ||
+              // The container branch also places the box, but only a top or
+              // bottom placement: a centred percentage box keeps its reserve.
+              ((align === 'flex-start' || align === 'flex-end') &&
+                canContainerSynthesizeVertical(
+                  type,
+                  heightUnit,
+                  lineHeight,
+                  fontSize
+                )))
+          )
+            return {};
+          // A null top is a cleared padding, not a value; the label still needs room.
+          if (t == null) return { paddingTop: reserve };
+          // A multiselect's own padding lands on the value container react-
+          // select lays the chips out in, so this target is only ever the room
+          // the pinned label needs: keep whichever is larger rather than
+          // letting a container padding shrink the label's reserve.
+          if (type === MULTISELECT_FIELD)
+            return { paddingTop: `max(${Number(t)}px, ${reserve})` };
+          // Every other input box renders the value behind its own padding, so
+          // the stored value stands exactly as set.
+          return { paddingTop: blockPaddingCss(type, t) };
         }
       );
       if (styles.selected_placeholder_color) {
@@ -587,7 +2175,9 @@ export default class ResponsiveStyles {
       'background_image_size',
       'background_image_size_x',
       'background_image_size_y',
-      'background_image_repeat'
+      'background_image_repeat',
+      'background_icon',
+      'background_icon_color'
     ];
 
     this.apply(target, targetStyles, (...styles: any[]) => {
@@ -599,7 +2189,9 @@ export default class ResponsiveStyles {
         imageSize,
         imageSizeX,
         imageSizeY,
-        imageRepeat
+        imageRepeat,
+        icon,
+        iconColor
       ] = styles;
 
       const formattedStyles: Record<string, string> = {
@@ -607,7 +2199,13 @@ export default class ResponsiveStyles {
         backgroundPositionX: imageLayout,
         backgroundPositionY: imageVerticalLayout
       };
+      const iconUrl = iconGlyphDataUrl(icon?.glyph, iconColor);
+      // Picking either source clears the other, so both are set only when a
+      // mobile image inherits the desktop icon; the mobile image wins.
       if (imageUrl) formattedStyles.backgroundImage = `url(${imageUrl})`;
+      else if (iconUrl) formattedStyles.backgroundImage = `url("${iconUrl}")`;
+      else if (this.styles.background_icon)
+        formattedStyles.backgroundImage = 'none';
 
       switch (imageDisplay) {
         case 'fill':
@@ -649,6 +2247,30 @@ export const imgMaxSizeStyles: CSSProperties = {
   maxWidth: '80%',
   maxHeight: '100%'
 };
+
+const NATIVE_ICON_GAP = '0.5em';
+// The icon renders before its label, so the side facing the label follows the flex direction.
+const NATIVE_ICON_GAP_SIDE: Record<string, string> = {
+  'row-reverse': 'marginLeft',
+  column: 'marginBottom',
+  'column-reverse': 'marginTop'
+};
+
+export function nativeIconGapStyles(flexDirection?: string) {
+  return {
+    [NATIVE_ICON_GAP_SIDE[flexDirection ?? ''] ?? 'marginRight']:
+      NATIVE_ICON_GAP
+  };
+}
+
+// Authored image margins own the spacing; the default gap only fills in when none are set.
+export function hasImageMargins(element: any) {
+  return [element.styles, element.mobile_styles].some((styles) =>
+    ['top', 'right', 'bottom', 'left'].some((side) =>
+      Boolean(Number(styles?.[`image_margin_${side}`]))
+    )
+  );
+}
 
 export const ERROR_COLOR = '#F42525';
 

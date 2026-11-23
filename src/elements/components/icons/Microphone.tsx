@@ -1,5 +1,4 @@
 import React from 'react';
-
 export default function MicrophoneIcon({
   width = '20px',
   color = '#414859',

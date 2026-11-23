@@ -53,7 +53,10 @@ function withNativeRow(texts: string[], at = 3): SfdtDocument {
 
 describe('row adoption', () => {
   it('infers bindings and formulas from the row above', () => {
-    const result = applyRules(withNativeRow(['QA testing', '4', '250', '']), {});
+    const result = applyRules(
+      withNativeRow(['QA testing', '4', '250', '']),
+      {}
+    );
 
     expect(
       result.diagnostics.some(
@@ -107,6 +110,23 @@ describe('row adoption', () => {
     expect(hasBlockingErrors(result.diagnostics)).toBe(false);
   });
 
+  it('does not report a populated header whose isHeader flag is absent', () => {
+    const doc = buildCostsFixture();
+    const tablePath = scanBindings(doc).tables.get('costs')!.tablePath!;
+    const table = getAt(doc, tablePath) as { rows: SfdtRow[] };
+    table.rows[0].rowFormat!.isHeader = false;
+
+    const result = applyRules(doc, {});
+
+    expect(
+      result.diagnostics.some(
+        (entry) =>
+          entry.code === 'row-not-adopted' && /index 0/.test(entry.message)
+      )
+    ).toBe(false);
+    expect(result.index.tables.get('costs')!.rows).toHaveLength(2);
+  });
+
   it('still adopts after every bound row has been deleted', () => {
     // Deleting the last bound row removes the document's only copy of the row
     // shape. Without a remembered template, every row inserted afterwards stayed
@@ -148,9 +168,7 @@ describe('row adoption', () => {
     ).toBe(true);
   });
 
-  it('seeds a new row from default and never inherits value', () => {
-    // value belongs to the row it was authored on - carrying it into a new row
-    // would clone stale data.
+  it('seeds a new row from its authored default without inheriting value', () => {
     const doc: SfdtDocument = JSON.parse(
       JSON.stringify(withNativeRow(['', '', '', ''])).replace(
         '[[name=quantity|type=integer|row=r-2]]',
@@ -168,9 +186,9 @@ describe('row adoption', () => {
     const first = applyRules(withNativeRow(['QA testing', '4', '250', '']), {});
     const second = applyRules(first.sfdt, { prevValues: first.values });
     expect(second.sfdt).toBe(first.sfdt); // identity: nothing rewritten
-    expect(second.diagnostics.some((entry) => entry.code === 'row-adopted')).toBe(
-      false
-    );
+    expect(
+      second.diagnostics.some((entry) => entry.code === 'row-adopted')
+    ).toBe(false);
   });
 
   it('skips a row that does not match the template shape, with a warning', () => {
@@ -198,6 +216,71 @@ describe('row adoption', () => {
       )
     ).toBe(false);
     expect(result.index.tables.get('costs')!.rows).toHaveLength(2);
+  });
+
+  describe('inserted-row attribution', () => {
+    /** Simulate Syncfusion's insert-above: an identical twin spliced in ABOVE. */
+    function withInsertAboveClone() {
+      const doc = buildCostsFixture();
+      const tablePath = scanBindings(doc).tables.get('costs')!.tablePath!;
+      const rows = getAt(doc, tablePath).rows;
+      rows.splice(2, 0, JSON.parse(JSON.stringify(rows[2]))); // twin of r-2
+      return { doc, tablePath };
+    }
+
+    it('re-adopts the hinted copy; the original keeps its id and value', () => {
+      const { doc, tablePath } = withInsertAboveClone();
+      const result = applyRules(doc, {
+        insertedRows: {
+          sectionIndex: Number(tablePath[1]),
+          blockIndex: Number(tablePath[3]),
+          rowIndices: [2]
+        }
+      });
+      const rows = result.index.tables.get('costs')!.rows;
+      expect(rows).toHaveLength(3);
+      const original = rows.find((row) => row.rowId === 'r-2')!;
+      expect(original.bindings.get('quantity')!.text).toBe('30');
+      expect(original.bindings.get('line_total')!.text).toBe('$6,000.00');
+      // Document order: the fresh default row sits ABOVE the original.
+      const fresh = rows[1];
+      expect(fresh.rowId).not.toBe('r-1');
+      expect(fresh.rowId).not.toBe('r-2');
+      expect(fresh.bindings.get('quantity')!.text).toBe('0');
+      for (const grand of result.index.formulas.get('grand_total')!) {
+        expect(grand.text).toBe('$7,800.00');
+      }
+      expect(hasBlockingErrors(result.diagnostics)).toBe(false);
+    });
+
+    it('falls back to position when the hint names every occurrence', () => {
+      const { doc, tablePath } = withInsertAboveClone();
+      const result = applyRules(doc, {
+        insertedRows: {
+          sectionIndex: Number(tablePath[1]),
+          blockIndex: Number(tablePath[3]),
+          rowIndices: [2, 3]
+        }
+      });
+      const rows = result.index.tables.get('costs')!.rows;
+      // A hint leaving no original is stale: the LATER twin is the copy again.
+      expect(rows[1].rowId).toBe('r-2');
+      expect(rows[2].rowId).not.toBe('r-2');
+    });
+
+    it('ignores a hint aimed at a different table', () => {
+      const { doc, tablePath } = withInsertAboveClone();
+      const result = applyRules(doc, {
+        insertedRows: {
+          sectionIndex: Number(tablePath[1]),
+          blockIndex: Number(tablePath[3]) + 1,
+          rowIndices: [2]
+        }
+      });
+      const rows = result.index.tables.get('costs')!.rows;
+      expect(rows[1].rowId).toBe('r-2');
+      expect(rows[2].rowId).not.toBe('r-2');
+    });
   });
 
   it('adopts invalid typed input, keeps it visible, and blocks with a diagnostic', () => {

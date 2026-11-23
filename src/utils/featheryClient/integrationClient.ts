@@ -4,12 +4,20 @@ import { API_URL, STATIC_URL } from '.';
 import { OfflineRequestHandler } from '../offlineRequestHandler';
 import {
   AlloyEntities,
+  CreateEgnyteFolderParams,
+  DocusignNotification,
   GetDocusignEnvelopeParams,
   LoanProCustomerObject,
   SendDocusignParams,
-  UpdateDocusignEnvelopeParams
+  UpdateDocusignEnvelopeParams,
+  UploadFileToEgnyteParams
 } from '../internalState';
 import { featheryWindow } from '../browser';
+import { isFetchNetworkError } from '../error';
+import {
+  PROVIDER_LABELS,
+  SALESFORCE_PROVIDER
+} from '../../integrations/connectAccount/providers';
 import {
   apiFetch,
   customRolloutAction as apiCustomRolloutAction,
@@ -21,6 +29,8 @@ import {
   getQuikAccountForms as apiGetQuikAccountForms,
   getQuikFormRoles as apiGetQuikFormRoles,
   getQuikForms as apiGetQuikForms,
+  HubAssociation,
+  hubAssociationPayload,
   IntegrationActionIds,
   IntegrationActionOptions,
   parseAPIError,
@@ -28,24 +38,99 @@ import {
 } from '@feathery/client-utils';
 import { handleFormAuthenticationError, handleFormConflict } from './utils';
 import {
+  DocumentPersistenceError,
+  documentErrorMessage,
+  withDocumentDeadline
+} from '../documentPersistence';
+import {
+  parseDocxVersion,
+  parseEnvelopeDocument,
+  parseVersionList
+} from '../../elements/components/DocxEditor/history/validation';
+import {
   editorContainerId,
   isDocusignSignAction,
   signsViaDocusign
 } from '../document';
+import { withLinkRequestHeaders } from '../accessLinkRequest';
 
 // A configured Generate Documents entry in the ordered `documents` array: a
-// template UUID string, or the single polymorphic `{kind:'quik'}` source dict.
-// The SDK forwards these verbatim (action config -> request field).
-export type GenerateDocumentRef = string | { kind: string; [key: string]: any };
+// template UUID string, an explicit template, one Quik source, or a file
+// upload field (a logic rule's `field_key` is resolved to its `field_id`).
+export type QuikDocumentSource = {
+  kind: 'quik';
+  // Omit to use the configured Quik integration's forms and mappings.
+  // When supplied, each entry is one PDF, including repeated form IDs.
+  // Values use Quik field names and never fall back to saved form answers.
+  forms?: {
+    id: string | number;
+    fields: Record<string, string>;
+    // Opaque identity returned with the actual DocuSign document ID on completion.
+    reference?: string;
+    // DocuSign-only: Quik role prefix -> stable person ID, e.g. { '1own': 'client-123' }.
+    signerIds?: Record<string, string>;
+  }[];
+};
+// Every file uploaded to the field becomes a document, converted to PDF.
+// Logic rules name the field by `field_key`, resolved to `field_id` before sending.
+export type FileUploadDocumentSource =
+  | { kind: 'file_upload'; field_id: string; field_key?: never }
+  | { kind: 'file_upload'; field_key: string; field_id?: never };
+export type GenerateDocumentRef =
+  | string
+  | QuikDocumentSource
+  | FileUploadDocumentSource
+  | {
+      kind: 'template';
+      document_id: string;
+      // Exactly one opaque reference per generated copy, in repeat order.
+      references?: string[];
+    };
 
-export const TYPE_MESSAGES_TO_IGNORE = [
-  // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
-  'Failed to fetch',
-  // e.g. https://sentry.io/organizations/feathery-forms/issues/3529742129/
-  'Load failed'
-];
+// The template id a document entry names, or null for a non-template source.
+export const documentRefTemplateId = (
+  doc: GenerateDocumentRef
+): string | null => {
+  if (typeof doc === 'string') return doc;
+  // A kind-less object is a template, as on the backend.
+  const ref = doc as Record<string, any>;
+  return (ref.kind ?? 'template') === 'template'
+    ? ref.document_id ?? null
+    : null;
+};
+
+// Must match the backend's document_cache_keys, which key the generate poll.
+const documentRefCacheKey = (doc: GenerateDocumentRef) => {
+  if (typeof doc === 'string') return doc;
+  if (doc.kind === 'quik') return 'quik';
+  if (doc.kind === 'file_upload') return `file_upload:${doc.field_id}`;
+  return String(doc.document_id);
+};
+
+const firstErrorMessage = (value: any): string | undefined => {
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object') return undefined;
+  for (const item of Object.values(value)) {
+    const message = firstErrorMessage(item);
+    if (message) return message;
+  }
+  return undefined;
+};
+
+// A field error nests under its path ({signers: [{phone: [...]}]} from generate,
+// [{phone: [...]}] from finalize), which parseAPIError renders as
+// "[object Object]" or "Invalid".
+const envelopeErrorMessage = (payload: any) => {
+  const ownMessage = Array.isArray(payload)
+    ? payload[0]?.message
+    : payload?.message || payload?.error;
+  return (!ownMessage && firstErrorMessage(payload)) || parseAPIError(payload);
+};
 
 const QUIK_DYNAMIC_ATTACHMENTS_OPTION = '__quik_dynamic_attachments__';
+// Backend 400s meaning another tab closed, superseded or finalized the session.
+const SESSION_CONFLICT =
+  /session is (no longer current|already closed)|artifacts are already finalized/i;
 
 const getQuikAttachmentPosition = (position: any) =>
   position === 'before' ? 'before' : 'after';
@@ -113,6 +198,26 @@ const resolveQuikAttachments = (action: Record<string, any>) => {
   );
 };
 
+// Version-history metadata appended to the autosave PATCH so the backend can
+// group saves into one EnvelopeVersion row.
+export interface EnvelopeSaveMeta {
+  sessionId: string;
+  sessionStartedAt?: string; // ISO 8601
+  authors?: Array<{ kind: 'user' | 'assistant'; label: string; key?: string }>;
+  closeSession?: boolean;
+}
+
+// Payload for the version close endpoint: final SFDT plus its change list.
+export interface EnvelopeClosePayload {
+  finalSfdtGz: Blob;
+  changesJson?: Blob;
+  changeCount: number | null;
+  formatChangeCount: number | null;
+  finalSha256: string;
+  startSha256: string;
+  authors: Array<{ kind: 'user' | 'assistant'; label: string; key?: string }>;
+}
+
 // THIRD-PARTY INTEGRATIONS
 export default class IntegrationClient {
   formKey: string;
@@ -124,7 +229,6 @@ export default class IntegrationClient {
   submitQueue: Promise<any>;
   eventQueue: Promise<any>;
   offlineRequestHandler: OfflineRequestHandler;
-  showNetworkErrorAlert: boolean;
 
   constructor(
     formKey = '',
@@ -138,18 +242,15 @@ export default class IntegrationClient {
     this.bypassCDN = bypassCDN;
     this.submitQueue = Promise.resolve();
     this.eventQueue = Promise.resolve();
-    this.showNetworkErrorAlert = true;
-    this.offlineRequestHandler = new OfflineRequestHandler(formKey, () =>
-      this.errorCallback()
+    this.offlineRequestHandler = new OfflineRequestHandler(formKey, (message) =>
+      this.errorCallback(message)
     );
   }
 
-  errorCallback() {
-    if (!this.showNetworkErrorAlert) return;
-    this.showNetworkErrorAlert = false;
-    featheryWindow().alert(
-      'There was a network error while submitting the form. Please refresh the page and try again.'
-    );
+  // Alerts a failure the offline queue reports. The queue reports each
+  // message once per replay, so a failing replay cannot stack dialogs.
+  errorCallback(message: string) {
+    featheryWindow().alert(message);
   }
 
   _fetch(
@@ -163,7 +264,8 @@ export default class IntegrationClient {
     if (initState.authenticationError) {
       return Promise.resolve(undefined);
     }
-    return apiFetch(sdkKey, url, options, parseResponse).catch((e) => {
+    const requestOptions = withLinkRequestHeaders(url, options);
+    return apiFetch(sdkKey, url, requestOptions, parseResponse).catch((e) => {
       if (e instanceof FormConflictError) {
         handleFormConflict();
         return;
@@ -177,8 +279,7 @@ export default class IntegrationClient {
       // Ignore TypeErrors if form has redirected because `fetch` in
       // Safari will error after redirect
       const ignore =
-        this.ignoreNetworkErrors?.current ||
-        TYPE_MESSAGES_TO_IGNORE.includes(e.message);
+        this.ignoreNetworkErrors?.current || isFetchNetworkError(e);
       if (ignore && !propagateNetworkErrors && e instanceof TypeError) return;
       throw e;
     });
@@ -247,14 +348,93 @@ export default class IntegrationClient {
     );
   }
 
-  async startAccountConnect(provider: string, parentOrigin: string) {
+  async listSalesforceDocumentSync() {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      form_key: this.formKey,
+      fuser_key: userId,
+      provider: SALESFORCE_PROVIDER
+    });
+    const response = await this._fetch(
+      `${API_URL}account-connect/salesforce-sync/?${params}`,
+      undefined,
+      false
+    );
+    if (!response) throw new Error('Unable to load Salesforce document sync.');
+    const payload = await response.json();
+    if (!response.ok) throw new Error(parseAPIError(payload));
+    return payload;
+  }
+
+  async retrySalesforceDocumentSync(runId: string) {
+    return this._accountConnectPost('salesforce-sync', {
+      provider: SALESFORCE_PROVIDER,
+      run_id: runId
+    });
+  }
+
+  async listAccountCredentials(provider: string) {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    // With the submission key the server also reports whether its current
+    // connection is the caller's own to manage (`attached.owner`) or another
+    // user's, which the caller may only replace.
+    const params = encodeGetParams({
+      form_key: this.formKey,
+      ...(userId ? { fuser_key: userId } : {}),
+      provider
+    });
+    const response = await this._fetch(
+      `${API_URL}account-connect/credentials/?${params}`,
+      undefined,
+      false
+    );
+    // A public form or signed-out collaborator has no account-level list.
+    // Do not expose errors or credential metadata from an auth denial.
+    if (response?.status === 401 || response?.status === 403) return null;
+    if (!response) throw new Error('Unable to load saved accounts.');
+    const payload = await response.json();
+    if (response.status === 200) return payload;
+    throw new Error(parseAPIError(payload) || 'Unable to load saved accounts.');
+  }
+
+  async selectAccountCredential(
+    provider: string,
+    credentialId: string,
+    remember = false
+  ) {
+    return this._accountConnectPost('select', {
+      provider,
+      credential_id: credentialId,
+      ...(remember ? { remember: true } : {})
+    });
+  }
+
+  async disconnectAccount(provider: string) {
+    return this._accountConnectPost('disconnect', { provider });
+  }
+
+  async deleteAccountCredential(provider: string, credentialId: string) {
+    return this._accountConnectPost('delete', {
+      provider,
+      credential_id: credentialId
+    });
+  }
+
+  async startAccountConnect(
+    provider: string,
+    parentOrigin: string,
+    saveCredential = false
+  ) {
     await initFormsPromise;
     const { userId } = initInfo();
     const params = encodeGetParams({
       form_key: this.formKey,
       fuser_key: userId,
       provider,
-      parent_origin: parentOrigin
+      parent_origin: parentOrigin,
+      ...(saveCredential ? { save_credential: true } : {})
     });
     const response = await this._fetch(
       `${API_URL}account-connect/start/?${params}`,
@@ -262,6 +442,13 @@ export default class IntegrationClient {
       false
     );
     if (!response) throw new Error('Unable to start authorization.');
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(
+        `Please sign in to connect or manage your ${
+          PROVIDER_LABELS[provider] ?? provider
+        } account.`
+      );
+    }
 
     const payload = await response.json();
     if (response.status === 200) return payload;
@@ -288,6 +475,18 @@ export default class IntegrationClient {
     throw new Error(
       parseAPIError(payload) || 'Unable to check authorization status.'
     );
+  }
+
+  async completeAccountConnect(
+    provider: string,
+    state: string,
+    completionSecret: string
+  ) {
+    return this._accountConnectPost('complete', {
+      provider,
+      state,
+      completion_secret: completionSecret
+    });
   }
 
   async browseAccountResources(
@@ -327,7 +526,17 @@ export default class IntegrationClient {
     if (!response) throw new Error('Unable to reach the connected account.');
 
     const payload = await response.json();
-    if (response.status === 200) return payload;
+    if (response.status === 200) {
+      if (
+        body.provider === SALESFORCE_PROVIDER &&
+        ['complete', 'select', 'disconnect'].includes(path)
+      ) {
+        featheryWindow().dispatchEvent(
+          new CustomEvent('feathery:salesforce-connection-changed')
+        );
+      }
+      return payload;
+    }
     throw new Error(
       parseAPIError(payload) || 'Unable to reach the connected account.'
     );
@@ -545,14 +754,31 @@ export default class IntegrationClient {
   ENVELOPE_MAX_TIME = 8 * 60 * 1000;
 
   async generateEnvelopes(action: Record<string, any>) {
+    if (
+      action.sign_method !== 'docusign' &&
+      ((action.envelope_signers ?? []).some((entry: any) =>
+        entry.signer_id?.trim()
+      ) ||
+        (action.documents ?? []).some(
+          (doc: any) =>
+            doc?.kind === 'quik' &&
+            doc.forms?.some(
+              (form: any) =>
+                Object.keys(form.signerIds ?? form.signer_ids ?? {}).length
+            )
+        ))
+    ) {
+      throw new Error(
+        "generateDocuments: signer IDs require signMethod 'docusign'"
+      );
+    }
     const { userId, sdkKey } = initInfo();
-    // Editor flow: the backend converts a docx envelope to PDF at generation
-    // whenever a signer is present, which would make the draft uneditable in
-    // the targeted document-editor container. Hold every signer back there —
-    // the editor's Sign action forwards them at finalize time
-    // (finalizeEnvelope), when that conversion is meant to happen.
+    const openInEditor = action.envelope_action === 'open_in_editor';
+    // The server resolves container eligibility before suppressing signers;
+    // mixed selections need them when falling back to the PDF overlay.
     const isDraftView =
-      !!editorContainerId(action) || !!action.view_draft_container;
+      !openInEditor &&
+      (!!editorContainerId(action) || !!action.view_draft_container);
     // The configured field names whoever signs inline, in the form. Nobody does
     // on a DocuSign action - every recipient is mailed by DocuSign, and the
     // per-role mappings are what name them - so the field is ignored there
@@ -591,7 +817,17 @@ export default class IntegrationClient {
           // explicit null, and leaving it off spreads the email across
           // every role.
           ...(entry.role_id ? { role_id: entry.role_id } : {}),
+          ...(entry.repeat_index !== undefined
+            ? { repeat_index: entry.repeat_index }
+            : {}),
           email,
+          ...(entry.signer_id?.trim()
+            ? { signer_id: entry.signer_id.trim() }
+            : {}),
+          ...(entry.name ? { name: entry.name.toString() } : {}),
+          // Omitted rather than blanked, so an empty phone never stands in for
+          // the signer's mapped one.
+          ...(entry.phone ? { phone: entry.phone.toString() } : {}),
           filler: entry.filler ?? isFiller(email)
         };
       })
@@ -602,9 +838,16 @@ export default class IntegrationClient {
     const roleDocumentIds = new Set(
       roleSigners.map((entry: any) => entry.document_id)
     );
+    // Only templates have signer roles; other sources have no document id.
+    const templateIdOrNull: (string | null)[] = documentIds.map(
+      documentRefTemplateId
+    );
+    const templateIds = templateIdOrNull.filter(
+      (documentId): documentId is string => !!documentId
+    );
     const signers = [
       ...roleSigners,
-      ...documentIds
+      ...templateIds
         .filter((documentId: any) => !roleDocumentIds.has(documentId))
         .map((documentId: any) => ({
           document_id: documentId,
@@ -613,8 +856,6 @@ export default class IntegrationClient {
         }))
     ].filter((entry: any) => entry.email);
 
-    const openInEditor = action.envelope_action === 'open_in_editor';
-
     // `@feathery/client-utils`'s generateFormDocuments only forwards a fixed
     // set of known fields, so it can't carry the review-step flag or
     // DocuSign's sign_method through to the endpoint. Call the endpoint
@@ -622,14 +863,12 @@ export default class IntegrationClient {
     // either is requested; other sign_method values (e.g. Feathery's own
     // hosted eSign) still go through the maintained library path below.
     //
-    // The draft-editor container is deliberately excluded: it consumes the
-    // generate response's `envelopes` metadata, which the review payload
-    // replaces, and it presents its own editing surface instead of the review
-    // viewer. Targeting a container therefore keeps the plain generate flow.
+    // Container requests also go directly: the backend resolves the source
+    // types and returns native envelopes or a PDF overlay payload.
     // A polymorphic entry has to take the direct call too. client-utils'
     // generateFormDocuments interpolates `documentIds` straight into its poll
-    // URL, so a {kind:'quik'} entry stringifies to "[object Object]" and never
-    // matches the backend's document_cache_keys ("quik" for that item). The
+    // URL, so an object entry stringifies to "[object Object]" and never
+    // matches the backend's document_cache_keys (e.g. "quik"). The
     // documents generate fine and then the first poll 400s "No document
     // generation". generateEnvelopesForEditor maps the keys correctly.
     const hasPolymorphicDocument = documentIds.some(
@@ -637,10 +876,22 @@ export default class IntegrationClient {
     );
 
     if (
-      (openInEditor ||
-        isDocusignSignAction(action) ||
-        hasPolymorphicDocument) &&
-      !editorContainerId(action)
+      !openInEditor &&
+      editorContainerId(action) &&
+      templateIdOrNull.includes(null)
+    ) {
+      return {
+        status: 'error',
+        message:
+          'A document editor container can only open template documents. ' +
+          'Remove the Quik or file upload sources from this action.'
+      };
+    }
+
+    if (
+      openInEditor ||
+      ((isDocusignSignAction(action) || hasPolymorphicDocument) &&
+        !editorContainerId(action))
     ) {
       return await this.generateEnvelopesForEditor({
         documentIds,
@@ -650,20 +901,38 @@ export default class IntegrationClient {
         toolbarActions: action.editor_toolbar_actions ?? [],
         mergeDocs: action.merge_docs ?? false,
         openInEditor,
+        editorMode: openInEditor ? action.editor_mode : undefined,
         envelopeAction,
-        signMethod: action.sign_method
+        signMethod: action.sign_method,
+        draft: action.draft,
+        emailSubject: action.email_subject,
+        emailBlurb: action.email_blurb,
+        notification: action.notification,
+        smsAuthentication: action.sms_authentication,
+        sourceElementId: action.source_element_id,
+        ccRecipients: action.cc_recipients,
+        customFields: action.custom_fields,
+        hubAssociation: action.hub_association
       });
     }
 
+    // client-utils interpolates ids into its poll URL, so template objects
+    // are sent as their plain ids.
     return await apiGenerateFormDocuments({
       sdkKey,
       formId: this.formKey,
-      documentIds,
+      documentIds: templateIdOrNull as string[],
       userId,
-      signers,
+      signers: signers.map((signer) => {
+        const legacySigner = { ...signer };
+        delete legacySigner.signer_id;
+        delete legacySigner.name;
+        return legacySigner;
+      }),
       repeatable,
       runAsync,
       envelopeAction,
+      hubAssociation: action.hub_association,
       checkInterval: this.ENVELOPE_CHECK_INTERVAL,
       maxTime: this.ENVELOPE_MAX_TIME
     });
@@ -673,11 +942,98 @@ export default class IntegrationClient {
   // in-form document editor. Returns { id, file, editor_file, updated_at }
   // with fresh signed URLs: `file` is the public copy (content controls
   // stripped server-side), `editor_file` the control-bearing editor copy.
-  saveEnvelopeFile(envelopeId: string, file: Blob, fileName = 'document.docx') {
+  private documentRequest(
+    url: string,
+    options: RequestInit = {}
+  ): Promise<any> {
+    if (initState.authenticationError)
+      return Promise.reject(
+        new DocumentPersistenceError(
+          String(initState.authenticationError),
+          'auth',
+          403
+        )
+      );
+    return withDocumentDeadline(async (signal) => {
+      const response = await this._fetch(
+        url,
+        { ...options, signal },
+        false,
+        true
+      );
+      if (!response)
+        throw new DocumentPersistenceError(
+          'Document request failed',
+          'network'
+        );
+      if (response.status === 204) return null;
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch {
+        if (response.ok)
+          throw new DocumentPersistenceError(
+            'Invalid document response',
+            'invalid',
+            response.status
+          );
+        // Gateways can return HTML/empty error bodies; status still determines
+        // authentication and retry behavior.
+        payload = null;
+      }
+      if (response.ok) return payload;
+      const message =
+        documentErrorMessage(payload) || 'Document request failed';
+      const status = response.status;
+      const kind =
+        status === 401 || status === 403
+          ? 'auth'
+          : status === 409 || SESSION_CONFLICT.test(message)
+          ? 'conflict'
+          : status === 408 || status === 429 || status >= 500
+          ? 'network'
+          : 'invalid';
+      const retryHeader = response.headers?.get?.('Retry-After');
+      const retryAfterMs = retryHeader
+        ? Math.max(
+            0,
+            Number.isFinite(Number(retryHeader))
+              ? Number(retryHeader) * 1000
+              : Date.parse(retryHeader) - Date.now()
+          )
+        : undefined;
+      throw new DocumentPersistenceError(
+        message,
+        kind,
+        status,
+        Number.isFinite(retryAfterMs) ? retryAfterMs : undefined
+      );
+    });
+  }
+
+  saveEnvelopeFile(
+    envelopeId: string,
+    file: Blob,
+    fileName = 'document.docx',
+    meta?: EnvelopeSaveMeta
+  ) {
     const { userId } = initInfo();
     const formData = new FormData();
     formData.append('fuser_key', userId ?? '');
     formData.append('file', file, fileName);
+    // Version-history metadata: when a session id is present the backend groups
+    // this save into one EnvelopeVersion row. Absent → the PATCH is unchanged.
+    if (meta?.sessionId) {
+      formData.append('form_key', this.formKey);
+      formData.append('session_id', meta.sessionId);
+      if (meta.sessionStartedAt)
+        formData.append('session_started_at', meta.sessionStartedAt);
+      const collaboratorId = initState.collaboratorId;
+      if (collaboratorId) formData.append('collaborator_id', collaboratorId);
+      if (meta.authors)
+        formData.append('authors', JSON.stringify(meta.authors));
+      if (meta.closeSession) formData.append('close_session', 'true');
+    }
     const url = `${API_URL}document/envelope/${envelopeId}/file/`;
     const options = {
       method: 'PATCH',
@@ -686,14 +1042,94 @@ export default class IntegrationClient {
       // requests whose body exceeds 64kb — exported .docx files routinely do.
       keepalive: false
     };
-    return this._fetch(url, options, false).then(async (response) => {
-      // _fetch resolves undefined on swallowed network errors — surface that
-      // as a failure so callers never treat an unsaved document as saved
-      // (e.g. the sign flow must not open against a stale envelope).
-      if (!response) throw Error('Document save failed');
-      if (response.ok) return await response.json();
-      throw Error(parseAPIError(await response.json()));
+    return this.documentRequest(url, options).then(parseEnvelopeDocument);
+  }
+
+  // List an envelope's version-history rows, newest first (readable on signed
+  // envelopes). Shape: EnvelopeVersionSerializer[].
+  async listEnvelopeVersions(envelopeId: string) {
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      fuser_key: userId,
+      form_key: this.formKey
     });
+    const url = `${API_URL}document/envelope/${envelopeId}/versions/?${params}`;
+    return parseVersionList(await this.documentRequest(url));
+  }
+
+  async getEnvelopeVersion(envelopeId: string, versionId: string) {
+    const params = encodeGetParams({
+      fuser_key: initInfo().userId,
+      form_key: this.formKey
+    });
+    return parseDocxVersion(
+      await this.documentRequest(
+        `${API_URL}document/envelope/${envelopeId}/versions/${versionId}/?${params}`
+      )
+    );
+  }
+
+  // Close a session, uploading the final SFDT (gzipped) and its anchored change
+  // list. 204 → the session was eliminated as unchanged (no row). Returns the
+  // version row otherwise.
+  closeEnvelopeVersion(
+    envelopeId: string,
+    sessionId: string,
+    payload: EnvelopeClosePayload
+  ) {
+    const { userId } = initInfo();
+    const formData = new FormData();
+    formData.append('fuser_key', userId ?? '');
+    formData.append('form_key', this.formKey);
+    const collaboratorId = initState.collaboratorId;
+    if (collaboratorId) formData.append('collaborator_id', collaboratorId);
+    formData.append('final_sfdt', payload.finalSfdtGz, 'final.sfdt.gz');
+    if (payload.changesJson)
+      formData.append('changes', payload.changesJson, 'changes.json');
+    if (payload.changeCount != null)
+      formData.append('change_count', String(payload.changeCount));
+    if (payload.formatChangeCount != null)
+      formData.append('format_change_count', String(payload.formatChangeCount));
+    formData.append('final_sha256', payload.finalSha256);
+    formData.append('start_sha256', payload.startSha256);
+    formData.append('authors', JSON.stringify(payload.authors));
+    const url = `${API_URL}document/envelope/${envelopeId}/versions/${sessionId}/close/`;
+    const options = { method: 'POST', body: formData, keepalive: false };
+    return this.documentRequest(url, options).then((value) =>
+      value === null ? null : parseDocxVersion(value)
+    );
+  }
+
+  // Restore an older version: its docx becomes the live document, saved as a new
+  // version. Returns envelope_data + the new version row. `sessionId` is a fresh
+  // uuid the caller mints for the restore's own version.
+  restoreEnvelopeVersion(
+    envelopeId: string,
+    versionId: string,
+    sessionId: string
+  ) {
+    const { userId } = initInfo();
+    const formData = new FormData();
+    formData.append('fuser_key', userId ?? '');
+    formData.append('form_key', this.formKey);
+    formData.append('session_id', sessionId);
+    const collaboratorId = initState.collaboratorId;
+    if (collaboratorId) formData.append('collaborator_id', collaboratorId);
+    const url = `${API_URL}document/envelope/${envelopeId}/versions/${versionId}/restore/`;
+    const options = { method: 'POST', body: formData, keepalive: false };
+    return this.documentRequest(url, options).then(parseEnvelopeDocument);
+  }
+
+  // Rename (or clear the name of) a version. Returns the updated version row.
+  renameEnvelopeVersion(envelopeId: string, versionId: string, name: string) {
+    const { userId } = initInfo();
+    const formData = new FormData();
+    formData.append('fuser_key', userId ?? '');
+    formData.append('form_key', this.formKey);
+    formData.append('name', name);
+    const url = `${API_URL}document/envelope/${envelopeId}/versions/${versionId}/`;
+    const options = { method: 'PATCH', body: formData, keepalive: false };
+    return this.documentRequest(url, options).then(parseDocxVersion);
   }
 
   // Finalize an edited docx envelope for signing: the backend converts it to
@@ -727,7 +1163,7 @@ export default class IntegrationClient {
       // against an unfinalized envelope.
       if (!response) throw Error('Document finalization failed');
       if (response.ok) return await response.json();
-      throw Error(parseAPIError(await response.json()));
+      throw Error(envelopeErrorMessage(await response.json()));
     });
   }
 
@@ -755,9 +1191,11 @@ export default class IntegrationClient {
   // or {} — the editor opens editor_file (controls intact) when present.
   getCurrentEnvelope(documentId: string) {
     const { userId } = initInfo();
+    // The form key scopes the lookup to envelopes this form generated.
     const params = encodeGetParams({
       fuser_key: userId,
-      document_id: documentId
+      document_id: documentId,
+      ...(this.formKey ? { form_key: this.formKey } : {})
     });
     const url = `${API_URL}document/current-envelope/?${params}`;
     return this._fetch(url, {}, false).then(async (response) => {
@@ -776,8 +1214,18 @@ export default class IntegrationClient {
     toolbarActions,
     mergeDocs,
     openInEditor,
+    editorMode,
     envelopeAction,
-    signMethod
+    signMethod,
+    draft,
+    emailSubject,
+    emailBlurb,
+    notification,
+    smsAuthentication,
+    sourceElementId,
+    ccRecipients,
+    customFields,
+    hubAssociation
   }: {
     documentIds: GenerateDocumentRef[];
     signers: Record<string, any>[];
@@ -788,14 +1236,46 @@ export default class IntegrationClient {
     // False for a direct DocuSign sign, which also needs this call because
     // client-utils can't forward sign_method.
     openInEditor: boolean;
+    editorMode?: string;
     envelopeAction: 'sign' | 'fill';
     signMethod?: string;
+    draft?: boolean;
+    // DocuSign sign only: subject and body of the envelope's signing email.
+    emailSubject?: string;
+    emailBlurb?: string;
+    // DocuSign sign only: reminder and expiration schedule.
+    notification?: DocusignNotification;
+    // DocuSign sign only: overrides the integration's SMS setting for this send.
+    smsAuthentication?: boolean;
+    // The button or container that ran, for its signer phone mapping.
+    sourceElementId?: string;
+    ccRecipients?: (
+      | string
+      | { email: string; name?: string; excluded_documents?: number[] }
+    )[];
+    customFields?: Record<
+      string,
+      string | { listItems: string[]; value?: string }
+    >;
+    hubAssociation?: HubAssociation;
   }) {
     const { userId } = initInfo();
     const payload: Record<string, any> = {
       form_key: this.formKey,
       fuser_key: userId,
-      documents: documentIds,
+      documents: documentIds.map((document) =>
+        typeof document !== 'string' &&
+        document.kind === 'quik' &&
+        document.forms
+          ? {
+              ...document,
+              forms: document.forms.map(({ signerIds, ...form }) => ({
+                ...form,
+                ...(signerIds !== undefined ? { signer_ids: signerIds } : {})
+              }))
+            }
+          : document
+      ),
       run_async: runAsync,
       envelope_action: openInEditor ? 'open_in_editor' : envelopeAction,
       // Forwarded even though neither path merges at generate time: it lets the
@@ -808,10 +1288,22 @@ export default class IntegrationClient {
       // Generate reads the toolbar only to decide whether default field values
       // are baked in; the pressed action is sent to finalize separately.
       payload.editor_toolbar_actions = toolbarActions;
+      if (editorMode) payload.editor_mode = editorMode;
     }
+    if (draft !== undefined) payload.draft = draft;
     if (signMethod) payload.sign_method = signMethod;
+    if (emailSubject) payload.email_subject = emailSubject;
+    if (emailBlurb) payload.email_blurb = emailBlurb;
+    if (notification) payload.notification = notification;
+    if (smsAuthentication != null)
+      payload.sms_authentication = smsAuthentication;
+    if (sourceElementId) payload.source_element_id = sourceElementId;
+    if (ccRecipients !== undefined) payload.cc_recipients = ccRecipients;
+    if (customFields !== undefined) payload.custom_fields = customFields;
     if (signers.length) payload.signers = signers;
     if (repeatable) payload.repeatable = repeatable;
+    if (hubAssociation)
+      payload.hub_association = hubAssociationPayload(hubAssociation);
 
     const url = `${getApiUrl()}document/form/generate/`;
     const options = {
@@ -822,22 +1314,13 @@ export default class IntegrationClient {
     const response = await this._fetch(url, options, false);
     if (!response) return;
     const data = await response.json();
-    if (!response.ok) return { status: 'error', message: parseAPIError(data) };
+    if (!response.ok)
+      return { status: 'error', message: envelopeErrorMessage(data) };
     if (!runAsync || data.documents) return data;
 
-    // Poll `dids` must match the backend's document_cache_keys: a template's
-    // UUID string, or the literal "quik" for the quik item. Interpolating the
-    // raw array would stringify a {kind:'quik'} entry to "[object Object]" and
-    // never match the cache.
-    const dids = documentIds
-      .map((doc) =>
-        typeof doc === 'string'
-          ? doc
-          : doc.kind === 'quik'
-          ? 'quik'
-          : String(doc.document_id)
-      )
-      .join(',');
+    // Interpolating the raw array would stringify an object entry to
+    // "[object Object]" and never match the backend's cache keys.
+    const dids = documentIds.map(documentRefCacheKey).join(',');
     const pollUrl = `${getApiUrl()}document/form/generate/poll/?fid=${userId}&dids=${dids}`;
     return await this.pollUntilComplete(
       pollUrl,
@@ -855,7 +1338,8 @@ export default class IntegrationClient {
     {
       envelopes,
       envelopeAction,
-      draft = false
+      draft = false,
+      refreshDraft = false
     }: {
       // signerId: the filler's own signing token for that envelope, as handed
       // back by generate. Keeps finalize from emailing them an invite to a
@@ -864,6 +1348,9 @@ export default class IntegrationClient {
       envelopeAction: 'sign' | 'fill' | 'download' | 'save';
       // DocuSign sign only: create the envelope as a draft instead of sending.
       draft?: boolean;
+      // Replace the documents on a DocuSign draft created earlier in the same
+      // review, so it carries the filler's later edits.
+      refreshDraft?: boolean;
     }
   ) {
     if (!envelopes.length) {
@@ -888,6 +1375,21 @@ export default class IntegrationClient {
     if (action.merged_file_name)
       payload.merged_file_name = action.merged_file_name;
     if (action.sign_method) payload.sign_method = action.sign_method;
+    // Omitted unless set, so a backend without the flag sees the old body.
+    if (refreshDraft) payload.refresh_draft = true;
+    // Carried to finalize too: an open_in_editor flow does not build the
+    // DocuSign envelope until the filler presses Sign.
+    if (action.email_subject) payload.email_subject = action.email_subject;
+    if (action.email_blurb) payload.email_blurb = action.email_blurb;
+    if (action.notification) payload.notification = action.notification;
+    if (action.sms_authentication != null)
+      payload.sms_authentication = action.sms_authentication;
+    if (action.source_element_id)
+      payload.source_element_id = action.source_element_id;
+    if (action.cc_recipients !== undefined)
+      payload.cc_recipients = action.cc_recipients;
+    if (action.custom_fields !== undefined)
+      payload.custom_fields = action.custom_fields;
 
     const url = `${getApiUrl()}document/form/finalize/`;
     const options = {
@@ -898,7 +1400,8 @@ export default class IntegrationClient {
     const response = await this._fetch(url, options, false);
     if (!response) return;
     const data = await response.json();
-    if (!response.ok) return { status: 'error', message: parseAPIError(data) };
+    if (!response.ok)
+      return { status: 'error', message: envelopeErrorMessage(data) };
     // The sync response is already the final `{ files: [...] }` payload.
     // The async response is always `{}` immediately, regardless of the
     // requested envelope_action (sign/fill/download/save) — completion is
@@ -994,6 +1497,7 @@ export default class IntegrationClient {
     emailSubject,
     emailBlurb,
     signers,
+    ccRecipients,
     existingEnvelopeId,
     draft,
     wetSign,
@@ -1061,6 +1565,22 @@ export default class IntegrationClient {
               }
             : {})
         })),
+        // Bare emails pass through; object entries are sent with snake_case
+        // keys. `?? undefined` drops the key rather than sending null: logic
+        // rules are untyped, and the backend's list field rejects null with a
+        // 400 that would fail the whole send.
+        // Anything that isn't an object is left for the backend to validate,
+        // so a malformed rule value is still a 400 rather than a throw here.
+        cc_recipients:
+          ccRecipients?.map((cc) =>
+            cc && typeof cc === 'object'
+              ? {
+                  email: cc.email,
+                  name: cc.name,
+                  excluded_documents: cc.excludedDocuments
+                }
+              : cc
+          ) ?? undefined,
         docusign_envelope_id: existingEnvelopeId,
         draft,
         wet_sign: wetSign,
@@ -1079,12 +1599,16 @@ export default class IntegrationClient {
     });
   }
 
-  getDocusignEnvelope({ envelopeId }: GetDocusignEnvelopeParams) {
+  getDocusignEnvelope({
+    envelopeId,
+    includeDocuments = true
+  }: GetDocusignEnvelopeParams) {
     const { userId } = initInfo();
     const params = encodeGetParams({
       fuser_key: userId,
       form_key: this.formKey,
-      docusign_envelope_id: envelopeId
+      docusign_envelope_id: envelopeId,
+      include_documents: includeDocuments
     });
     const url = `${API_URL}docusign/envelope/?${params}`;
     return this._fetch(url, {}, false).then(async (response) => {
@@ -1126,6 +1650,55 @@ export default class IntegrationClient {
         docusign_envelope_id: envelopeId,
         status,
         voided_reason: voidedReason
+      })
+    };
+    return this._fetch(url, options, false).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseAPIError(await response.json()));
+      }
+    });
+  }
+
+  uploadFileToEgnyte({
+    file,
+    path,
+    name,
+    createFolder = true
+  }: UploadFileToEgnyteParams) {
+    const { userId } = initInfo();
+    const url = `${API_URL}egnyte/file/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        fuser_key: userId,
+        form_key: this.formKey,
+        // Accepts a getDocusignEnvelope document unchanged
+        file: { name: file.name, data: file.data, type: file.type },
+        path,
+        name,
+        create_folder: createFolder
+      })
+    };
+    return this._fetch(url, options, false).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseAPIError(await response.json()));
+      }
+    });
+  }
+
+  createEgnyteFolder({ path }: CreateEgnyteFolderParams) {
+    const { userId } = initInfo();
+    const url = `${API_URL}egnyte/folder/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        fuser_key: userId,
+        form_key: this.formKey,
+        path
       })
     };
     return this._fetch(url, options, false).then(async (response) => {
@@ -1466,13 +2039,17 @@ export default class IntegrationClient {
   async fetchSalesforcePicklistOptions(
     objectName: string,
     fieldName: string,
-    credentialKey: string
+    credentialKey: string,
+    authSource = 'rollout'
   ) {
     const url = `${API_URL}salesforce/field/options/`;
     const params = new URLSearchParams({
       object_name: objectName,
       field_name: fieldName,
-      credential_key: credentialKey
+      credential_key: credentialKey || '',
+      auth_source: authSource,
+      form_key: this.formKey,
+      fuser_key: initInfo().userId || ''
     }).toString();
     const response = await this._fetch(`${url}?${params}`);
     if (response && response.ok) {

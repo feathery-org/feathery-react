@@ -1,9 +1,14 @@
 import {
   formatAllFormFields,
   formatStepFields,
-  getDefaultFieldValue
+  getDefaultFieldValue,
+  getDefaultFormFieldValue,
+  saveInitialValuesAndUrlParams,
+  updateStepFieldOptions
 } from '../fieldHelperFunctions';
+import { featheryWindow } from '../browser';
 import { fieldValues } from '../init';
+import { normalizeAsciiValue } from '../ascii';
 
 jest.mock('../init');
 
@@ -11,6 +16,35 @@ describe('fieldHelperFunctions', () => {
   describe('getDefaultFieldValue', () => {
     const arrayField = (type, metadata, servarExtras = {}) => ({
       servar: { key: 'key1', type, metadata, ...servarExtras }
+    });
+
+    it.each([
+      ['text_field', { default_value: 'São Paulo' }, 'Sao Paulo'],
+      ['gmap_state', { default_state: 'Pará' }, 'Para'],
+      ['dropdown_multi', { default_value: 'Pará, Ceará' }, ['Para', 'Ceara']]
+    ])(
+      'keeps %s reset defaults equal to normalized repeated values',
+      (type, metadata, expected) => {
+        const field = arrayField(type, metadata, { repeated: true });
+        const originalMetadata = { ...metadata };
+        const originalDefault = getDefaultFieldValue(field);
+        const storedValue = normalizeAsciiValue(
+          getDefaultFormFieldValue(field)
+        );
+
+        expect(getDefaultFieldValue(field, true)).toEqual(expected);
+        expect(getDefaultFieldValue(field, true)).toEqual(storedValue[0]);
+        expect(getDefaultFormFieldValue(field, true)).toEqual(storedValue);
+        expect(getDefaultFieldValue(field)).toEqual(originalDefault);
+        expect(field.servar.metadata).toEqual(originalMetadata);
+      }
+    );
+
+    it('preserves password and file defaults when ASCII conversion is enabled', () => {
+      const password = arrayField('password', { default_value: 'sëcret' });
+      const file = arrayField('file_upload', {});
+      expect(getDefaultFieldValue(password, true)).toBe('sëcret');
+      expect(getDefaultFormFieldValue(file, true)).toEqual([]);
     });
 
     it('splits a comma-separated dropdown_multi default into every entry', () => {
@@ -217,4 +251,52 @@ describe('fieldHelperFunctions', () => {
       expect(actual).toMatchObject(expected);
     });
   });
+
+  describe('saveInitialValuesAndUrlParams', () => {
+    const saveParams = (search) => {
+      featheryWindow().history.replaceState({}, '', `/to/form${search}`);
+      const updateFieldValues = jest.fn();
+      const client = { submitCustom: jest.fn() };
+
+      saveInitialValuesAndUrlParams({
+        updateFieldValues,
+        client,
+        saveUrlParams: true,
+        initialValues: {},
+        steps: null,
+        hiddenFields: {}
+      });
+
+      return updateFieldValues.mock.calls[0]?.[0] ?? {};
+    };
+
+    it('submits ordinary url params as field values', () => {
+      expect(saveParams('?utm_source=email')).toEqual({
+        utm_source: 'email'
+      });
+    });
+
+    it('never submits the access link token, which is a credential', () => {
+      expect(saveParams('?_lt=tok&utm_source=email')).toEqual({
+        utm_source: 'email'
+      });
+    });
+  });
+});
+
+it('preserves stored icons when editing options and clears them for new uploaded options', () => {
+  const icon = {
+    icon: 'IconHeart',
+    glyph: { variant: 'outline', nodes: [['path', { d: 'M12 5v14' }]] }
+  };
+  const field = {
+    servar: { type: 'button_group', key: 'choice', metadata: {} },
+    properties: {}
+  };
+  const step = { servar_fields: [field] };
+  updateStepFieldOptions(step, { choice: [{ value: 'Yes', icon }] });
+  expect(field.servar.metadata.option_icons).toEqual([icon]);
+  updateStepFieldOptions(step, { choice: [{ value: 'No', image: 'no.png' }] });
+  expect(field.servar.metadata.option_icons).toEqual([null]);
+  expect(field.servar.metadata.option_images).toEqual(['no.png']);
 });

@@ -3,7 +3,7 @@ import { Container } from '.';
 
 // Records the props the real container would register dirty state under
 jest.mock(
-  '../../../elements/components/DocxEditor/DocumentEditorContainer',
+  '../../../elements/components/DocumentEditor/DocumentEditorContainer',
   () => ({
     __esModule: true,
     default: ({ containerId, formId }: any) => (
@@ -44,7 +44,6 @@ describe('Container document editor wiring', () => {
         viewport='desktop'
         form={{
           formInstanceId: 'internal-form-id',
-          activeStep: { id: 'step-1' },
           formSettings: { mobileBreakpoint: 480 }
         }}
       />
@@ -53,5 +52,24 @@ describe('Container document editor wiring', () => {
     const editor = getByTestId('docx-editor');
     expect(editor).toHaveAttribute('data-form-id', 'internal-form-id');
     expect(editor).toHaveAttribute('data-container-id', 'container-1');
+  });
+});
+
+describe('Container DOM naming', () => {
+  it.each([
+    ['container-1', 'container-1'],
+    ['Contact @ details #1 🎉', 'Contact_details_1']
+  ])('names a container with key %p as %p', (key, name) => {
+    const { container } = render(
+      <Container
+        node={{ ...docxNode, key, properties: {} }}
+        viewport='desktop'
+        form={{
+          formInstanceId: 'internal-form-id',
+          formSettings: { mobileBreakpoint: 480 }
+        }}
+      />
+    );
+    expect(container.querySelector(`[name="${name}"]`)).toBeTruthy();
   });
 });

@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   createTextAreaElement,
   createTextAreaProps,
@@ -5,7 +6,6 @@ import {
   getMockFieldValue,
   resetMockFieldValue
 } from './test-utils';
-import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import TextArea from '../index';
 
@@ -92,5 +92,21 @@ describe('TextArea - Base Functionality', () => {
 
       expect(textarea().getAttribute('maxLength')).toBe('6');
     });
+  });
+});
+
+describe('TextArea - DOM naming', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetMockFieldValue();
+  });
+
+  it('names the textarea with the field key', () => {
+    const element = createTextAreaElement('text_area');
+    render(<TextArea {...createTextAreaProps(element)} />);
+
+    const field = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect(field.name).toBe(element.servar.key);
+    expect(field.id).toBe(element.servar.key);
   });
 });

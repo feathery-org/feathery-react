@@ -38,9 +38,45 @@ describe('ConnectAccountModal', () => {
     onClose: jest.fn()
   };
 
-  it('shows the connected account email', () => {
-    render(<ConnectAccountModal {...baseProps} />);
-    expect(screen.getByText('respondent@example.com')).toBeTruthy();
+  it('shows the connected account email on the account menu trigger', () => {
+    render(<ConnectAccountModal {...baseProps} canSaveCredential />);
+    expect(
+      screen.getByRole('button', { name: 'Saved Box accounts' })
+    ).toHaveTextContent('respondent@example.com');
+  });
+
+  it('names the current connection when the provider reports no account', () => {
+    // Schwab exposes no account identity, so the trigger would otherwise be
+    // blank.
+    render(
+      <ConnectAccountModal
+        {...baseProps}
+        provider='charles-schwab'
+        accountEmail=''
+        canSaveCredential
+      />
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Saved Charles Schwab accounts' })
+    ).toHaveTextContent('Current Charles Schwab account');
+  });
+
+  it('names the connected account for a guest with no saved-account menu', () => {
+    const { rerender } = render(<ConnectAccountModal {...baseProps} />);
+    expect(
+      screen.getByText('Connected as respondent@example.com')
+    ).toBeTruthy();
+    expect(screen.getByText('Change account')).toBeTruthy();
+
+    rerender(<ConnectAccountModal {...baseProps} accountEmail='' />);
+    expect(screen.getByText('Your Box account is connected.')).toBeTruthy();
+  });
+
+  it('does not show another user’s account to a guest replacing it', () => {
+    render(<ConnectAccountModal {...baseProps} lockedByOwner />);
+    expect(screen.queryByText(/Connected as/)).toBeNull();
+    expect(screen.getByText('Connect your own account')).toBeTruthy();
   });
 
   it('calls onChangeAccount when Change account is clicked', async () => {
@@ -66,9 +102,10 @@ describe('ConnectAccountModal', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders a fallback when the provider has no config component', () => {
+  it('shows only the change-account row when the provider has no config component', () => {
     render(<ConnectAccountModal {...baseProps} provider='unmapped' />);
-    expect(screen.getByText(/no additional setup/i)).toBeTruthy();
+    expect(screen.getByText('Change account')).toBeTruthy();
+    expect(screen.queryByText('Trigger error')).toBeNull();
   });
 
   it('calls onClose from the close control', () => {
@@ -78,6 +115,15 @@ describe('ConnectAccountModal', () => {
     fireEvent.click(screen.getByLabelText('Close'));
 
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('does not dismiss when the dialog content is clicked', () => {
+    const onClose = jest.fn();
+    render(<ConnectAccountModal {...baseProps} onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole('dialog'));
+
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('clears a config error on Change account and does not carry it across a reopen', async () => {

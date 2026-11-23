@@ -69,7 +69,9 @@ jest.mock('../../../components/ErrorInput', () => {
         data-testid='error-input'
         id={id}
         name={name}
-        type='hidden'
+        // Matches the real ErrorInput, which is a visually hidden text input
+        // rather than type="hidden" so it can display validation messages
+        type='text'
         {...props}
       />
     );

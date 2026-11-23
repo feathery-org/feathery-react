@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ACTION_AI_EXTRACTION } from '../../../utils/elementActions';
 
-export interface AIExtractionAction {
+interface AIExtractionAction {
   type: typeof ACTION_AI_EXTRACTION;
   extraction_id: string;
   variant_id?: string;
@@ -10,7 +10,7 @@ export interface AIExtractionAction {
   meeting_url_field_key?: string;
 }
 
-export interface OtherAction {
+interface OtherAction {
   type: string;
   [key: string]: any;
 }

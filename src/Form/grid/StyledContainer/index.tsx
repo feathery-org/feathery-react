@@ -17,9 +17,34 @@ import classNames from 'classnames';
 import { fieldValues } from '../../../utils/init';
 import { getRenderData } from '../../../utils/image';
 import DangerouslySetHtmlContent from '../../../utils/DangerouslySetHTMLContent';
-import { replaceTextVariables } from '../../../elements/components/TextNodes';
-import DocumentEditorContainer from '../../../elements/components/DocxEditor/DocumentEditorContainer';
+import {
+  replaceTextVariables,
+  TEXT_VARIABLE_PATTERN
+} from '../../../elements/components/TextNodes';
+import DocumentEditorContainer from '../../../elements/components/DocumentEditor/DocumentEditorContainer';
 import { ShadowDomHtmlContent } from '../../../utils/ShadowDomHtmlContent';
+import { featheryDoc, featheryWindow } from '../../../utils/browser';
+
+const EDITOR_IFRAME_PROTOCOLS = ['http:', 'https:'];
+
+// The editor renders inside the dashboard's own page, so it embeds only a web
+// page that is not the dashboard itself.
+function canEmbedInEditor(url: string): boolean {
+  if (!url) return false;
+
+  const link = featheryDoc().createElement?.('a');
+  if (!link) return false;
+  link.href = url;
+
+  // A javascript: or data: URL would run as the signed-in member.
+  if (!EDITOR_IFRAME_PROTOCOLS.includes(link.protocol)) return false;
+
+  // An unresolved variable can leave a URL pointing at the dashboard's own
+  // origin, which would load the dashboard inside its editor.
+  const hasUnresolvedVariable = Boolean(url.match(TEXT_VARIABLE_PATTERN));
+  const isDashboardOrigin = link.origin === featheryWindow().location.origin;
+  return !(hasUnresolvedVariable && isDashboardOrigin);
+}
 
 export type StyledContainerProps = PropsWithChildren & {
   key?: string;
@@ -31,6 +56,12 @@ export type StyledContainerProps = PropsWithChildren & {
   [key: string]: any;
   viewportOnly?: boolean;
   breakpoint: number;
+  documentEditorPreviewType?: 'docx' | 'pptx' | 'generic';
+  /**
+   * Editor mode shares the host's page, so it renders custom HTML only as
+   * this function returns it, and none without it. Live forms ignore it.
+   */
+  sanitizeHtml?: (html: string) => string;
 };
 
 /**
@@ -57,8 +88,9 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
       editMode = false,
       breakpoint,
       formId,
-      stepId,
       assistantEnabled,
+      documentEditorPreviewType,
+      sanitizeHtml,
       ...props
     },
     ref
@@ -105,8 +137,9 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
       breakpoint
     );
 
-    if (node.properties.iframe_url) {
-      const url = replaceTextVariables(node.properties.iframe_url);
+    const url = replaceTextVariables(node.properties.iframe_url);
+    const blockEditorIframe = editMode && !canEmbedInEditor(url);
+    if (node.properties.iframe_url && !blockEditorIframe) {
       children.push(
         <iframe
           key={`iframe:${url}`}
@@ -134,8 +167,8 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
           key={`docx:${node.id}`}
           containerId={node.id}
           formId={formId}
-          stepId={stepId}
           editMode={editMode}
+          previewType={documentEditorPreviewType}
           assistantEnabled={assistantEnabled}
         />
       );
@@ -143,15 +176,30 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
 
     if (node.properties.custom_html) {
       const html = replaceTextVariables(node.properties.custom_html);
-
-      const RenderComponent = editMode
-        ? ShadowDomHtmlContent // render inside shadow dom in designer
-        : DangerouslySetHtmlContent; // render directly on live form
       const baseStyles =
         children.length === 0 ? { height: '100%', width: '100%' } : {};
-      children.push(
-        <RenderComponent key={`html:${html}`} html={html} css={baseStyles} />
-      );
+
+      if (!editMode) {
+        // Live forms run the author's HTML as written, scripts included.
+        children.push(
+          <DangerouslySetHtmlContent
+            key={`html:${html}`}
+            html={html}
+            css={baseStyles}
+          />
+        );
+      } else if (sanitizeHtml) {
+        // A shadow root scopes styles, not script. Sanitizing after the
+        // variables are substituted keeps a field value from adding markup.
+        const sanitizedHtml = sanitizeHtml(html);
+        children.push(
+          <ShadowDomHtmlContent
+            key={`html:${sanitizedHtml}`}
+            html={sanitizedHtml}
+            css={baseStyles}
+          />
+        );
+      }
     }
 
     useContainerEngine(node, rawNode, ref);

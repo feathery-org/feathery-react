@@ -1,4 +1,8 @@
-import { resetStyles } from '../../styles';
+import {
+  DROPDOWN_CHEVRON_RESERVE,
+  inputBoxAttrs,
+  resetStyles
+} from '../../styles';
 
 import React, { useEffect, useRef, useState } from 'react';
 import InlineTooltip from '../../components/InlineTooltip';
@@ -8,6 +12,8 @@ import { getStateOptions, hasState } from '../../components/data/states';
 import { css, Global } from '@emotion/react';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { fieldValues } from '../../../utils/init';
+import { toAscii } from '../../../utils/ascii';
+import { isTakenByOtherRow } from '../../../utils/repeat';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
 
 export default function DropdownField({
@@ -20,13 +26,16 @@ export default function DropdownField({
   fieldVal = '',
   repeatIndex = null,
   countryCode = '',
+  formSettings,
   editMode,
   rightToLeft,
   onChange = () => {},
   setRef = () => {},
   elementProps = {},
+  errorAttributes = {},
   children
 }: any) {
+  const asciiOnly = formSettings?.asciiOnly ?? false;
   const { borderStyles, customBorder } = useBorder({
     element,
     error: inlineError,
@@ -38,18 +47,22 @@ export default function DropdownField({
   const servar = element.servar;
   const short = servar.metadata.store_abbreviation;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar.metadata.salesforce_sync, editMode);
+    useSalesforceSync(servar, editMode, asciiOnly, formSettings?.formKey);
 
   useEffect(() => {
     if (servar.type === 'gmap_state') {
       const code = countryCode.toLowerCase() || servar.metadata.default_country;
-      if (code && fieldVal && !hasState(code, fieldVal, short, true)) {
+      if (
+        code &&
+        fieldVal &&
+        !hasState(code, fieldVal, short, true, asciiOnly)
+      ) {
         fieldVal = '';
         onChange({ target: { value: fieldVal } });
       }
       setCurCountry(code || 'us');
     }
-  }, [countryCode, setCurCountry]);
+  }, [countryCode, setCurCountry, asciiOnly]);
 
   let options;
   if (shouldSalesforceSync) {
@@ -60,7 +73,10 @@ export default function DropdownField({
     ));
   } else if (servar.type === 'gmap_state') {
     if (curCountry === null) options = [];
-    else if (fieldVal && !hasState(curCountry, fieldVal, short)) {
+    else if (
+      fieldVal &&
+      !hasState(curCountry, fieldVal, short, false, asciiOnly)
+    ) {
       // If user selected a country without states defined
       options = [
         <option key={fieldVal} value={fieldVal}>
@@ -71,7 +87,8 @@ export default function DropdownField({
       options = getStateOptions(
         curCountry,
         short,
-        servar.metadata.include_territories
+        servar.metadata.include_territories,
+        asciiOnly
       );
   } else if (servar.type === 'gmap_country') {
     const translation = element.properties.translate || {};
@@ -81,7 +98,7 @@ export default function DropdownField({
         : countryName;
       const label = translation[countryCode] || countryName;
       return (
-        <option key={countryCode} value={val}>
+        <option key={countryCode} value={asciiOnly ? toAscii(val) : val}>
           {label}
         </option>
       );
@@ -106,12 +123,8 @@ export default function DropdownField({
       options = servar.metadata.options.map((option: any, index: number) => {
         const label = labels && labels[index] ? labels[index] : option;
         const tooltip = tooltips?.[index] ?? '';
-        const allVals = (fieldValues[servar.key] ?? []) as string[];
         if (
-          servar.repeated &&
-          servar.metadata.unique_repeat_options &&
-          option !== fieldVal &&
-          allVals.includes(option)
+          isTakenByOtherRow(servar, option, fieldValues[servar.key], fieldVal)
         )
           return null;
         return (
@@ -122,9 +135,6 @@ export default function DropdownField({
       });
     }
   }
-
-  const hasTooltip = !!element.properties.tooltipText;
-  const chevronPosition = hasTooltip ? 30 : 10;
 
   responsiveStyles.applyFontStyles('field', !fieldVal);
   return (
@@ -166,6 +176,7 @@ export default function DropdownField({
               }
             : {}
         }}
+        {...inputBoxAttrs(servar.type)}
       >
         <Global
           styles={css`
@@ -177,8 +188,6 @@ export default function DropdownField({
         {customBorder}
         <select
           css={{
-            ...resetStyles,
-            ...responsiveStyles.getTarget('field'),
             width: '100%',
             height: '100%',
             border: 'none',
@@ -190,17 +199,28 @@ export default function DropdownField({
             MozAppearance: 'none',
             backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M0 0.776454L0.970744 0L5 4.2094L9.02926 0L10 0.776454L5 6L0 0.776454Z' fill='%23${element.styles.font_color}'/></svg>")`,
             backgroundRepeat: 'no-repeat',
-            backgroundPosition: `${
+            // Split from the shorthand so the themed vertical placement on the
+            // field target survives -- the chevron rides the value's line. The
+            // inline offset is the custom property the theme emits, so a
+            // mobile padding override moves the glyph with the text.
+            backgroundPositionX: `${
               rightToLeft ? 'left' : 'right'
-            } ${chevronPosition}px center`,
-            [rightToLeft ? 'paddingLeft' : 'paddingRight']: 30,
-            position: 'relative'
+            } var(--fe-chevron-x, 10px)`,
+            backgroundPositionY: 'center',
+            position: 'relative',
+            ...resetStyles,
+            paddingInlineEnd: DROPDOWN_CHEVRON_RESERVE,
+            // Spread last, as every other input-box field does, so themed
+            // padding and alignment win over the defaults above.
+            ...responsiveStyles.getTarget('field')
           }}
           id={servar.key}
+          name={servar.key}
           value={fieldVal ?? ''}
           required={required}
           disabled={disabled || loadingDynamicOptions}
           aria-label={element.properties.aria_label}
+          {...errorAttributes}
           onChange={onChange}
           onFocus={(event) => {
             setFocused(true);
@@ -216,15 +236,18 @@ export default function DropdownField({
           css={{
             position: 'absolute',
             pointerEvents: 'none',
-            [rightToLeft ? 'right' : 'left']: '0.75rem',
+            insetInlineStart: '0.75rem',
             transition: '0.2s ease all',
             top: '50%',
-            ...responsiveStyles.getTarget('placeholder'),
-            ...(fieldVal ? responsiveStyles.getTarget('placeholderFocus') : {}),
-            [`input:focus + &`]: {
-              ...responsiveStyles.getTarget('placeholderFocus'),
-              ...responsiveStyles.getTarget('placeholderActive')
-            }
+            // getTargets merges @media blocks; a spread would drop the resting one.
+            ...responsiveStyles.getTargets(
+              'placeholder',
+              fieldVal ? 'placeholderFocus' : ''
+            ),
+            [`input:focus + &`]: responsiveStyles.getTargets(
+              'placeholderFocus',
+              'placeholderActive'
+            )
           }}
         >
           {element.properties.placeholder || ''}

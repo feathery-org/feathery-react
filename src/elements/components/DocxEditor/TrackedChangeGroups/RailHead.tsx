@@ -1,6 +1,16 @@
 import React from 'react';
-import { SpinnerIcon } from '../icons';
-import { INK, INK_3, LINE, MONO, PANEL_3, btn, rejectBtn } from './styles';
+import { CheckIcon, CloseIcon, SpinnerIcon } from '../icons';
+import {
+  DEL,
+  DEL_WASH,
+  INK,
+  INK_3,
+  LINE,
+  MONO,
+  PANEL_3,
+  btn,
+  rejectBtn
+} from './styles';
 
 // Shared by both bulk buttons: fixed icon slot so the spinner swap doesn't
 // resize them.
@@ -9,11 +19,13 @@ const bulkBtn = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  gap: 5
+  gap: 8
 } as const;
 
 interface Props {
   pendingCount: number;
+  disabled?: boolean;
+  progress?: string | null;
   /** Collapses the rail; omitted when the host owns no drawer state. */
   onHide?: () => void;
   onResolveAll: (isAccept: boolean) => void;
@@ -21,14 +33,21 @@ interface Props {
    *  the running one's label icon for a spinner, same as the toolbar's Save
    *  button while autosaving. */
   resolvingAll?: 'accept' | 'reject' | null;
+  /** A resolve that could not finish, in plain language. The pending counter
+   *  alone cannot say this: a stalled card just redraws a smaller number, which
+   *  reads as "it worked". */
+  notice?: string | null;
 }
 
 // Rail head: title, pending counter, bulk actions.
 export default function RailHead({
   pendingCount,
+  disabled,
+  progress,
   onHide,
   onResolveAll,
-  resolvingAll
+  resolvingAll,
+  notice
 }: Props) {
   return (
     <div
@@ -80,22 +99,52 @@ export default function RailHead({
         <button
           type='button'
           css={{ ...btn, ...bulkBtn }}
-          disabled={!!resolvingAll}
+          disabled={disabled || !!resolvingAll}
           onClick={() => onResolveAll(true)}
         >
-          {resolvingAll === 'accept' && <SpinnerIcon width={11} height={11} />}
+          {resolvingAll === 'accept' ? (
+            <SpinnerIcon width={11} height={11} />
+          ) : (
+            <CheckIcon width={12} height={12} />
+          )}
           Accept all
         </button>
         <button
           type='button'
           css={{ ...rejectBtn, ...bulkBtn }}
-          disabled={!!resolvingAll}
+          disabled={disabled || !!resolvingAll}
           onClick={() => onResolveAll(false)}
         >
-          {resolvingAll === 'reject' && <SpinnerIcon width={11} height={11} />}
+          {resolvingAll === 'reject' ? (
+            <SpinnerIcon width={11} height={11} />
+          ) : (
+            <CloseIcon width={12} height={12} />
+          )}
           Reject all
         </button>
       </div>
+      {progress && (
+        <div role='status' aria-live='polite'>
+          {progress}
+        </div>
+      )}
+      {notice && (
+        <div
+          role='status'
+          aria-live='polite'
+          css={{
+            border: `1px solid ${DEL}`,
+            background: DEL_WASH,
+            color: INK,
+            borderRadius: 6,
+            padding: '7px 9px',
+            fontSize: 11.5,
+            lineHeight: 1.35
+          }}
+        >
+          {notice}
+        </div>
+      )}
     </div>
   );
 }

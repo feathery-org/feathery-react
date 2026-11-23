@@ -1,6 +1,6 @@
 import ResponsiveStyles from '../../../elements/styles';
 import { isFill, isFit, isPx } from '../../../utils/hydration';
-import { getElementType } from './utils';
+import { getElementType, isTableElement } from './utils';
 import { isNum } from '../../../utils/primitives';
 
 export const DEFAULT_MIN_SIZE = 50;
@@ -104,8 +104,11 @@ export const getContainerStyles = (
       // to wrap. Other elements should have min-width: min-content to prevent them from overflowing and becoming
       // too small.
       // Tables scroll horizontally inside their own container, so their cell
-      // must shrink to the configured width instead of the full table width.
-      if (elementType === 'table') s.minWidth = 0;
+      // must shrink to the configured width instead of the full table width,
+      // or a wide grid pushes the step (and every fit-width ancestor) out past
+      // the available space.
+      const isTable = isTableElement(node);
+      if (isTable) s.minWidth = 0;
       else if (elementType !== 'dropdown_multi') s.minWidth = 'min-content';
       s.width = '100%';
 
@@ -161,7 +164,8 @@ export const getContainerStyles = (
       }
 
       if (isFit(width) || isFit(widthUnit)) {
-        s.minWidth = 'min-content';
+        // A fit-width table still must not grow to its full grid width.
+        s.minWidth = isTable ? 0 : 'min-content';
         s.maxWidth = 'fit-content';
 
         if (!hasChildren) {
@@ -197,6 +201,10 @@ export const getContainerStyles = (
       if (contentResponsive) {
         s.minWidth = 'fit-content !important';
       }
+
+      // The document editor owns its internal scrolling and must be able to
+      // shrink with a configured container, even when its toolbar is wider.
+      if (node.properties?.document_editor) s.minWidth = 0;
 
       return s;
     }
@@ -251,6 +259,21 @@ export const getContainerStyles = (
 
         if (isFill(heightUnit)) {
           s.maxHeight = '100%';
+          // A scrolling table has to GROW into the available space, not
+          // merely cap at it: capping alone leaves the grid at its natural
+          // height with empty space below. Only a table, though — every
+          // other fill-height element (an image, a text block) has always
+          // capped, and existing forms are laid out around that. gig's
+          // parent_axis naming is inverted vs CSS — 'row' means the parent
+          // stacks its children vertically, so height is the main axis there.
+          if (isTableElement(node)) {
+            if (parentAxis === 'row') {
+              s.flex = '1 1 auto';
+              s.minHeight = 0;
+            } else {
+              s.height = '100%';
+            }
+          }
         }
 
         if (isFit(heightUnit)) {
@@ -283,6 +306,12 @@ export const getContainerStyles = (
       if (heightUnit === 'px') {
         s.minHeight = `${height}${heightUnit}`;
         s.maxHeight = `max-content`;
+
+        if (node.properties?.document_editor) {
+          s.height = `${height}${heightUnit}`;
+          s.maxHeight = `${height}${heightUnit}`;
+          s.overflow = 'hidden';
+        }
 
         if (!node.uuid && overflow) {
           if (overflow === 'scroll') overflow = 'auto';
@@ -322,6 +351,19 @@ export const getContainerStyles = (
 
         if (!hasChildren) {
           s.minHeight = `${DEFAULT_MIN_SIZE}px`;
+        }
+
+        if (node.properties?.document_editor) {
+          // The document editor owns scrolling inside its viewport. Its slide
+          // stage must not give a fill-height container an intrinsic minimum
+          // that stretches the form beyond the available parent height.
+          if (!node.parent) s.maxHeight = '100vh';
+          s.minHeight = 0;
+          s.overflow = 'hidden';
+          if (parentAxis === 'row') {
+            s.flexShrink = 1;
+            s.flexBasis = 0;
+          }
         }
       }
 
@@ -485,7 +527,18 @@ export const getInnerContainerStyles = (
       const s: any = {};
 
       if (heightUnit === 'px') {
-        s.minHeight = `${height - (pt ?? 0) - (pb ?? 0)}${heightUnit}`;
+        s.minHeight = node.properties?.document_editor
+          ? 0
+          : `${height - (pt ?? 0) - (pb ?? 0)}${heightUnit}`;
+      }
+
+      if (
+        node.properties?.document_editor &&
+        (isFill(height) || isFill(heightUnit))
+      ) {
+        s.minHeight = 0;
+        s.maxHeight = '100%';
+        s.overflow = 'hidden';
       }
 
       return s;

@@ -1,4 +1,8 @@
 import { initInfo, initState } from './init';
+import type {
+  DocumentReviewAction,
+  DocumentReviewTrigger
+} from '../types/Form';
 
 function isValidUrl(urlString: string): boolean {
   try {
@@ -36,6 +40,29 @@ export function getSignUrl(token: string, redirect?: boolean | string) {
   }
 
   return `https://${regionPart}document.feathery.io/to/${token}${query}`;
+}
+
+// The file upload fields a Generate Documents action includes, with the step
+// each is on. Empty fields stay in so a removed upload can be cleared.
+export function documentSourceUploadFields(
+  documents: any[] = [],
+  steps: Record<string, any> = {}
+): { servar: any; step: any }[] {
+  const fieldIds = new Set(
+    documents
+      .filter((doc) => doc?.kind === 'file_upload')
+      .map((doc) => doc.field_id)
+  );
+  const fields: { servar: any; step: any }[] = [];
+  if (!fieldIds.size) return fields;
+  for (const step of Object.values(steps) as any[]) {
+    for (const { servar } of step?.servar_fields ?? []) {
+      if (servar.type !== 'file_upload' || !fieldIds.has(servar.id)) continue;
+      fieldIds.delete(servar.id);
+      fields.push({ servar, step });
+    }
+  }
+  return fields;
 }
 
 /** The Document Editor container this action targets, or '' when it doesn't
@@ -124,4 +151,42 @@ export function signsViaDocusign(action: Record<string, any>): boolean {
     envelopeAction === 'open_in_editor' &&
     (toolbar.includes('sign') || toolbar.includes('draft'))
   );
+}
+
+/**
+ * The `trigger` a `document_review` logic rule receives once a review-screen
+ * toolbar action has finalized and run its outcome. Built the same way for
+ * the overlay viewer (button or `feathery.generateDocuments`) and for a
+ * document-editor container, so rule code sees one shape.
+ */
+export function buildDocumentReviewTrigger({
+  action,
+  elementId,
+  envelopes,
+  envelopeAction,
+  draft,
+  result
+}: {
+  // The Generate Documents action config that opened the review.
+  action: Record<string, any>;
+  elementId: string;
+  envelopes: { envelopeId: string }[];
+  // The toolbar outcome finalize ran; a draft is reported as 'draft'.
+  envelopeAction: string;
+  draft: boolean;
+  // The finalize response, when there was one.
+  result?: Record<string, any> | null;
+}): DocumentReviewTrigger {
+  const trigger: DocumentReviewTrigger = {
+    id: elementId,
+    type: 'document_review',
+    action: (draft ? 'draft' : envelopeAction) as DocumentReviewAction,
+    envelopeIds: envelopes.map((envelope) => envelope.envelopeId),
+    documentIds: action.documents ?? []
+  };
+  const files = result?.files;
+  if (Array.isArray(files)) trigger.files = files;
+  const docusignEnvelopeId = result?.docusign_envelope_id;
+  if (docusignEnvelopeId) trigger.docusignEnvelopeId = docusignEnvelopeId;
+  return trigger;
 }

@@ -10,21 +10,23 @@ const _formatContainerStyles = (_node: any, fieldPrefix = '') => {
   const styles = JSON.parse(JSON.stringify(node[`${fieldPrefix}styles`] ?? {}));
 
   if (!_node.isElement) {
-    const nodeWidth = getFieldValue(node, 'width', fieldPrefix);
-    const nodeHeight = getFieldValue(node, 'height', fieldPrefix);
-
-    if (isPx(nodeWidth)) {
-      styles.width = getPxValue(nodeWidth);
-      styles.width_unit = 'px';
-    } else {
-      styles.width = nodeWidth;
-    }
-
-    if (isPx(nodeHeight)) {
-      styles.height = getPxValue(nodeHeight);
-      styles.height_unit = 'px';
-    } else {
-      styles.height = nodeHeight;
+    for (const axis of ['width', 'height']) {
+      let dimension = getFieldValue(node, axis, fieldPrefix);
+      // Older Robin builds stored explicit mobile sizing only in mobile_styles.
+      if (fieldPrefix && !node[`${fieldPrefix}${axis}`]) {
+        const unit = styles[`${axis}_unit`];
+        if (unit === 'fill' || unit === 'fit') dimension = unit;
+        else if (unit === 'px' && typeof styles[axis] === 'number')
+          dimension = `${styles[axis]}px`;
+      }
+      if (isPx(dimension)) {
+        styles[axis] = getPxValue(dimension);
+        styles[`${axis}_unit`] = 'px';
+      } else {
+        styles[axis] = dimension;
+        if (dimension === 'fill' || dimension === 'fit')
+          styles[`${axis}_unit`] = dimension;
+      }
     }
   }
 

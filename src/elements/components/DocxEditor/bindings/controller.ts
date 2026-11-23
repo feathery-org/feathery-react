@@ -29,7 +29,9 @@ import {
 import {
   addLineItem,
   BindingIndex,
+  formulaOccurrences,
   getAt,
+  InsertedRowsHint,
   NativeStructuralMutation,
   removeLineItem,
   scanBindings,
@@ -37,13 +39,19 @@ import {
   setOccurrenceText,
   setTaggedValue
 } from './core/sfdtAdapter';
-import { Diagnostic, SfdtBlock, SfdtDocument, SfdtRow } from './core/sfdtTypes';
+import {
+  Diagnostic,
+  SfdtBlock,
+  SfdtDocument,
+  SfdtPath,
+  SfdtRow
+} from './core/sfdtTypes';
 import { renderDisplay } from './core/valueTypes';
-import { authorCommandRevisions } from './core/commandRevisions';
 import { DocumentPersistence, SaveResult } from './persistence';
 import type {
   BindingCommand,
-  BindingCommandOptions
+  BindingCommandOptions,
+  BindingCommandProvenance
 } from './reconcileRegistry';
 
 /** What the controller needs from an editor. */
@@ -59,6 +67,21 @@ export interface EditorPort {
    */
   updateValues?(writes: EngineWrite[]): boolean;
   applyStructuralMutations?(mutations: NativeStructuralMutation[]): boolean;
+  /** Commit several native calls together, or restore their exact input. */
+  withNativeTransaction(run: () => boolean): boolean;
+  /**
+   * Run one authored batch with the editor writing its OWN revisions -
+   * undoable, correctly authored, correctly grouped - instead of having
+   * revisions authored into the SFDT and installed by `open`.
+   *
+   * The adapter owns this because the switches are SDK details and the port is
+   * the seam that keeps them there; a controller that set them itself would be
+   * setting them on the port object, not on the editor behind it.
+   */
+  withAuthoredRevisions?<T>(
+    provenance: BindingCommandProvenance,
+    run: () => T
+  ): T;
   /** Selection/scroll snapshot, for the open() path only. */
   captureView?(): unknown;
   restoreView?(view: unknown): void;
@@ -73,6 +96,7 @@ export type ControllerEventName =
   | 'restore'
   | 'saved'
   | 'save-conflict'
+  | 'reopen'
   | 'error';
 
 export interface ControllerEvent {
@@ -85,7 +109,7 @@ export interface ControllerEvent {
 
 export type TimerId = unknown;
 
-export interface ControllerOptions {
+interface ControllerOptions {
   editor: EditorPort;
   persistence?: DocumentPersistence | null;
   /**
@@ -99,13 +123,9 @@ export interface ControllerOptions {
   clearTimeoutFn?: (id: TimerId) => void;
 }
 
-export type ControllerPhase =
-  | 'idle'
-  | 'serializing'
-  | 'reconciling'
-  | 'loading';
+type ControllerPhase = 'idle' | 'serializing' | 'reconciling' | 'loading';
 
-export type ControllerSaveResult =
+type ControllerSaveResult =
   | SaveResult
   | { ok: false; reason: 'blocked-by-diagnostics' | 'no-persistence' };
 
@@ -113,6 +133,29 @@ interface CommitOptions {
   apply: 'none' | 'patch' | 'structural' | 'open';
   markDirty: boolean;
   event: ControllerEventName;
+  /** Present for an authored assistant batch; drives the tracked scope. */
+  provenance?: BindingCommandProvenance;
+}
+
+function containsTable(block: SfdtBlock | undefined): boolean {
+  if (!block) return false;
+  if (Array.isArray(block.rows)) return true;
+  return (block.blocks ?? []).some(containsTable);
+}
+
+function insertedTableBlocks(
+  block: SfdtBlock,
+  following: SfdtBlock | undefined
+): SfdtBlock[] {
+  return [
+    { inlines: [] },
+    block,
+    ...(containsTable(following) ? [{ inlines: [] }] : [])
+  ];
+}
+
+function replacementTableBlocks(block: SfdtBlock): SfdtBlock[] {
+  return [block];
 }
 
 export class ReconciliationController {
@@ -160,6 +203,8 @@ export class ReconciliationController {
 
   private pendingFlush = false;
 
+  private insertedRowsHint: InsertedRowsHint | null = null;
+
   constructor({
     editor,
     persistence = null,
@@ -185,6 +230,47 @@ export class ReconciliationController {
     this.persistedRevision = revision;
   }
 
+  /**
+   * Record which rows a native insert just created (from the insertRow wrap),
+   * so the next adopting reconcile re-adopts exactly those instead of guessing
+   * by position. Held until consumed; null clears it - any later row command
+   * that shifts indices passes null rather than leaving a stale hint.
+   */
+  noteInsertedRows(hint: InsertedRowsHint | null): void {
+    this.insertedRowsHint = hint;
+  }
+
+  /**
+   * The editor's document was replaced from outside (the document engine's splice opens a
+   * composed document): adopt it as the baseline, computing values and the index from it, without
+   * writing to the editor and without marking the document dirty. What used to take a dispose and
+   * a re-attach of the bindings.
+   */
+  notifyReopened(): void {
+    this.clearTimeoutFn(this.debounceTimer);
+    this.pendingFlush = false;
+    let parsed: SfdtDocument;
+    try {
+      parsed = JSON.parse(this.editor.serialize());
+    } catch (thrown) {
+      this.failPhase('serialize-failed', thrown);
+      return;
+    }
+    const result = applyRules(parsed, {
+      prevValues: this.values,
+      mode: 'self-heal',
+      rowTemplates: this.rowTemplates,
+      adoptRows: false
+    });
+    this.workingSfdt = parsed;
+    this.values = result.values;
+    this.index = result.index;
+    this.rowTemplates = result.rowTemplates;
+    this.diagnostics = result.diagnostics;
+    this.phase = 'idle';
+    this.onChange({ controller: this, event: 'reopen', changed: [] });
+  }
+
   /** Wire this to the editor's contentChange event. */
   notifyContentChange(): void {
     if (this.phase === 'loading') return; // Our own write echoing back.
@@ -206,7 +292,10 @@ export class ReconciliationController {
   flush({
     mode = 'commit',
     adoptRows
-  }: { mode?: ReconcileMode; adoptRows?: boolean } = {}): void {
+  }: {
+    mode?: ReconcileMode;
+    adoptRows?: boolean;
+  } = {}): void {
     this.clearTimeoutFn(this.debounceTimer);
     if (this.phase !== 'idle') {
       this.pendingFlush = true;
@@ -228,6 +317,12 @@ export class ReconciliationController {
     }
 
     this.phase = 'reconciling';
+    // Consume the hint only when adoption can act on it. The post-replay
+    // self-heal runs with adoptRows false (a redone insert-above records a
+    // hint mid-replay), so it must leave the hint for the next adopting
+    // reconcile instead of eating it.
+    const insertedRows = adoptRows === false ? null : this.insertedRowsHint;
+    if (adoptRows !== false) this.insertedRowsHint = null;
     let result: ApplyRulesResult;
     try {
       const started = Date.now();
@@ -235,7 +330,8 @@ export class ReconciliationController {
         prevValues: this.values,
         mode,
         rowTemplates: this.rowTemplates,
-        ...(adoptRows === false ? { adoptRows: false } : {})
+        ...(adoptRows === false ? { adoptRows: false } : {}),
+        ...(insertedRows ? { insertedRows } : {})
       });
       this.timings.reconcileMs = Date.now() - started;
     } catch (thrown) {
@@ -275,6 +371,17 @@ export class ReconciliationController {
     let index = this.index ?? scanBindings(mutated);
     const beforeCommands = index;
     const structuralMutations: NativeStructuralMutation[] = [];
+    // New tag -> the tag that control wore before this batch. A retagged
+    // control looks brand new to the write diff below, and a brand new control
+    // is deliberately not written (it arrives with its text already set), so
+    // without this map the recomputed figure never reached the live document.
+    const retagged = new Map<string, string>();
+    // Where each insert-table's blocks sit in the document being built, so the
+    // mutation can carry POST-rules content. See `finalizedMutations`.
+    const insertedTableSpans = new Map<
+      NativeStructuralMutation,
+      { blocksPath: SfdtPath; at: number; count: number }
+    >();
     for (const command of commands) {
       if (command.type === 'set-value') {
         if (command.tableId && command.rowId) {
@@ -294,6 +401,38 @@ export class ReconciliationController {
         } else {
           mutated = setTaggedValue(mutated, command.name, command.value, index);
         }
+      } else if (command.type === 'set-expression') {
+        const targets = formulaOccurrences(index, command.name).filter(
+          (occurrence) =>
+            occurrence.tag === command.previousTag &&
+            occurrence.def.isGlobal === command.global &&
+            (command.global ||
+              (occurrence.tableId === command.tableId &&
+                occurrence.rowId === command.rowId))
+        );
+        if (!targets.length)
+          throw new Error(
+            `no formula ${command.name} tagged ${command.previousTag}`
+          );
+        for (const occurrence of targets) {
+          const node = getAt(mutated, occurrence.path) as Record<
+            string,
+            unknown
+          >;
+          mutated = setAt(mutated, occurrence.path, {
+            ...node,
+            contentControlProperties: {
+              ...(node.contentControlProperties as Record<string, unknown>),
+              tag: command.tag
+            }
+          });
+        }
+        structuralMutations.push({
+          kind: 'retag-control',
+          fromTag: command.previousTag,
+          toTag: command.tag
+        });
+        retagged.set(command.tag, command.previousTag);
       } else if (command.type === 'add-row') {
         const added = addLineItem(
           mutated,
@@ -341,28 +480,51 @@ export class ReconciliationController {
         const blocksPath = anchor.markerPath.slice(0, -1);
         const at = Number(anchor.markerPath[anchor.markerPath.length - 1]);
         const blocks = getAt(mutated, blocksPath) as SfdtBlock[];
-        const hasTable = (block: SfdtBlock | undefined): boolean => {
-          if (!block) return false;
-          if (Array.isArray(block.rows)) return true;
-          return (block.blocks ?? []).some(hasTable);
-        };
         // Word coalesces adjacent top-level tables into one grid. A paragraph
         // is a storage-topology separator, so add-table owns that invariant for
         // every caller rather than requiring each caller to remember it.
-        const insertedBlocks: SfdtBlock[] = [
-          { inlines: [] },
+        const insertedBlocks = insertedTableBlocks(
           command.block,
-          ...(hasTable(blocks[at + 1]) ? [{ inlines: [] }] : [])
-        ];
+          blocks[at + 1]
+        );
         mutated = setAt(mutated, blocksPath, [
           ...blocks.slice(0, at + 1),
           ...insertedBlocks,
           ...blocks.slice(at + 1)
         ]);
-        structuralMutations.push({
+        const insertTable: NativeStructuralMutation = {
           kind: 'insert-table',
           afterTag: command.afterTag,
           blocks: insertedBlocks
+        };
+        structuralMutations.push(insertTable);
+        insertedTableSpans.set(insertTable, {
+          blocksPath,
+          at: at + 1,
+          count: insertedBlocks.length
+        });
+      } else if (command.type === 'replace-table') {
+        const table = index.tables.get(command.tableId);
+        if (!table) throw new Error(`table ${command.tableId} not found`);
+        const blocksPath = table.markerPath.slice(0, -1);
+        const at = Number(table.markerPath[table.markerPath.length - 1]);
+        const blocks = getAt(mutated, blocksPath) as SfdtBlock[];
+        const insertedBlocks = replacementTableBlocks(command.block);
+        mutated = setAt(mutated, blocksPath, [
+          ...blocks.slice(0, at),
+          ...insertedBlocks,
+          ...blocks.slice(at + 1)
+        ]);
+        const replaceTable: NativeStructuralMutation = {
+          kind: 'replace-table',
+          tag: command.tag,
+          blocks: insertedBlocks
+        };
+        structuralMutations.push(replaceTable);
+        insertedTableSpans.set(replaceTable, {
+          blocksPath,
+          at,
+          count: insertedBlocks.length
         });
       } else {
         const table = index.tables.get(command.tableId);
@@ -378,11 +540,24 @@ export class ReconciliationController {
       }
       index = scanBindings(mutated);
     }
-    let result = applyRules(mutated, {
+    const result = applyRules(mutated, {
       prevValues: this.values,
       rowTemplates: this.rowTemplates
     });
+    // Rules run AFTER the commands, and they recompute formulas - so content
+    // captured while building the mutation is pre-recomputation and stale. The
+    // row case already knew this; the table case did not, and the reopen hid it
+    // by installing the whole recomputed document wholesale. Both now re-read
+    // their content from the post-rules result, which is the same law.
     const finalizedMutations = structuralMutations.map((mutation) => {
+      const span = insertedTableSpans.get(mutation);
+      if (span) {
+        const blocks = getAt(result.sfdt, span.blocksPath) as SfdtBlock[];
+        return {
+          ...mutation,
+          blocks: blocks.slice(span.at, span.at + span.count)
+        };
+      }
       if (mutation.kind !== 'insert-row') return mutation;
       const row = result.index.tables
         .get(mutation.tableId)
@@ -400,9 +575,13 @@ export class ReconciliationController {
       ...result.structuralMutations
     ];
     const authoredWrites: EngineWrite[] = [];
+    const existedBefore = new Set(
+      beforeCommands.occurrences.map((occurrence) => occurrence.tag)
+    );
     for (const occurrence of result.index.occurrences) {
+      const priorTag = retagged.get(occurrence.tag) ?? occurrence.tag;
       const previous = beforeCommands.occurrences.find(
-        (candidate) => candidate.tag === occurrence.tag
+        (candidate) => candidate.tag === priorTag
       );
       // New controls are created by the structural mutation with their display
       // text already set. Recording them as field writes would add extra native
@@ -414,31 +593,39 @@ export class ReconciliationController {
         kind: occurrence.def.kind === 'formula' ? 'formula' : 'field'
       });
     }
+    const writesForExistingControls = result.writes.filter((write) =>
+      existedBefore.has(retagged.get(write.tag) ?? write.tag)
+    );
     result.writes = [
       ...new Map(
-        [...authoredWrites, ...result.writes].map((write) => [write.tag, write])
+        [...authoredWrites, ...writesForExistingControls].map((write) => [
+          write.tag,
+          write
+        ])
       ).values()
     ];
-    if (options.provenance) {
-      const sfdt = authorCommandRevisions(
-        this.workingSfdt as SfdtDocument,
-        result.sfdt,
-        options.provenance
-      );
-      result = { ...result, sfdt, index: scanBindings(sfdt) };
-    }
+    // An authored batch takes the SAME native route as every other command.
+    // It used to author revisions into the SFDT and install them with `open`,
+    // which bought review records at the price of the document's whole undo
+    // history - ours AND the user's, because `open` resets the stack. The
+    // review records are now produced by the editor itself, inside the tracked
+    // scope `commit` opens, so nothing is traded away in either direction.
     this.commit(result, {
-      apply: options.provenance
-        ? 'open'
-        : result.structuralMutations.length
+      apply: result.structuralMutations.length
         ? 'structural'
         : result.writes.length
         ? 'patch'
         : 'none',
       markDirty: true,
-      event: 'command'
+      event: 'command',
+      provenance: options.provenance
     });
-    return result;
+    // The AUTHORITATIVE diagnostics are the controller's own after commit:
+    // when the native mutation fails, commit records `native-mutation-failed`
+    // on `this.diagnostics`, and returning the pre-commit `result.diagnostics`
+    // here silently hid that failure from the caller - the assistant reported
+    // "ok" over a document the engine had refused to change.
+    return { ...result, diagnostics: this.diagnostics };
   }
 
   /* ---- persistence ---- */
@@ -480,9 +667,23 @@ export class ReconciliationController {
     this.onChange({ controller: this, event: 'error' });
   }
 
+  /**
+   * Authored batches go through the port's tracked scope; everything else runs
+   * exactly as before. An adapter that does not implement the capability still
+   * applies the edit natively - it simply produces no review records, which is
+   * a degraded card, never a lost or unrecoverable document.
+   */
+  private inTrackedScope<T>(
+    provenance: BindingCommandProvenance | undefined,
+    run: () => T
+  ): T {
+    if (!provenance || !this.editor.withAuthoredRevisions) return run();
+    return this.editor.withAuthoredRevisions(provenance, run);
+  }
+
   private commit(
     result: ApplyRulesResult,
-    { apply, markDirty, event }: CommitOptions
+    { apply, markDirty, event, provenance }: CommitOptions
   ): void {
     let failed = false;
 
@@ -494,10 +695,13 @@ export class ReconciliationController {
         // async restore here fights a user already typing in the next field.
         const started = Date.now();
         try {
-          patched =
-            (this.editor.updateValues as (w: EngineWrite[]) => boolean)(
-              result.writes
-            ) === true;
+          patched = this.inTrackedScope(
+            provenance,
+            () =>
+              (this.editor.updateValues as (w: EngineWrite[]) => boolean)(
+                result.writes
+              ) === true
+          );
         } catch {
           patched = false;
         }
@@ -505,12 +709,17 @@ export class ReconciliationController {
       } else if (apply === 'structural') {
         const started = Date.now();
         try {
-          patched =
-            this.editor.applyStructuralMutations?.(
-              result.structuralMutations
-            ) === true;
-          if (patched && result.writes.length && this.editor.updateValues)
-            patched = this.editor.updateValues(result.writes) === true;
+          patched = this.inTrackedScope(provenance, () =>
+            this.editor.withNativeTransaction(() => {
+              let ok =
+                this.editor.applyStructuralMutations?.(
+                  result.structuralMutations
+                ) === true;
+              if (ok && result.writes.length && this.editor.updateValues)
+                ok = this.editor.updateValues(result.writes) === true;
+              return ok;
+            })
+          );
         } catch {
           patched = false;
         }

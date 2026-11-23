@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import RatingStar from '../../components/icons/RatingStar';
 import Heart from '../../components/icons/Heart';
 import ErrorInput from '../../components/ErrorInput';
+import HiddenValueInput from '../../components/HiddenValueInput';
 
 export default function RatingField({
   element,
@@ -11,16 +12,25 @@ export default function RatingField({
   editMode,
   onChange = () => {},
   elementProps = {},
+  errorAttributes = {},
   disabled = false,
   children
 }: any) {
   const [hoverIndex, setHoverIndex] = useState<null | number>(null);
+  const groupRef = useRef<HTMLDivElement>(null);
 
   const servar = element.servar;
   const numRatings = servar.max_length ?? 5;
 
   // If no field value, default to 1 less than the max
   fieldVal = fieldVal ?? numRatings - 1;
+  const selectedIndex = Number(fieldVal) - 1;
+  const tabStopIndex =
+    Number.isInteger(selectedIndex) &&
+    selectedIndex >= 0 &&
+    selectedIndex < numRatings
+      ? selectedIndex
+      : 0;
 
   const Icon = element.styles.icon_type === 'heart' ? Heart : RatingStar;
 
@@ -37,7 +47,13 @@ export default function RatingField({
     >
       {children}
       {fieldLabel}
-      <div css={{ display: 'flex', justifyContent: 'space-around' }}>
+      <div
+        ref={groupRef}
+        role='radiogroup'
+        aria-label={element.properties.aria_label || servar.name}
+        {...errorAttributes}
+        css={{ display: 'flex', justifyContent: 'space-around' }}
+      >
         {Array(numRatings)
           .fill(null)
           .map((_, index) => {
@@ -50,7 +66,43 @@ export default function RatingField({
             return (
               <Icon
                 key={index}
-                onClick={() => onChange(index + 1)}
+                role='radio'
+                aria-checked={index === selectedIndex}
+                aria-label={`${index + 1}`}
+                tabIndex={
+                  disabled || editMode || index !== tabStopIndex ? -1 : 0
+                }
+                onKeyDown={(event: React.KeyboardEvent<SVGElement>) => {
+                  if (disabled || editMode) return;
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onChange(index + 1);
+                  } else if (
+                    [
+                      'ArrowRight',
+                      'ArrowDown',
+                      'ArrowLeft',
+                      'ArrowUp'
+                    ].includes(event.key)
+                  ) {
+                    event.preventDefault();
+                    const direction = ['ArrowRight', 'ArrowDown'].includes(
+                      event.key
+                    )
+                      ? 1
+                      : -1;
+                    const nextIndex =
+                      (index + direction + numRatings) % numRatings;
+                    onChange(nextIndex + 1);
+                    groupRef.current
+                      ?.querySelectorAll<SVGElement>('[role="radio"]')
+                      [nextIndex]?.focus();
+                  }
+                }}
+                id={`${servar.key}-${index + 1}`}
+                onClick={() => {
+                  if (!disabled && !editMode) onChange(index + 1);
+                }}
                 onMouseEnter={() => setHoverIndex(index)}
                 onMouseLeave={() => setHoverIndex(null)}
                 css={{
@@ -70,6 +122,7 @@ export default function RatingField({
           name={servar.key}
           aria-label={element.properties.aria_label}
         />
+        <HiddenValueInput name={servar.key} value={fieldVal} />
       </div>
     </div>
   );

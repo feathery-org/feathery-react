@@ -11,6 +11,7 @@
 
 import { convertTemplateTokens } from './core/templateImport';
 import { hasBlockingErrors } from './core/engine';
+import { isNumericType } from './core/valueTypes';
 import { Diagnostic, SfdtDocument } from './core/sfdtTypes';
 import {
   ControllerEvent,
@@ -18,18 +19,32 @@ import {
   TimerId
 } from './controller';
 import {
+  ContentControlLike,
   configureEditorForBindings,
   createEditorAdapter,
-  SyncfusionEditorLike
+  SyncfusionEditorLike,
+  isAdapterWriting,
+  refreshContentControlCollection
 } from './editorAdapter';
 import { installKeystrokeGuard } from './keystrokeGuard';
+import { installPasteGuard } from './pasteGuard';
 import { createCommitTriggers } from './commitTriggers';
 import { watchRowCommands } from './rowCommandWatch';
+import {
+  installTableDeleteGuard,
+  isDeleteGuardBusy,
+  TableDeleteImpact
+} from './tableDeleteGuard';
 import { DocumentPersistence } from './persistence';
 import {
   registerBindingReconciler,
   unregisterBindingReconciler
 } from './reconcileRegistry';
+import {
+  installTrackedContentControlDeletion,
+  LiveEditor,
+  isProgrammaticSelection
+} from '../../../../utils/documentEditorPrimitives';
 
 export interface BindingsOptions {
   /**
@@ -38,7 +53,7 @@ export interface BindingsOptions {
    */
   convertTokensOnOpen?: boolean;
   /** Committed document-level field values, after every reconcile. */
-  onFieldValues?: (values: Record<string, string>) => void;
+  onFieldValues?: (values: Record<string, string | null>) => void;
   /** Diagnostics after every reconcile, including the ones that block saving. */
   onDiagnostics?: (diagnostics: Diagnostic[]) => void;
   /**
@@ -47,6 +62,25 @@ export interface BindingsOptions {
    * matters: computing a template's formulas is not the user dirtying anything.
    */
   onSuppressContentChange?: (suppressed: boolean) => void;
+  /**
+   * Asked before a table deletion that would orphan formulas elsewhere in the
+   * document (they read values the table holds). Resolving false cancels the
+   * deletion; absent means such deletes proceed without a prompt.
+   */
+  confirmTableDelete?: (impact: TableDeleteImpact) => Promise<boolean>;
+  /**
+   * Fired (debounced) when the user's edit is refused because it lands on a
+   * locked content control - typing into a computed cell, or deleting across a
+   * binding without fully covering it. The host shows a brief "locked" hint so
+   * the refusal is not silent.
+   */
+  onLockedEdit?: () => void;
+  /**
+   * Fired when the caret leaves a refused/locked spot for an editable one, so
+   * the host can hide the locked-edit hint immediately instead of waiting out
+   * its timeout.
+   */
+  onLockedEditResolved?: () => void;
   persistence?: DocumentPersistence | null;
   setTimeoutFn?: (fn: () => void, ms: number) => TimerId;
   clearTimeoutFn?: (id: TimerId) => void;
@@ -61,7 +95,7 @@ export interface AttachedBindings {
    */
   commitForSave(): boolean;
   diagnostics(): Diagnostic[];
-  fieldValues(): Record<string, string>;
+  fieldValues(): Record<string, string | null>;
   /** Diagnostics from the one-time token conversion, if it ran. */
   importDiagnostics: Diagnostic[];
   dispose(): void;
@@ -75,16 +109,19 @@ type EventfulEditor = SyncfusionEditorLike & {
   ) => void;
 };
 
-/** Document-level field values, one per binding name. */
+/** Document-level field values, one per binding name, a blank number as no value */
 function collectFieldValues(
   controller: ReconciliationController
-): Record<string, string> {
-  const out: Record<string, string> = {};
+): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
   const { index, values } = controller;
   if (!index || !values) return out;
   for (const [name, occurrences] of index.fields) {
     const known = occurrences.find((occurrence) => values.has(occurrence.key));
-    if (known) out[name] = values.get(known.key) as string;
+    if (!known) continue;
+    const value = values.get(known.key) as string;
+    out[name] =
+      value === '' && isNumericType(known.def.fieldType) ? null : value;
   }
   return out;
 }
@@ -96,6 +133,9 @@ export function attachBindings(
     onFieldValues,
     onDiagnostics,
     onSuppressContentChange,
+    confirmTableDelete,
+    onLockedEdit,
+    onLockedEditResolved,
     persistence = null,
     setTimeoutFn,
     clearTimeoutFn
@@ -104,6 +144,13 @@ export function attachBindings(
   // Best effort - the reliable place is the constructor. When this fails the
   // engine still refuses minified SFDT loudly rather than reading no bindings.
   configureEditorForBindings(editor);
+
+  // Bound-delete safety is fail-closed at this seam: any host that mounts
+  // bindings gets the tracked content-control deletion override, whether or not
+  // it remembered to install it itself (the install is idempotent). Without it
+  // a tracked row delete strips the row's binding tags and reject cannot
+  // restore them - identity must never depend on a host-side call site.
+  installTrackedContentControlDeletion(editor as unknown as LiveEditor);
 
   const report = (event: ControllerEvent): void => {
     onDiagnostics?.(event.controller.diagnostics);
@@ -142,6 +189,13 @@ export function attachBindings(
   // bindings; this is how its batches get reconciled.
   registerBindingReconciler(editor, {
     flush: () => controller.flush(),
+    // the document engine's splice replaced the document: re-read the content controls and
+    // adopt the new document, no dispose and re-attach
+    reopened: () => {
+      if ((editor as { isDestroyed?: boolean }).isDestroyed) return;
+      refreshContentControlCollection(editor);
+      controller.notifyReopened();
+    },
     runCommands: (commands, options) =>
       controller.runCommands(commands, options)
   });
@@ -151,15 +205,37 @@ export function attachBindings(
     ...(clearTimeoutFn ? { clearTimeoutFn } : {})
   });
   const uninstallGuard = installKeystrokeGuard(editor);
+  const uninstallPasteGuard = installPasteGuard(editor);
+  // Explicit whole-table/row deletion: lift the content-control locks that
+  // made deleteTable/deleteRow silent no-ops, and confirm/unwrap when the
+  // deleted values feed formulas elsewhere (tableDeleteGuard has the full
+  // story). Installed BEFORE watchRowCommands so the row watcher's wrapper
+  // stays outermost and its reconcile runs after the guard's grouped history
+  // entry closes.
+  const uninstallTableDelete = installTableDeleteGuard(editor, {
+    ...(confirmTableDelete ? { confirm: confirmTableDelete } : {}),
+    onDeleted: () => {
+      if (controller.phase !== 'idle') return;
+      const history = editor.editorHistoryModule;
+      if (history?.isUndoing || history?.isRedoing) return;
+      controller.flush({ mode: 'self-heal' });
+    }
+  });
   // Native insertRow/deleteRow bypass runCommands. After the user's command
   // the interceptor adopts and recomputes in the same turn. Replay during
   // undo/redo must not flush: that inserts content controls mid-history and
   // leaves redo unable to delete the row.
-  const unwatchRowCommands = watchRowCommands(editor, () => {
+  const unwatchRowCommands = watchRowCommands(editor, (insertedRows) => {
+    // An insert says which rows it created, so adoption re-adopts exactly
+    // those; any other row command clears the hint before indices go stale.
+    // Fires during undo/redo replay too (a redone insert needs its hint);
+    // the replay check below is what keeps flushes out of the history stream.
+    controller.noteInsertedRows(insertedRows ?? null);
     if (controller.phase !== 'idle') return;
     const history = editor.editorHistoryModule;
     if (history?.isUndoing || history?.isRedoing) return;
-    controller.flush({ mode: 'self-heal' });
+    if (!triggers.onRowCommandComplete())
+      controller.flush({ mode: 'self-heal' });
   });
 
   const eventful = editor as EventfulEditor;
@@ -180,16 +256,120 @@ export function attachBindings(
       console.error('Feathery: document bindings event handler failed', error);
     }
   };
+  // Derived values follow the document, so they must be recomputed the moment
+  // a card is accepted or rejected, not on the next keystroke. The resolvers in
+  // documentEditorPrimitives call this after they settle (see
+  // ROBIN_RECOMPUTE_AFTER_RESOLVE); it is the same self-heal flush the row
+  // and table guards use.
+  (editor as any).__robinRecomputeAfterResolve = () =>
+    runGuarded(() => {
+      if (controller.phase !== 'idle') return;
+      refreshContentControlCollection(editor);
+      controller.flush({ mode: 'self-heal' });
+    });
   const onContentChange = () => runGuarded(() => triggers.onContentChange());
-  const onSelectionChange = () =>
-    runGuarded(() => triggers.onSelectionChange());
   const onKeyDown = (args: any) =>
-    runGuarded(() => triggers.onKeyDown(args?.event?.key));
-  const onBlur = () => runGuarded(() => triggers.onEditorBlur());
+    runGuarded(() => {
+      const key = args?.event?.key;
+      triggers.onKeyDown(key);
+      // Backspace/Delete inside a locked control is refused by Syncfusion
+      // WITHOUT firing 'contentControl' - canEditContentControl short-circuits
+      // on lockContents before it reaches checkContentControlLocked (the only
+      // thing that fires the event). So surface the hint from here.
+      //
+      // Show it only for an in-cell edit, not a structural row/table delete
+      // (the delete guard owns that gesture and shows its own dialog).
+      // isRowSelected/isTableSelected can't tell them apart - a single locked
+      // cell reports isRowSelected true - so use the same test the guard uses:
+      // a genuine structural selection SPANS MULTIPLE CELLS, an in-cell edit
+      // does not.
+      const sel = editor.selection as {
+        start?: { paragraph?: { associatedCell?: unknown } };
+        end?: { paragraph?: { associatedCell?: unknown } };
+      } | null;
+      const startCell = sel?.start?.paragraph?.associatedCell;
+      const endCell = sel?.end?.paragraph?.associatedCell;
+      const spansMultipleCells =
+        !!startCell && !!endCell && startCell !== endCell;
+      if (
+        (key === 'Backspace' || key === 'Delete') &&
+        !spansMultipleCells &&
+        isLockedControl(caretControl())
+      )
+        showLockedHint();
+    });
+  const onBlur = () =>
+    runGuarded(() => {
+      triggers.onEditorBlur();
+      // Focus left the editor: drop the locked-edit hint so it can't linger.
+      resolveLockedHint();
+    });
+
+  // Syncfusion fires 'contentControl' whenever the caret sits in ANY control
+  // marked lockContentControl - which is every control we create - and it fires
+  // it even for the enclosing wrapper while the caret is in an editable inner
+  // field. So the event alone does NOT mean an edit was refused; suppress the
+  // hint when the caret is genuinely inside an editable control.
+  //
+  // Read currentContentControl DIRECTLY - never canEditContentControl. Its
+  // getter calls checkContentControlLocked, which re-fires 'contentControl',
+  // which re-enters this handler: an infinite loop (thanks @lanthony42).
+  let lockedHintTimer: TimerId | null = null;
+  let lockHintActive = false;
+  const scheduleTimeout = setTimeoutFn ?? ((fn, ms) => setTimeout(fn, ms));
+  const cancelTimeout = clearTimeoutFn ?? ((id) => clearTimeout(id as never));
+  const isLockedControl = (control: ContentControlLike | null): boolean => {
+    const props = control?.contentControlProperties as
+      | { lockContents?: boolean; type?: string }
+      | undefined;
+    return !!props && (!!props.lockContents || props.type === 'DropDownList');
+  };
+  const caretControl = (): ContentControlLike | null =>
+    editor.selection?.currentContentControl ?? null;
+  const showLockedHint = (): void => {
+    if (!onLockedEdit || isDeleteGuardBusy()) return;
+    lockHintActive = true;
+    if (lockedHintTimer !== null) return; // debounced: one hint per burst
+    onLockedEdit();
+    lockedHintTimer = scheduleTimeout(() => {
+      lockedHintTimer = null;
+    }, 600);
+  };
+  // Ends the debounce too: a stale re-show for the cell being left can start
+  // or hit the timer, and the next show after a resolve must always fire.
+  const resolveLockedHint = (): void => {
+    if (!lockHintActive) return;
+    lockHintActive = false;
+    if (lockedHintTimer !== null) {
+      cancelTimeout(lockedHintTimer);
+      lockedHintTimer = null;
+    }
+    onLockedEditResolved?.();
+  };
+  const onLockedControl = () =>
+    runGuarded(() => {
+      // The event means a lock was hit; the only false positive is the caret
+      // being in an editable inner field (its wrapper is what tripped it).
+      const control = caretControl();
+      if (control && !isLockedControl(control)) return;
+      showLockedHint();
+    });
+
+  // Dismiss the hint once the caret is no longer on a locked control; keep it
+  // up while a locked cell stays selected.
+  const onSelectionChange = () =>
+    runGuarded(() => {
+      // The adapter's own selections are not the user's caret: see
+      // isAdapterWriting. A flush from here mid-write is re-entrant.
+      if (isAdapterWriting() || isProgrammaticSelection()) return;
+      triggers.onSelectionChange();
+      if (!isLockedControl(caretControl())) resolveLockedHint();
+    });
 
   eventful.addEventListener?.('contentChange', onContentChange);
   eventful.addEventListener?.('selectionChange', onSelectionChange);
   eventful.addEventListener?.('keyDown', onKeyDown);
+  eventful.addEventListener?.('contentControl', onLockedControl);
   // Clicking into a toolbar or a side panel must not strand an edit.
   const editableDiv = editor.documentHelper?.editableDiv;
   editableDiv?.addEventListener?.('blur', onBlur);
@@ -209,14 +389,15 @@ export function attachBindings(
       // Set first: removing a listener can itself fire an event, and any stray
       // timer that fires after this point must find the handlers inert.
       disposed = true;
-      // React runs the host's instance.destroy() cleanup BEFORE this one, so by
-      // the time dispose runs the editor is often already torn down. Calling
-      // removeEventListener (and the un-patch helpers) on a destroyed Syncfusion
-      // instance can dereference its null internals and throw "Cannot convert
-      // undefined or null to object". dispose runs inside React's unmount commit,
-      // where a throw is caught by the nearest error boundary and takes the form
-      // down - so every step is isolated and a failure is logged, never thrown.
-      const step = (label: string, fn: () => void): void => {
+      // The host's destroy() often ran first; touching a destroyed editor
+      // throws, so skip those steps. Steps log, never throw (unmount commit).
+      const editorGone = !!(editor as { isDestroyed?: boolean }).isDestroyed;
+      const step = (
+        label: string,
+        fn: () => void,
+        touchesEditor = false
+      ): void => {
+        if (touchesEditor && editorGone) return;
         try {
           fn();
         } catch (error) {
@@ -227,18 +408,38 @@ export function attachBindings(
         }
       };
       step('unregister', () => unregisterBindingReconciler(editor));
-      step('contentChange', () =>
-        eventful.removeEventListener?.('contentChange', onContentChange)
+      step('recomputeHook', () => {
+        delete (editor as any).__robinRecomputeAfterResolve;
+      });
+      step(
+        'contentChange',
+        () => eventful.removeEventListener?.('contentChange', onContentChange),
+        true
       );
-      step('selectionChange', () =>
-        eventful.removeEventListener?.('selectionChange', onSelectionChange)
+      step(
+        'selectionChange',
+        () =>
+          eventful.removeEventListener?.('selectionChange', onSelectionChange),
+        true
       );
-      step('keyDown', () =>
-        eventful.removeEventListener?.('keyDown', onKeyDown)
+      step(
+        'keyDown',
+        () => eventful.removeEventListener?.('keyDown', onKeyDown),
+        true
       );
+      step(
+        'contentControl',
+        () => eventful.removeEventListener?.('contentControl', onLockedControl),
+        true
+      );
+      step('lockedHintTimer', () => {
+        if (lockedHintTimer !== null) cancelTimeout(lockedHintTimer);
+      });
       step('blur', () => editableDiv?.removeEventListener?.('blur', onBlur));
-      step('guard', () => uninstallGuard());
-      step('rowCommands', () => unwatchRowCommands());
+      step('guard', () => uninstallGuard(), true);
+      step('paste guard', () => uninstallPasteGuard(), true);
+      step('rowCommands', () => unwatchRowCommands(), true);
+      step('tableDelete', () => uninstallTableDelete(), true);
       step('triggers', () => triggers.dispose());
       // Cancels the deferred view restore, which would otherwise read
       // editor.selection ~60ms after the editor was destroyed.

@@ -29,14 +29,14 @@ type OPERATOR_CODE =
   | 'equal_length'
   | 'not_equal_length';
 
-export type FieldValueType = {
+type FieldValueType = {
   field_type: 'servar' | 'hidden';
   field_id: string;
   field_key: string;
 };
-export type ValueType = string | FieldValueType;
+type ValueType = string | FieldValueType;
 
-export interface ComparisonRule {
+interface ComparisonRule {
   field_type?: '' | 'servar' | 'hidden';
   hidden_field?: string | null;
   servar?: string | null;
@@ -327,7 +327,9 @@ const COMPARISON_FUNCTIONS: {
     l.some((l: any) =>
       someRight(
         (l, r) =>
-          String((l ?? '').toLowerCase()).includes((r ?? '').toLowerCase()),
+          String(l ?? '')
+            .toLowerCase()
+            .includes(String(r ?? '').toLowerCase()),
         l,
         r
       )
@@ -336,7 +338,9 @@ const COMPARISON_FUNCTIONS: {
     l.some((l: any) =>
       everyRight(
         (l, r) =>
-          !String((l ?? '').toLowerCase()).includes((r ?? '').toLowerCase()),
+          !String(l ?? '')
+            .toLowerCase()
+            .includes(String(r ?? '').toLowerCase()),
         l,
         r
       )

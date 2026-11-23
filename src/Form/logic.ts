@@ -32,7 +32,7 @@ import {
   withoutEmbeddedFieldUpdates
 } from '../utils/logicRuleResult';
 
-export function getAcornParsedNodes(input: string): Program | null {
+function getAcornParsedNodes(input: string): Program | null {
   let parsedNode: Program | null = null;
 
   try {
@@ -432,15 +432,14 @@ function extractJsElements(code: string): {
 export function extractExportedCodeInfoArray(
   sharedCodeInfoArray: SharedCodeInfo[]
 ): ExtractedSharedCodeInfo[] {
-  return sharedCodeInfoArray
-    .filter((codeInfo) => codeInfo.valid)
-    .map((codeInfo) => ({
-      key: codeInfo.key,
-      ...extractJsElements(codeInfo.code)
-    }));
+  // valid is a builder lint result, not a runtime gate (rules run regardless).
+  return sharedCodeInfoArray.map((codeInfo) => ({
+    key: codeInfo.key,
+    ...extractJsElements(codeInfo.code)
+  }));
 }
 
-export function replaceImportsWithDefinitions(
+function replaceImportsWithDefinitions(
   code: string,
   extractedSharedCodeInfo: ExtractedSharedCodeInfo[]
 ): string {
@@ -608,7 +607,7 @@ export const runClientSideLogic = async (
   );
 };
 
-export type RunLogicRuleResult = LogicRuleTransportResult;
+type RunLogicRuleResult = LogicRuleTransportResult;
 
 // A rule is user-authored JavaScript and may return any runtime value.
 // Recursively sanitize every dynamic value before it reaches addToolOutput.

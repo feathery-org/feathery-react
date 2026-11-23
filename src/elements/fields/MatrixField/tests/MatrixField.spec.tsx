@@ -1,34 +1,5 @@
-import {
-  createMatrixElement,
-  createMatrixProps,
-  createStatefulOnChange,
-  createOptionsMetadata,
-  createQuestionsMetadata,
-  createMultipleMatrixElement,
-  createSingleMatrixElement,
-  getMockFieldValue,
-  resetMockFieldValue,
-  setMockFieldValue,
-  getMatrixInputs,
-  getMatrixInput,
-  getQuestionInputs,
-  getColumnHeaders,
-  getQuestionRows,
-  getQuestionLabel,
-  expectMatrixInputToBeChecked,
-  expectMatrixInputToBeUnchecked,
-  expectMatrixInputType,
-  expectMatrixInputToBeDisabled,
-  expectMatrixInputToBeEnabled,
-  expectMatrixToHaveQuestionCount,
-  expectMatrixToHaveOptionCount,
-  expectQuestionToHaveTooltip,
-  expectQuestionToHaveHighlightColor,
-  expectMatrixToHaveValues,
-  expectFieldToBeDisabled,
-  expectFieldToHaveAriaLabel
-} from './test-utils';
 import React from 'react';
+import { createMatrixElement, createMatrixProps, createStatefulOnChange, createOptionsMetadata, createQuestionsMetadata, createMultipleMatrixElement, createSingleMatrixElement, resetMockFieldValue, setMockFieldValue, getMatrixInputs, getMatrixInput, getColumnHeaders, getQuestionLabel, expectMatrixInputToBeChecked, expectMatrixInputToBeUnchecked, expectMatrixInputType, expectMatrixInputToBeDisabled, expectMatrixInputToBeEnabled, expectMatrixToHaveQuestionCount, expectMatrixToHaveOptionCount, expectQuestionToHaveTooltip, expectQuestionToHaveHighlightColor, expectMatrixToHaveValues, expectFieldToBeDisabled } from './test-utils';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import MatrixField from '../index';
 
@@ -537,6 +508,27 @@ describe('MatrixField - Base Functionality', () => {
 
       const headers = getColumnHeaders();
       expect(headers[0].textContent).toBe('{{missing_field}}');
+    });
+  });
+});
+
+describe('MatrixField - DOM naming', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetMockFieldValue();
+  });
+
+  it('gives every option input a unique id alongside its group name', () => {
+    const element = createMatrixElement('matrix');
+    render(<MatrixField {...createMatrixProps(element)} />);
+
+    const inputs = getMatrixInputs();
+    expect(inputs.length).toBeGreaterThan(0);
+    const ids = inputs.map((input) => input.id);
+    expect(ids.every(Boolean)).toBe(true);
+    expect(new Set(ids).size).toBe(ids.length);
+    inputs.forEach((input) => {
+      expect(input.id.startsWith(`${input.name}-`)).toBe(true);
     });
   });
 });

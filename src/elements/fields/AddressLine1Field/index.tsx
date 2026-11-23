@@ -1,7 +1,7 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
-import { resetStyles } from '../../styles';
+import { inputBoxAttrs, resetStyles } from '../../styles';
 import FeatheryClient from '../../../utils/featheryClient';
 import useMounted from '../../../hooks/useMounted';
 import debounce from 'lodash.debounce';
@@ -20,6 +20,7 @@ function AddressLine1({
   responsiveStyles,
   fieldLabel,
   elementProps = {},
+  errorAttributes = {},
   disabled = false,
   autoComplete,
   editMode,
@@ -91,6 +92,7 @@ function AddressLine1({
               }
             : {}
         }}
+        {...inputBoxAttrs(servar.type)}
       >
         {customBorder}
         <input
@@ -114,6 +116,7 @@ function AddressLine1({
           placeholder=''
           disabled={disabled}
           aria-label={element.properties.aria_label}
+          {...errorAttributes}
           autoComplete={autoComplete === 'on' ? autocomplete : 'new-password'}
           value={value}
           ref={(ref) => {

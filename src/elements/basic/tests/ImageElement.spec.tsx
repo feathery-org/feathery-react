@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { renderToString } from 'react-dom/server';
 import { getRenderData } from '../../../utils/image';
 import { fieldValues } from '../../../utils/init';
+import ResponsiveStyles from '../../styles';
 import { PLACEHOLDER_IMAGE } from '../ImageElement';
 
 jest.mock('../../../utils/image', () => ({
@@ -11,13 +12,94 @@ jest.mock('../../../utils/image', () => ({
 const mockResponsiveStyles = {
   addTargets: jest.fn(),
   applyCorners: jest.fn(),
+  applyObjectFit: jest.fn(),
+  applyObjectPosition: jest.fn(),
   applyWidth: jest.fn(),
+  applyColor: jest.fn(),
   getTarget: jest.fn().mockReturnValue({})
 };
 
 describe('ImageElement', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('renders a stored glyph with its authored icon color', async () => {
+    const element = {
+      properties: {
+        uploaded_image_file_field_key: '',
+        aria_label: 'Heart icon',
+        icon_glyph: {
+          variant: 'outline',
+          nodes: [['path', { d: 'M12 5l0 14' }]]
+        }
+      },
+      styles: { icon_color: 'F5A623' },
+      mobile_styles: {},
+      repeat: 0
+    };
+    const responsiveStyles = new ResponsiveStyles(element, [], true);
+    const ImageElement = (await import('../ImageElement')).default;
+
+    render(
+      <ImageElement element={element} responsiveStyles={responsiveStyles} />
+    );
+
+    const icon = screen.getByRole('img', { name: 'Heart icon' });
+    expect(icon.tagName.toLowerCase()).toBe('svg');
+    expect(icon).toHaveAttribute('stroke', 'currentColor');
+    expect(responsiveStyles.getTarget('image').color).toBe('#F5A623');
+  });
+
+  it('leaves a stored glyph on its inherited default color', async () => {
+    const element = {
+      properties: {
+        uploaded_image_file_field_key: '',
+        aria_label: 'Default heart icon',
+        icon_glyph: {
+          variant: 'outline',
+          nodes: [['path', { d: 'M12 5l0 14' }]]
+        }
+      },
+      styles: {},
+      mobile_styles: {},
+      repeat: 0
+    };
+    const responsiveStyles = new ResponsiveStyles(element, [], true);
+    const ImageElement = (await import('../ImageElement')).default;
+
+    render(
+      <ImageElement element={element} responsiveStyles={responsiveStyles} />
+    );
+
+    const icon = screen.getByRole('img', { name: 'Default heart icon' });
+    expect(icon).toHaveAttribute('stroke', 'currentColor');
+    expect(responsiveStyles.getTarget('image').color).toBeUndefined();
+  });
+
+  it('names a stored glyph from its alt text like an uploaded image', async () => {
+    const element = {
+      properties: {
+        uploaded_image_file_field_key: '',
+        alt_text: 'Company logo',
+        aria_label: '',
+        icon_glyph: {
+          variant: 'outline',
+          nodes: [['path', { d: 'M12 5l0 14' }]]
+        }
+      },
+      styles: {},
+      mobile_styles: {},
+      repeat: 0
+    };
+    const responsiveStyles = new ResponsiveStyles(element, [], true);
+    const ImageElement = (await import('../ImageElement')).default;
+
+    render(
+      <ImageElement element={element} responsiveStyles={responsiveStyles} />
+    );
+
+    expect(screen.getByRole('img', { name: 'Company logo' })).toBeTruthy();
   });
 
   // EMPTY SOURCE
@@ -529,6 +611,28 @@ describe('ImageElement', () => {
         expect(embed).toHaveAttribute('aria-label', 'Signed agreement');
         expect(embed).not.toHaveAttribute('alt');
       });
+    });
+  });
+});
+
+describe('ImageElement DOM naming', () => {
+  it('names the rendered image', async () => {
+    const ImageElement = (await import('../ImageElement')).default;
+    render(
+      <ImageElement
+        element={{
+          properties: {
+            uploaded_image_file_field_key: 'imageKey',
+            source_image: ''
+          },
+          repeat: 0
+        }}
+        responsiveStyles={mockResponsiveStyles}
+        editMode
+      />
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('img').getAttribute('name')).toBe('image');
     });
   });
 });

@@ -1,6 +1,10 @@
 import React, { PropsWithChildren, useRef, useState } from 'react';
 import { StyledContainer, getCellStyle } from '../StyledContainer';
-import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
+import { nameProps } from '../../../utils/domName';
+import {
+  ACTION_STORE_FIELD,
+  elementHasClickLogic
+} from '../../../utils/elementActions';
 import HoverTooltip from '../../../elements/components/HoverTooltip';
 import { replaceTextVariables } from '../../../elements/components/TextNodes';
 import { isMobile as _isMobile } from '../../../utils/browser';
@@ -11,9 +15,9 @@ type ContainerProps = PropsWithChildren & {
   runElementActions?: any;
   selected?: boolean;
   form: {
-    activeStep?: { id?: string };
     formInstanceId?: string;
     formSettings: { mobileBreakpoint: number; assistantEnabled?: boolean };
+    logicRules?: any[];
   };
 };
 
@@ -40,7 +44,7 @@ export const Container = ({
   // icon-based InlineTooltip, so they must be excluded here.
   const tooltipText =
     !node.isElement && node.properties?.tooltipText
-      ? replaceTextVariables(node.properties.tooltipText, node.repeat)
+      ? replaceTextVariables(node.properties.tooltipText, node.repeat, true)
       : '';
   const isMobile = _isMobile();
   const tooltipHoverProps = tooltipText
@@ -63,16 +67,19 @@ export const Container = ({
       form.formSettings.mobileBreakpoint
     );
 
-    const selectableStyles =
-      actions.length > 0
-        ? {
-            cursor: 'pointer',
-            transition:
-              '0.2s ease opacity, color, background-color, border-width, border-color, outline, box-shadow',
-            ...(selected ? cellActiveStyle : {}),
-            '&:hover': cellHoverStyle
-          }
-        : {};
+    // A container with no click actions is still clickable if a logic rule
+    // runs on click
+    const clickable =
+      actions.length > 0 || elementHasClickLogic(form.logicRules, node, true);
+    const selectableStyles = clickable
+      ? {
+          cursor: 'pointer',
+          transition:
+            '0.2s ease opacity, color, background-color, border-width, border-color, outline, box-shadow',
+          ...(selected ? cellActiveStyle : {}),
+          '&:hover': cellHoverStyle
+        }
+      : {};
 
     handleClick = (e: any) => {
       const newActions = JSON.parse(JSON.stringify(actions));
@@ -104,10 +111,12 @@ export const Container = ({
         node={node}
         css={additionalCss}
         onClick={handleClick}
+        // Containers are named by their key so a click inside one is
+        // attributed to it rather than to an anonymous div
+        {...(node.isElement ? {} : nameProps(node.key))}
         viewport={viewport}
         breakpoint={form.formSettings.mobileBreakpoint}
         formId={form.formInstanceId}
-        stepId={form.activeStep?.id}
         assistantEnabled={form.formSettings.assistantEnabled}
         {...tooltipHoverProps}
       >

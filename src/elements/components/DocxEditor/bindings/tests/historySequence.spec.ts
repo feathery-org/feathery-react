@@ -9,6 +9,7 @@ import {
   SyncfusionEditorLike
 } from '../editorAdapter';
 import { bindingCommandSurfaceFor } from '../reconcileRegistry';
+import { applyNativeStructuralMutations } from '../nativeStructuralAdapter';
 import {
   destroyRealDocumentEditor,
   makeRealDocumentEditor
@@ -24,8 +25,9 @@ const costsRows = (editor: DocumentEditor) =>
   indexOf(editor).tables.get('costs')!.rows;
 
 const costsCell = (editor: DocumentEditor, rowId: string, column: string) =>
-  costsRows(editor).find((row) => row.rowId === rowId)?.bindings.get(column)
-    ?.text;
+  costsRows(editor)
+    .find((row) => row.rowId === rowId)
+    ?.bindings.get(column)?.text;
 
 const grandTotal = (editor: DocumentEditor) =>
   indexOf(editor).formulas.get('grand_total')![0].text;
@@ -120,13 +122,21 @@ describe('one native binding history timeline', () => {
     expect(costsRows(editor)).toHaveLength(2);
     const nameOf = () => indexOf(editor).fields.get('project.name')?.[0].text;
     let guard = 0;
-    while (nameOf() !== 'Website relaunch' && editor.editorHistory.canUndo() && guard < 4) {
+    while (
+      nameOf() !== 'Website relaunch' &&
+      editor.editorHistory.canUndo() &&
+      guard < 4
+    ) {
       editor.editorHistory.undo();
       guard += 1;
     }
     expect(nameOf()).toBe('Website relaunch');
 
-    while (nameOf() !== 'Bridge run' && editor.editorHistory.canRedo() && guard < 8) {
+    while (
+      nameOf() !== 'Bridge run' &&
+      editor.editorHistory.canRedo() &&
+      guard < 8
+    ) {
       editor.editorHistory.redo();
       guard += 1;
     }
@@ -243,5 +253,42 @@ describe('one native binding history timeline', () => {
     expect(costsCell(editor, 'r-1', 'quantity')).toBe('13');
     editor.editorHistory.undo();
     expect(costsCell(editor, 'r-1', 'quantity')).toBe('12');
+  });
+});
+
+describe('failed native binding transactions', () => {
+  it('reverses a direct control retag when a later mutation cannot apply', () => {
+    const control = { contentControlProperties: { tag: 'old-expression' } };
+    const editor = {
+      serialize: () =>
+        JSON.stringify({ tag: control.contentControlProperties.tag }),
+      editorModule: { initComplexHistory: jest.fn() },
+      editorHistoryModule: {
+        undoStackIn: [],
+        updateComplexHistory: jest.fn()
+      },
+      selection: {
+        select: jest.fn(),
+        selectContentControl: jest.fn()
+      },
+      documentHelper: { contentControlCollection: [control] }
+    };
+
+    expect(
+      applyNativeStructuralMutations(editor, [
+        {
+          kind: 'retag-control',
+          fromTag: 'old-expression',
+          toTag: 'new-expression'
+        },
+        {
+          kind: 'delete-row',
+          tableId: 'missing-table',
+          rowId: 'missing-row',
+          tag: 'missing-control'
+        }
+      ])
+    ).toBe(false);
+    expect(control.contentControlProperties.tag).toBe('old-expression');
   });
 });

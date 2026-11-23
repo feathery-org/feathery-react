@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   createPasswordElement,
   createPasswordProps,
@@ -6,7 +7,6 @@ import {
   resetMockFieldValue,
   expectFieldToBeDisabled
 } from './test-utils';
-import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import PasswordField from '../index';
 

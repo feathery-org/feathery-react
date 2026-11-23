@@ -1,5 +1,11 @@
 import React from 'react';
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import {
+  render,
+  screen,
+  fireEvent,
+  act,
+  waitFor
+} from '@testing-library/react';
 import AudioRecordingField from '../index';
 import { applyFieldStyles } from '../../index';
 import ResponsiveStyles from '../../../styles';
@@ -41,6 +47,29 @@ describe('AudioRecordingField', () => {
     render(<AudioRecordingField {...createAudioRecordingProps(element)} />);
 
     expect(screen.getByText('Record audio')).toBeTruthy();
+  });
+
+  it('renders a stored glyph with the authored icon color', () => {
+    const element = createAudioRecordingElement();
+    element.properties.icon_glyph = {
+      variant: 'outline',
+      nodes: [['path', { d: 'M12 5l0 14' }]]
+    };
+    element.styles.icon_color = 'F5A623';
+    const responsiveStyles = applyFieldStyles(
+      element,
+      new ResponsiveStyles(element, [], false)
+    );
+
+    const { container } = render(
+      <AudioRecordingField
+        {...createAudioRecordingProps(element, { responsiveStyles })}
+      />
+    );
+
+    const icon = container.querySelector('svg');
+    expect(icon).toHaveAttribute('stroke', 'currentColor');
+    expect(responsiveStyles.getTarget('img').color).toBe('#F5A623');
   });
 
   it('starts recording on click and shows the stop control', async () => {
@@ -151,7 +180,9 @@ describe('AudioRecordingField', () => {
     });
 
     expect(onChange).not.toHaveBeenCalled();
-    expect(screen.getByText('Nothing was recorded. Please try again')).toBeTruthy();
+    expect(
+      screen.getByText('Nothing was recorded. Please try again')
+    ).toBeTruthy();
   });
 
   it('releases the microphone when unmounted mid-recording', async () => {
@@ -329,6 +360,104 @@ describe('AudioRecordingField', () => {
     expect(second.size).toBeGreaterThan(first.size);
   });
 
+  it('starts playback state fresh when the value swaps to another recording', async () => {
+    // The field drops the old object URL before it assigns the next one, so
+    // the player is torn down between takes rather than reused
+    let urlCount = 0;
+    (global.URL as any).createObjectURL = jest.fn(
+      () => `blob:mock-audio-url-${++urlCount}`
+    );
+    const frames: FrameRequestCallback[] = [];
+    jest
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        frames.push(cb);
+        return frames.length;
+      });
+    jest.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+
+    const element = createAudioRecordingElement();
+    const first = Promise.resolve(new File(['first'], 'first.webm'));
+    const second = Promise.resolve(new File(['second-take'], 'second.webm'));
+    const Host = ({ file }: { file: any }) => (
+      <AudioRecordingField
+        {...createAudioRecordingProps(element, { initialFile: file })}
+      />
+    );
+    const { container, rerender } = render(<Host file={first} />);
+    await waitFor(() => screen.getByRole('button', { name: 'Play recording' }));
+
+    const audio = container.querySelector('audio') as any;
+    Object.defineProperty(audio, 'duration', { value: 10, configurable: true });
+    Object.defineProperty(audio, 'currentTime', {
+      value: 4,
+      configurable: true
+    });
+    await act(async () => {
+      fireEvent.durationChange(audio);
+      fireEvent.play(audio);
+      fireEvent.timeUpdate(audio);
+    });
+    await waitFor(() => screen.getByText('0:04 / 0:10'));
+    expect(
+      screen.getByRole('button', { name: 'Pause recording' })
+    ).toBeTruthy();
+
+    await act(async () => {
+      rerender(<Host file={second} />);
+    });
+    await waitFor(() =>
+      expect(container.querySelector('audio')?.getAttribute('src')).toBe(
+        'blob:mock-audio-url-2'
+      )
+    );
+
+    // The new take owns the readout: no borrowed duration, no borrowed progress
+    expect(screen.getByText('0:00 / 0:00')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Play recording' })).toBeTruthy();
+  });
+
+  it('starts the readout fresh on the take that follows a re-record', async () => {
+    const element = createAudioRecordingElement();
+    const { container } = render(
+      <AudioRecordingField {...createAudioRecordingProps(element)} />
+    );
+
+    await startRecording();
+    advanceClock(2);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Stop recording'));
+    });
+    await waitFor(() => screen.getByRole('button', { name: 'Play recording' }));
+
+    // Drive the first take partway, so anything carried over would show
+    const audio = container.querySelector('audio') as any;
+    Object.defineProperty(audio, 'duration', { value: 10, configurable: true });
+    Object.defineProperty(audio, 'currentTime', {
+      value: 4,
+      configurable: true
+    });
+    await act(async () => {
+      fireEvent.durationChange(audio);
+      fireEvent.timeUpdate(audio);
+    });
+    await waitFor(() => screen.getByText('0:04 / 0:10'));
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Clear recording'));
+    });
+    await startRecording();
+    advanceClock(3);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Stop recording'));
+    });
+    await waitFor(() => screen.getByRole('button', { name: 'Play recording' }));
+
+    // The new take has reported nothing yet, so the readout falls back to the
+    // length the recorder timed, not the previous take's numbers
+    expect(screen.getByText('0:00 / 0:03')).toBeTruthy();
+  });
+
   it('never seeks the element when the browser reports no duration', async () => {
     const onChange = jest.fn();
     const element = createAudioRecordingElement();
@@ -400,7 +529,9 @@ describe('AudioRecordingField', () => {
     });
 
     expect(onChange).not.toHaveBeenCalled();
-    expect(screen.getByText('Nothing was recorded. Please try again')).toBeTruthy();
+    expect(
+      screen.getByText('Nothing was recorded. Please try again')
+    ).toBeTruthy();
   });
 
   it('shows an error message when microphone permission is denied', async () => {
@@ -411,6 +542,30 @@ describe('AudioRecordingField', () => {
     await startRecording();
 
     expect(screen.getByText('Microphone access was denied')).toBeTruthy();
+  });
+
+  it('turns a stored glyph the recording color with its message', async () => {
+    mocks.getUserMedia.mockRejectedValue(new Error('denied'));
+    const element = createAudioRecordingElement();
+    element.properties.icon_glyph = {
+      variant: 'outline',
+      nodes: [['path', { d: 'M12 5l0 14' }]]
+    };
+    element.styles.icon_color = 'F5A623';
+    const responsiveStyles = applyFieldStyles(
+      element,
+      new ResponsiveStyles(element, [], false)
+    );
+    const { container } = render(
+      <AudioRecordingField
+        {...createAudioRecordingProps(element, { responsiveStyles })}
+      />
+    );
+
+    await startRecording();
+
+    const iconWrapper = container.querySelector('svg')!.parentElement!;
+    expect(getComputedStyle(iconWrapper).color).toBe('rgb(229, 57, 53)');
   });
 
   it('does not record when disabled or in edit mode', async () => {
@@ -593,6 +748,12 @@ describe('AudioRecordingField', () => {
     Object.defineProperty(audio, 'duration', { value: 10, configurable: true });
     await act(async () => {
       fireEvent.durationChange(audio);
+    });
+    // Let the reported duration reach the readout first, so the assertion
+    // below cannot straddle an effect that has yet to flush
+    await waitFor(() => screen.getByText('0:00 / 0:10'));
+
+    await act(async () => {
       fireEvent.play(audio);
     });
 
@@ -602,6 +763,6 @@ describe('AudioRecordingField', () => {
       frames.splice(0).forEach((frame) => frame(0));
     });
 
-    expect(screen.getByText('0:04 / 0:10')).toBeTruthy();
+    await waitFor(() => screen.getByText('0:04 / 0:10'));
   });
 });

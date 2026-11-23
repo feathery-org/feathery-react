@@ -3,6 +3,12 @@ import Slider from '@rc-component/slider';
 import { hoverStylesGuard } from '../../../utils/browser';
 
 import SliderStyles from './styles';
+import HiddenValueInput from '../../components/HiddenValueInput';
+import {
+  alignToSlider,
+  getSliderRange,
+  getSliderStep
+} from '../../../utils/valueBounds';
 
 export default function SliderField({
   element,
@@ -14,6 +20,8 @@ export default function SliderField({
   rightToLeft,
   onChange = () => {},
   elementProps = {},
+  errorAttributes = {},
+  linkedValues,
   children
 }: any) {
   const [internalValue, setInternalValue] = useState(fieldVal);
@@ -23,11 +31,17 @@ export default function SliderField({
   }, [fieldVal]);
 
   const servar = element.servar;
-  const minVal = servar.min_length ?? 0;
-  const maxVal = servar.max_length ?? 100;
+  // linkedValues holds source sliders as submit settles them
+  const { min: minVal, max: maxVal } = getSliderRange(servar, linkedValues);
+  // A linked range can move under the value and rc-slider snaps the handle into
+  // it, so show the label and input the same way, as submit will store it
+  const shownValue =
+    typeof internalValue === 'number'
+      ? alignToSlider(internalValue, servar, linkedValues)
+      : internalValue;
   const minLabel = servar.metadata.min_val_label || minVal;
   const maxLabel = servar.metadata.max_val_label || maxVal;
-  const stepSize = servar.metadata.step_size || 1;
+  const stepSize = getSliderStep(servar);
 
   return (
     <div
@@ -81,7 +95,16 @@ export default function SliderField({
             onChange(val);
           }}
           aria-label={element.properties.aria_label}
+          // The handle is the element the user drags, so it carries the
+          // field key like a native control would
+          handleRender={(handle) =>
+            React.cloneElement(handle, {
+              name: servar.key,
+              ...errorAttributes
+            } as any)
+          }
         />
+        <HiddenValueInput name={servar.key} value={shownValue} />
       </div>
       <div
         css={{
@@ -95,7 +118,7 @@ export default function SliderField({
           css={{ opacity: 0, transition: '0.2s ease opacity 0.3s' }}
           className='current-value'
         >
-          {internalValue}
+          {shownValue}
         </span>
         <span>{maxLabel}</span>
       </div>

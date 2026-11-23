@@ -42,7 +42,7 @@ const MoreIcon = (p: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-export interface DocxToolbarProps extends ToolbarActionsProps {
+interface DocxToolbarProps extends ToolbarActionsProps {
   /** Live Syncfusion DocumentEditor instance. */
   editor: any;
   readOnly?: boolean;

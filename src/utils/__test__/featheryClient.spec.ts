@@ -6,6 +6,11 @@ import {
   MIN_UPLOADING_MS,
   setUploadIndicatorEnabled
 } from '../fileUploadProgress';
+import { featheryWindow } from '../browser';
+import {
+  FEATHERY_INTERACTION_EVENT,
+  setInteractionDetected
+} from '../interactionState';
 
 /**
  * Tests for FeatheryClient._getFileValue method and resolveFile logic
@@ -389,10 +394,6 @@ describe('FeatheryClient - _submitFileData optional field handling', () => {
     };
 
     try {
-      await mockOfflineRequestHandler.clearFailedRequestByUrl(url, {
-        fieldKey: servar.key
-      });
-
       const result = await mockOfflineRequestHandler.runOrSaveRequest(
         () => mockFetch(url, options),
         url,
@@ -423,7 +424,6 @@ describe('FeatheryClient - _submitFileData optional field handling', () => {
 
     // Mock offlineRequestHandler
     mockOfflineRequestHandler = {
-      clearFailedRequestByUrl: jest.fn().mockResolvedValue(undefined),
       runOrSaveRequest: jest.fn(async (fetchFn) => {
         return await fetchFn();
       })
@@ -456,12 +456,6 @@ describe('FeatheryClient - _submitFileData optional field handling', () => {
 
     // Should make request with file
     expect(mockOfflineRequestHandler.runOrSaveRequest).toHaveBeenCalled();
-    expect(
-      mockOfflineRequestHandler.clearFailedRequestByUrl
-    ).toHaveBeenCalledWith(
-      expect.stringContaining('api/panel/step/submit/file'),
-      { fieldKey: 'FileUpload12' }
-    );
   });
 
   it('should make clear request when previously filled field is emptied', async () => {
@@ -476,7 +470,6 @@ describe('FeatheryClient - _submitFileData optional field handling', () => {
 
     // Reset mocks
     mockOfflineRequestHandler.runOrSaveRequest.mockClear();
-    mockOfflineRequestHandler.clearFailedRequestByUrl.mockClear();
 
     // Second submission with empty field (file removed)
     await submitFileData(servar, 'Step 1', null);
@@ -519,17 +512,12 @@ describe('FeatheryClient - _submitFileData optional field handling', () => {
     // Should make exactly ONE request (for the field with file)
     // This currently FAILS because empty field also makes a request
     expect(mockOfflineRequestHandler.runOrSaveRequest).toHaveBeenCalledTimes(1);
-    expect(
-      mockOfflineRequestHandler.clearFailedRequestByUrl
-    ).toHaveBeenCalledWith(
-      expect.stringContaining('api/panel/step/submit/file'),
-      { fieldKey: 'FileUpload12' }
-    );
   });
 });
 
 jest.mock('../init', () => ({
   initInfo: jest.fn(),
+  normalizeKnownAsciiValues: (values: any) => values,
   initFormsPromise: Promise.resolve(),
   initState: { formSessions: {} },
   fieldValues: {},
@@ -539,6 +527,96 @@ jest.mock('../init', () => ({
 }));
 
 describe('FeatheryClient - using api helpers', () => {
+  describe('runComputerAgent', () => {
+    const userId = 'userId';
+    let featheryClient: FeatheryClient;
+
+    const okJson = (status: number, body: any) => ({
+      ok: status < 400,
+      status,
+      json: jest.fn().mockResolvedValue(body),
+      text: jest.fn().mockResolvedValue('')
+    });
+
+    const triggered = { run_id: 'run_1', run_url: 'https://app/runs/run_1' };
+    const running = { status: 'incomplete', run_status: 'running' };
+    const finished = {
+      status: 'complete',
+      run_status: 'succeeded',
+      result: { total: '12.00' },
+      data: {},
+      file_values: { statements: ['s3/statement.pdf'] }
+    };
+
+    // Route by URL so a poll tick can never consume the trigger response
+    // (or a later test's queue); the completion endpoint answers `running`
+    // once, then `finished`.
+    const mockRun = () => {
+      let polls = 0;
+      (global.fetch as jest.Mock).mockImplementation((url: string) =>
+        Promise.resolve(
+          url.includes('/completion/')
+            ? okJson(200, polls++ === 0 ? running : finished)
+            : okJson(201, triggered)
+        )
+      );
+    };
+
+    const waitUntil = async (condition: () => boolean) => {
+      const deadline = Date.now() + 2000;
+      while (!condition()) {
+        if (Date.now() > deadline) throw new Error('condition not met');
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      global.fetch = jest.fn();
+      (initInfo as jest.Mock).mockReturnValue({ sdkKey: 'sdkKey', userId });
+      featheryClient = new FeatheryClient('formKey');
+      featheryClient.AI_CHECK_INTERVAL = 1;
+      featheryClient.COMPUTER_AGENT_MAX_TIME = 1000;
+      mockRun();
+    });
+
+    it('returns the trigger payload before the run finishes and reports completion', async () => {
+      const onComplete = jest.fn();
+
+      const res = await featheryClient.runComputerAgent('agent_1', {
+        onComplete
+      });
+
+      expect(res).toEqual({ ok: true, payload: triggered });
+      expect(onComplete).not.toHaveBeenCalled();
+
+      await waitUntil(() => onComplete.mock.calls.length > 0);
+
+      expect(onComplete).toHaveBeenCalledWith(finished);
+      const pollUrl = (global.fetch as jest.Mock).mock.calls
+        .map(([url]) => url)
+        .find((url: string) => url.includes('/completion/'));
+      expect(pollUrl).toBe(
+        `${API_URL}computer-agent/run/completion/?fid=${userId}&rid=run_1`
+      );
+    });
+
+    it('awaits the terminal payload when waitForCompletion is set', async () => {
+      const onStatusUpdate = jest.fn();
+
+      const res = await featheryClient.runComputerAgent('agent_1', {
+        waitForCompletion: true,
+        onStatusUpdate
+      });
+
+      expect(res).toEqual({ ok: true, payload: { ...triggered, ...finished } });
+      expect(onStatusUpdate.mock.calls.map(([d]) => d)).toEqual([
+        running,
+        finished
+      ]);
+    });
+  });
+
   describe('runAIExtraction', () => {
     const formKey = 'formKey';
     const userId = 'userId';
@@ -865,7 +943,6 @@ describe('FeatheryClient - _submitFileData upload progress', () => {
   const stubHandler = (run: (onQueued: () => void) => Promise<any>) => {
     (featheryClient as any).offlineRequestHandler = {
       resetRetryAttemptsByUrl: jest.fn().mockResolvedValue(undefined),
-      clearFailedRequestByUrl: jest.fn().mockResolvedValue(undefined),
       runOrSaveRequest: jest.fn(
         (_run, _url, _options, _type, _stepKey, _metadata, onQueued) => {
           onQueuedArg = onQueued;
@@ -955,5 +1032,71 @@ describe('FeatheryClient - _submitFileData upload progress', () => {
 
     // The replay engine still owns this row, so it must not read as an error
     expect(statusOf('queuedThrew')).toEqual('queued');
+  });
+});
+
+describe('FeatheryClient.registerEvent - before interaction', () => {
+  const userId = 'userId';
+  let featheryClient: FeatheryClient;
+
+  const okJson = (status: number, body: any) => ({
+    ok: status < 400,
+    status,
+    json: jest.fn().mockResolvedValue(body),
+    text: jest.fn().mockResolvedValue('')
+  });
+
+  const waitUntil = async (condition: () => boolean) => {
+    const deadline = Date.now() + 2000;
+    while (!condition()) {
+      if (Date.now() > deadline) throw new Error('condition not met');
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    global.fetch = jest.fn();
+    (initInfo as jest.Mock).mockReturnValue({ sdkKey: 'sdkKey', userId });
+    featheryClient = new FeatheryClient('formKey');
+  });
+
+  // Before interaction is detected, registerEvent() holds the call in the
+  // user-event queue; eventQueue is left alone (openUrl and others await it on
+  // forms nobody has touched yet) and whenUserEventsReplayed() tracks the hold.
+  it('holds a pre-interaction event until replay without touching eventQueue', async () => {
+    let resolveFetch: ((value: any) => void) | undefined;
+    (global.fetch as jest.Mock).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        })
+    );
+    const eventQueueBefore = featheryClient.eventQueue;
+
+    const registered = featheryClient.registerEvent({
+      event: 'load',
+      step_key: 'step-1'
+    });
+
+    let replayed = false;
+    featheryClient.whenUserEventsReplayed().then(() => {
+      replayed = true;
+    });
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(featheryClient.eventQueue).toBe(eventQueueBefore);
+    expect(replayed).toBe(false);
+    expect(global.fetch).not.toHaveBeenCalled();
+
+    // Mirrors markInteraction: mark interaction detected and dispatch the
+    // event FeatheryClient listens for, which replays the queued event.
+    setInteractionDetected();
+    featheryWindow().dispatchEvent(new CustomEvent(FEATHERY_INTERACTION_EVENT));
+
+    await waitUntil(() => (global.fetch as jest.Mock).mock.calls.length > 0);
+    resolveFetch?.(okJson(200, {}));
+
+    await registered;
+    await waitUntil(() => replayed);
   });
 });

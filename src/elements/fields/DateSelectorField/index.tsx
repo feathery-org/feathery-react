@@ -7,7 +7,7 @@ import DateSelectorStyles, {
   DATEPICKER_PADDING_TOP_VALUE,
   PORTAL_CONTAINER_CLASS
 } from './styles';
-import { resetStyles } from '../../styles';
+import { inputBoxAttrs, resetStyles } from '../../styles';
 import { parseISO, add } from 'date-fns';
 import useBorder from '../../components/useBorder';
 import {
@@ -35,6 +35,7 @@ export interface DateSelectorProps {
   responsiveStyles?: any;
   fieldLabel?: string;
   elementProps?: any;
+  errorAttributes?: React.AriaAttributes;
   required?: boolean;
   disabled?: boolean;
   repeatIndex?: number;
@@ -82,6 +83,7 @@ function DateSelectorField({
   responsiveStyles,
   fieldLabel,
   elementProps = {},
+  errorAttributes = {},
   required = false,
   disabled = false,
   repeatIndex,
@@ -274,11 +276,15 @@ function DateSelectorField({
             height: '100%'
           }
         }}
+        {...inputBoxAttrs(element.servar.type)}
       >
         {customBorder}
         <DateSelectorStyles />
         <DatePicker
+          ariaInvalid={errorAttributes['aria-invalid']?.toString()}
+          ariaDescribedBy={errorAttributes['aria-describedby']}
           id={element.servar.key}
+          name={element.servar.key}
           selected={internalDate}
           // Many modern browsers do not support autocomplete="off".
           // In order to avoid the autoComplete, use autocomplete="new-password"
@@ -330,6 +336,9 @@ function DateSelectorField({
           showYearDropdown
           forceShowMonthNavigation={false}
           dropdownMode='select'
+          // Always render six week rows so the popup keeps the same height
+          // across months and doesn't jump or reposition while navigating
+          fixedHeight
           // Open up calendar as a modal in mobile
           withPortal={isMobile}
           portalId={isMobile ? 'feathery-portal' : undefined}

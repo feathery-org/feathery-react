@@ -15,10 +15,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { FormContext } from './types/Form';
 import LoginForm from './auth/LoginForm';
 import useAuthClient from './auth/useAuthClient';
-import { AssistantChat } from './assistant';
 import { resolveLabelStyle } from './elements/utils/labelStyleResolver';
 import { getImageAltText } from './utils/accessibility';
 import DocxEditor, { DocxEditorProps } from './elements/components/DocxEditor';
+import { createFormToolActions } from './robin/frontendToolBridge/handlers';
 import './utils/polyfills';
 
 const mountedForms: Record<string, Root> = {};
@@ -86,10 +86,10 @@ export {
   renderAt,
   LoginForm,
   useAuthClient,
-  AssistantChat,
   Feathery,
   StyledContainer,
-  DocxEditor
+  DocxEditor,
+  createFormToolActions
 };
 
 export type { OPERATOR_CODE, FormContext, DocxEditorProps };
