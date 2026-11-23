@@ -26,11 +26,13 @@ import {
 import { stepPageKey, trapTabKey, isEditableTarget } from './keyboard';
 
 export type ReviewEnvelopeAction = 'sign' | 'fill' | 'download' | 'save';
-export type EditorToolbarAction = ReviewEnvelopeAction | 'draft';
+export type EditorToolbarAction = ReviewEnvelopeAction | 'draft' | 'print';
 
 // Toolbar buttons render in this order, so the rightmost (primary) action is
-// the most conclusive one the filler configured.
+// the most conclusive one the filler configured. Print is least conclusive: it
+// only hands the filler paper copies.
 const TOOLBAR_ACTION_ORDER: EditorToolbarAction[] = [
+  'print',
   'download',
   'save',
   'draft',
@@ -41,7 +43,8 @@ const TOOLBAR_ACTION_LABELS: Record<EditorToolbarAction, string> = {
   fill: 'Continue',
   download: 'Download',
   save: 'Save',
-  draft: 'Create Draft'
+  draft: 'Create Draft',
+  print: 'Print'
 };
 
 // Actions that close the editor when pressed. Everything else runs its outcome
@@ -60,8 +63,8 @@ const CLOSING_TOOLBAR_ACTIONS: EditorToolbarAction[] = [
 
 /** Whether pressing `action` should close the editor, given what the toolbar
  * offers. Anything not inherently conclusive closes only when it is the
- * highest-priority action available — so Download closes only when it stands
- * alone, and Save only when no signing action is offered. */
+ * highest-priority action available — so Print and Download close only when
+ * they stand alone, and Save only when no signing action is offered. */
 export const closesEditor = (
   action: EditorToolbarAction,
   available: EditorToolbarAction[]
@@ -72,6 +75,8 @@ export const closesEditor = (
 };
 // A draft button finalizes as a sign with draft=true — DocuSign is the only
 // backend with a draft state, so there is no separate envelope action for it.
+// Print finalizes as a download with print=true: the same files, sent to the
+// browser's print dialog instead of saved.
 const TOOLBAR_ACTION_ENVELOPE_ACTION: Record<
   EditorToolbarAction,
   ReviewEnvelopeAction
@@ -80,7 +85,8 @@ const TOOLBAR_ACTION_ENVELOPE_ACTION: Record<
   fill: 'fill',
   download: 'download',
   save: 'save',
-  draft: 'sign'
+  draft: 'sign',
+  print: 'download'
 };
 
 const MAX_PAGE_WIDTH = 900;
@@ -224,6 +230,8 @@ interface DocumentViewerProps {
     envelopeAction: ReviewEnvelopeAction;
     // DocuSign sign only: save the envelope as a draft instead of sending it.
     draft: boolean;
+    // Download only: print the finalized files instead of saving them.
+    print: boolean;
     // Replace the documents on the DocuSign draft this session already
     // created, because the filler edited them since.
     refreshDraft: boolean;
@@ -553,6 +561,7 @@ export default function DocumentViewer({
         envelopes: reviewedEnvelopes,
         envelopeAction: TOOLBAR_ACTION_ENVELOPE_ACTION[toolbarAction],
         draft: toolbarAction === 'draft',
+        print: toolbarAction === 'print',
         refreshDraft,
         completes: outcome !== 'stay'
       });
