@@ -103,6 +103,58 @@ describe('PowerPoint slide copies', () => {
       }, 20000);
     }
 
+  it("lands a copy written without the deck's shape names, keeping those of the slide it copies", () => {
+    const deck = openDeck('template1-text-group.pptx');
+    const node = JSON.parse(JSON.stringify(deck.read(SLIDE)));
+    const withoutDeckNames = (shape: Node) => {
+      delete shape.shapeId;
+      delete shape.name;
+      delete shape.placeholder;
+      (shape.shapes ?? []).forEach(withoutDeckNames);
+    };
+    node.shapes.forEach(withoutDeckNames);
+    const result = deck.write({
+      intent: 'Copy the slide.',
+      scope: { ids: [SLIDE] },
+      changes: [{ kind: 'insert_after', anchor: SLIDE, node }]
+    });
+    expect(result).toEqual(
+      expect.objectContaining({ ok: true, committed: true })
+    );
+    const slides = (deck.call('outline', {}) as { lines: string }).lines
+      .split('\n')
+      .map((line) => line.trim().split(' ')[0]);
+    const copy = slides[slides.indexOf(SLIDE) + 1];
+    expect(content(deck.read(copy))).toEqual(content(deck.read(SLIDE)));
+  }, 20000);
+
+  it('lands a copy written with only its text, keeping everything else of what it copies', () => {
+    const deck = openDeck('template1-text-group.pptx');
+    const node = JSON.parse(JSON.stringify(deck.read(SLIDE)));
+    const onlyText = (shape: Node) => {
+      delete shape.frame;
+      for (const paragraph of shape.paragraphs ?? [])
+        paragraph.runs = paragraph.runs.map((run: Node) =>
+          run.kind === 'run' ? { id: run.id, kind: 'run', text: run.text } : run
+        );
+      (shape.shapes ?? []).forEach(onlyText);
+    };
+    node.shapes.forEach(onlyText);
+    const result = deck.write({
+      intent: 'Copy the slide.',
+      scope: { ids: [SLIDE] },
+      changes: [{ kind: 'insert_after', anchor: SLIDE, node }]
+    });
+    expect(result).toEqual(
+      expect.objectContaining({ ok: true, committed: true })
+    );
+    const slides = (deck.call('outline', {}) as { lines: string }).lines
+      .split('\n')
+      .map((line) => line.trim().split(' ')[0]);
+    const copy = slides[slides.indexOf(SLIDE) + 1];
+    expect(content(deck.read(copy))).toEqual(content(deck.read(SLIDE)));
+  }, 20000);
+
   it('keeps every slide id on its slide when copies go before and after the original in one write', () => {
     const deck = openDeck('template1-text-group.pptx');
     const titleOf = (id: string) =>

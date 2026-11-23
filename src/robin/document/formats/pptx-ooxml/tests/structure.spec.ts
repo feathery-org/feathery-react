@@ -913,21 +913,43 @@ describe('PowerPoint tables', () => {
     expect(deck.find('Grouped', 'turn-2')).toHaveLength(1);
   });
 
-  it('refuses a copied header row still marked as merged, saying how to write it', () => {
+  const unmerge = (row: Node) =>
+    row.cells.forEach((cell: Node) => {
+      for (const mark of ['gridSpan', 'rowSpan', 'hMerge', 'vMerge'])
+        delete cell[mark];
+    });
+
+  it.each([
+    ['a header merged across columns, as read', 0, false],
+    ['a header merged across columns, without its merge marks', 0, true],
+    ['a row merged with the row below, as read', 3, false],
+    ['a row merged with the row below, without its merge marks', 3, true]
+  ])('adds a copy of %s as a row of its own', (_, from, strip) => {
     const { deck } = deckWithTable();
     mergeHeader(deck);
-    const result = replaceTable(
-      deck,
-      tableIn(deck, 'turn-2'),
-      (node) => {
-        node.rows.splice(1, 0, JSON.parse(JSON.stringify(node.rows[0])));
-      },
-      'turn-2'
+    expectCard(
+      replaceTable(
+        deck,
+        tableIn(deck, 'turn-2'),
+        (node) => {
+          const copy = JSON.parse(JSON.stringify(node.rows[from]));
+          if (strip) unmerge(copy);
+          node.rows.push(copy);
+        },
+        'turn-2'
+      )
     );
-    expectLimits(result);
-    expect(JSON.stringify(result)).toContain(
-      'is a new cell written with gridSpan'
-    );
+    acceptAll(deck);
+    const rows = deck.read(tableIn(deck, 'turn-3'), 'turn-3').rows;
+    expect(
+      rows
+        .at(-1)
+        .cells.map((cell: Node) =>
+          ['gridSpan', 'rowSpan', 'hMerge', 'vMerge'].filter(
+            (mark) => cell[mark]
+          )
+        )
+    ).toEqual([[], []]);
   });
 
   it('refuses adding or removing a column across cells merged over columns', () => {
