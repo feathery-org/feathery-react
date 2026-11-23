@@ -1,5 +1,6 @@
 import type { NfNode } from '../../../tree';
 import { canonicalJson, clone } from '../../../tree';
+import { highlightKey } from '../native';
 import { szToPt } from '../../../../../elements/components/PptxEditor/core/model/units';
 import {
   child,
@@ -34,11 +35,21 @@ export const isRunNode = (node: ONode) => (tagOf(node) ?? '') in RUN_KINDS;
 export const shapeIdOf = (node: ONode) =>
   getAttr(descendant(node, 'p:cNvPr') ?? {}, 'id') ?? '';
 
+export const MERGE_MARKS = ['gridSpan', 'rowSpan', 'hMerge', 'vMerge'];
+
+// Files often write a span of 1 or a merge of 0, which is no merge
+export const isMerge = (mark: string, value: string | undefined) =>
+  mark === 'gridSpan' || mark === 'rowSpan'
+    ? Number(value) > 1
+    : value === '1' || value === 'true';
+
 export interface ReadNodes {
   residue: Record<string, ONode>;
   sources: Map<NfNode, ONode>;
   inherited?: Record<string, Record<string, Record<string, unknown>>>;
   links?: Record<string, string>;
+  highlights?: Record<string, string>;
+  slidePath?: string;
 }
 
 function withSlots(node: ONode, isModeled: (kid: ONode) => boolean): ONode {
@@ -84,7 +95,10 @@ function placeholderOf(node: ONode): string | undefined {
 }
 
 /** A run's own formatting: only what its own properties set, never what it inherits */
-function ownRunFormat(rPr: ONode | undefined): Record<string, unknown> {
+function ownRunFormat(
+  rPr: ONode | undefined,
+  read: ReadNodes
+): Record<string, unknown> {
   if (!rPr) return {};
   const out: Record<string, unknown> = {};
   const flag = (name: string) => {
@@ -98,6 +112,8 @@ function ownRunFormat(rPr: ONode | undefined): Record<string, unknown> {
   const size = getAttr(rPr, 'sz');
   const fill = child(rPr, 'a:solidFill');
   const rgb = fill && child(fill, 'a:srgbClr');
+  const highlight = child(rPr, 'a:highlight');
+  const highlightRgb = highlight && child(highlight, 'a:srgbClr');
   const latin = child(rPr, 'a:latin');
   if (bold !== undefined) out.bold = bold;
   if (italic !== undefined) out.italic = italic;
@@ -105,6 +121,12 @@ function ownRunFormat(rPr: ONode | undefined): Record<string, unknown> {
   if (strike !== undefined) out.strike = strike !== 'noStrike';
   if (size !== undefined) out.size = szToPt(Number(size));
   if (rgb) out.color = `#${(getAttr(rgb, 'val') ?? '').toUpperCase()}`;
+  if (highlightRgb)
+    out.highlight = `#${(getAttr(highlightRgb, 'val') ?? '').toUpperCase()}`;
+  else if (highlight && read.slidePath !== undefined) {
+    const shown = read.highlights?.[highlightKey(read.slidePath, highlight)];
+    if (shown) out.highlight = shown;
+  }
   if (latin && getAttr(latin, 'typeface'))
     out.font = getAttr(latin, 'typeface');
   return out;
@@ -143,7 +165,8 @@ function readRun(node: ONode, id: string, read: ReadNodes): NfNode {
   const kind = RUN_KINDS[tagOf(node) as string];
   const run: NfNode = { id, kind, text: runText(node) };
   if (kind === 'field') run.field = getAttr(node, 'type') ?? 'field';
-  if (kind !== 'break') Object.assign(run, ownRunFormat(child(node, 'a:rPr')));
+  if (kind !== 'break')
+    Object.assign(run, ownRunFormat(child(node, 'a:rPr'), read));
   read.residue[id] = clone(node);
   read.sources.set(run, node);
   return run;
@@ -225,9 +248,11 @@ function readTable(table: ONode, frame: NfNode, read: ReadNodes): ONode {
           const cellId = `${rowId}c${c}`;
           const txBody = child(cell, 'a:txBody');
           const out: NfNode = { id: cellId, kind: 'cell' };
-          for (const span of ['gridSpan', 'rowSpan', 'hMerge', 'vMerge']) {
-            const value = getAttr(cell, span);
-            if (value !== undefined) out[span] = Number(value) || 1;
+          for (const mark of MERGE_MARKS) {
+            const value = getAttr(cell, mark);
+            if (isMerge(mark, value))
+              out[mark] =
+                mark === 'gridSpan' || mark === 'rowSpan' ? Number(value) : 1;
           }
           out.paragraphs = txBody ? readParagraphs(txBody, cellId, read) : [];
           read.residue[cellId] = txBody

@@ -14,9 +14,11 @@ import {
   editorIdentity,
   emptyRuns,
   inheritedFormat,
+  noHighlight,
   othersOf,
   reject,
-  resolveGroup
+  resolveGroup,
+  tableSize
 } from './projections';
 import { plan } from './reconcile';
 import { deckSeam } from './seams/deck';
@@ -51,7 +53,14 @@ export const pptxPack: Pack = {
   projections: {
     accept,
     reject,
-    normalizations: [emptyRuns, adjacentLinks, inheritedFormat, editorIdentity],
+    normalizations: [
+      emptyRuns,
+      adjacentLinks,
+      inheritedFormat,
+      editorIdentity,
+      noHighlight,
+      tableSize
+    ],
     authoredBy,
     othersOf,
     conservedResidue,

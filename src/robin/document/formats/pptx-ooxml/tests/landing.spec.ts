@@ -404,13 +404,13 @@ const cases: Array<[string, boolean, string, (deck: Deck) => WriteResult]> = [
   ],
   [
     'a removed table row',
-    false,
+    true,
     'sample.pptx',
     (d) => remove(d, (d.read(tableOf(d)).rows as Node[])[0].id)
   ],
   [
     'an edited table cell',
-    false,
+    true,
     'sample.pptx',
     (d) =>
       replace(d, tableOf(d), (n) => {
@@ -441,8 +441,8 @@ const cases: Array<[string, boolean, string, (deck: Deck) => WriteResult]> = [
     }
   ],
   [
-    'bold on a run left empty',
-    false,
+    'bold on a run left empty, which changes nothing',
+    true,
     'marketing-parity.pptx',
     (d) => {
       const run = subtitleRun(d);

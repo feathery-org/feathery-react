@@ -10,6 +10,7 @@ import {
   textSources,
   type Location
 } from '../textSources';
+import type { TableCellAddress } from '../../../../../elements/components/PptxEditor/engine/commands';
 import type { DeckOperation, ShapeRef, SlideRef } from '../seams/deck';
 import { leafRuns } from '../tree';
 
@@ -37,6 +38,9 @@ function styleChange(
     if (key === 'size') style.sizePt = value as number;
     else if (key === 'color')
       style.color = String(value).replace('#', '').toUpperCase();
+    else if (key === 'highlight')
+      style.highlight =
+        value === 'none' ? null : String(value).replace('#', '').toUpperCase();
     else if (key === 'font') style.font = value as string;
     else style[key] = value as boolean;
   }
@@ -69,7 +73,8 @@ export function textOperations(
   shape: ShapeRef,
   before: NfNode,
   after: NfNode,
-  origin: (id: string) => string = (id) => id
+  origin: (id: string) => string = (id) => id,
+  cell?: TableCellAddress
 ): DeckOperation[] {
   if (
     canonicalJson(paragraphsOf(before)) === canonicalJson(paragraphsOf(after))
@@ -132,6 +137,7 @@ export function textOperations(
         type: 'replace-rich-text',
         onSlide: slide,
         onShape: shape,
+        ...(cell ? { cell } : {}),
         paragraphs
       }
     }
@@ -151,6 +157,7 @@ export function textOperations(
             type: 'format-text',
             onSlide: slide,
             onShape: shape,
+            ...(cell ? { cell } : {}),
             style,
             ranges: [{ paragraph: p, start, end: offset }]
           }

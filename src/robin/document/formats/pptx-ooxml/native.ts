@@ -12,8 +12,13 @@ import {
 } from '../../../../elements/components/PptxEditor/core/opc/package';
 import {
   buildXml,
-  parseXml
+  child,
+  descendants,
+  parseXml,
+  type OTree
 } from '../../../../elements/components/PptxEditor/core/opc/xml';
+import { resolveColorAt } from '../../../../elements/components/PptxEditor/core/render/color';
+import { canonicalJson } from '../../tree';
 
 export interface PendingSuggestion {
   by: string;
@@ -40,6 +45,7 @@ export interface NativeSlide {
 export interface DeckNative {
   slides: NativeSlide[];
   pending: PendingSuggestion[];
+  highlights?: Record<string, string>;
 }
 
 export function writeNative(native: DeckNative): string {
@@ -58,7 +64,8 @@ export function writeNative(native: DeckNative): string {
         ...(beforeOrder ? { beforeOrder, afterOrder } : {}),
         ...(links ? { links } : {})
       })
-    )
+    ),
+    ...(native.highlights ? { highlights: native.highlights } : {})
   });
 }
 
@@ -117,6 +124,18 @@ export function serializeDeck(engine: PptxEditorEngine): string {
         ...(Object.keys(links).length ? { links } : {})
       };
     });
+  const pendingRecords = engine
+    .changes()
+    .filter((record) => record.status === 'pending');
+  const highlights = themedHighlights(deck, [
+    ...deck.slides,
+    ...pendingRecords.flatMap((record) =>
+      Object.entries(record.beforeSlides ?? {}).map(([path, raw]) => ({
+        path,
+        raw
+      }))
+    )
+  ]);
   return writeNative({
     slides: deck.slides.map((slide) => {
       const inherited = inheritedFormat(deck, slide);
@@ -129,8 +148,31 @@ export function serializeDeck(engine: PptxEditorEngine): string {
         ...(links ? { links } : {})
       };
     }),
-    pending
+    pending,
+    ...(highlights ? { highlights } : {})
   });
+}
+
+// A theme colour depends on the slide's theme, so the same highlight can show differently on two slides
+export const highlightKey = (slidePath: string, highlight: unknown) =>
+  `${slidePath} ${canonicalJson(highlight)}`;
+
+/** The colour each highlight not written as a plain colour shows, by its slide and how the file writes it */
+function themedHighlights(
+  deck: Deck,
+  slides: Array<{ path: string; raw: OTree }>
+): Record<string, string> | null {
+  const out: Record<string, string> = {};
+  for (const { path, raw } of slides)
+    for (const node of raw)
+      for (const highlight of descendants(node, 'a:highlight')) {
+        if (child(highlight, 'a:srgbClr')) continue;
+        const shown = resolveColorAt(highlight, deck.pkg, path)?.toUpperCase();
+        // A system colour with no colour of its own resolves to no colour
+        if (shown && /^#[0-9A-F]{6}$/.test(shown))
+          out[highlightKey(path, highlight)] = shown;
+      }
+  return Object.keys(out).length ? out : null;
 }
 
 /** Where each link on a slide goes, by the relationship its runs name */

@@ -191,6 +191,53 @@ describe('PowerPoint text', () => {
     expect(deck.read(run).underline).toBe(false);
   });
 
+  it('takes the highlight off highlighted text, and refuses dropping it instead', () => {
+    const files = unzipSync(fixture('marketing-parity.pptx'));
+    const slidePath = 'ppt/slides/slide1.xml';
+    files[slidePath] = strToU8(
+      strFromU8(files[slidePath]).replace(
+        '<a:rPr lang="en"/><a:t>Company Name',
+        '<a:rPr lang="en"><a:highlight><a:srgbClr val="FFFF00"/></a:highlight></a:rPr><a:t>Company Name'
+      )
+    );
+    const deck = openDeck('marketing-parity.pptx', zipSync(files));
+    const { run, paragraph } = subtitle(deck);
+    const highlighted = deck.read(run);
+    expect(highlighted.highlight).toBe('#FFFF00');
+
+    const { highlight: _dropped, ...withoutHighlight } = highlighted;
+    expect(
+      deck.write({
+        intent: 'Remove the highlight.',
+        scope: { ids: [run] },
+        changes: [
+          {
+            kind: 'replace',
+            id: run,
+            base: highlighted.base,
+            node: withoutHighlight
+          }
+        ]
+      })
+    ).toEqual(expect.objectContaining({ ok: false }));
+
+    expectCard(
+      deck.write({
+        intent: 'Remove the highlight.',
+        scope: { ids: [paragraph] },
+        changes: [
+          {
+            kind: 'set',
+            target: { ids: [run], shape: { [run]: highlighted.shape } },
+            props: { highlight: 'none' }
+          }
+        ]
+      })
+    );
+    expect(deck.read(run).highlight).toBeUndefined();
+    expect(deck.read(run).text).toBe(highlighted.text);
+  });
+
   it.each([
     ['no fill', '<a:noFill/>'],
     [
