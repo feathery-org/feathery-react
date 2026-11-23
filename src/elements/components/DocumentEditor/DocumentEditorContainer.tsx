@@ -138,6 +138,18 @@ const wrap: WrapStyle = {
 // aspect-ratio keeps a content-sized host from collapsing it to 0.
 const editorWrap: WrapStyle = { ...wrap, aspectRatio: '16 / 10' };
 
+// Under a fixed-height host the ratio also turns that height into a
+// min-content width (height × 1.6) that widens every ancestor past the screen.
+// Containment on the ratio box itself doesn't stop that, so a parent shell
+// holds it to the width it is given.
+const editorWrapShell = {
+  width: '100%',
+  height: '100%',
+  minWidth: 0,
+  minHeight: 0,
+  contain: 'inline-size'
+} as const;
+
 // A container whose content is a document editor bound to a Document template.
 // At runtime it loads the submission's current envelope for that document and
 // (for docx) renders the reusable DocxEditor; saving overwrites the envelope in
@@ -805,14 +817,15 @@ export default function DocumentEditorContainer({
       </div>
     </div>
   );
+  const pptxBox = (child: React.ReactNode) => (
+    <div css={editorWrapShell}>{box(child, editorWrap)}</div>
+  );
 
   if (editMode) {
     if (!previewType || previewType === 'docx')
       return box(<DocxEditor preview hideDownload />);
-    return box(
-      <EditorPreview type={previewType} />,
-      previewType === 'pptx' ? editorWrap : wrap
-    );
+    const preview = <EditorPreview type={previewType} />;
+    return previewType === 'pptx' ? pptxBox(preview) : box(preview);
   }
   if (!activeDocumentId && !envelope) {
     return box(
@@ -837,7 +850,7 @@ export default function DocumentEditorContainer({
     );
   }
   if (envelope.type === 'pptx') {
-    return box(
+    return pptxBox(
       <PptxDocumentPacket
         tabs={tabs}
         activeId={activeId}
@@ -854,8 +867,7 @@ export default function DocumentEditorContainer({
         onError={setOperationError}
         onReviewAction={fireReviewAction}
         robinEnabled={!!assistantEnabled && robinHost}
-      />,
-      editorWrap
+      />
     );
   }
   // A PDF has no editable docx to open, so show it read-only. Its status is
