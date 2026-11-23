@@ -353,6 +353,15 @@ export class OfflineRequestHandler {
   // Write orders restart on every page load, and another tab has its own
   private readonly pageId = uuidv4();
   private acknowledgedWriteOrder = new Map<string, number>();
+  private queuedWriteErrors = new WeakMap<Error, number>();
+  private replayedWriteOrders = new Set<number>();
+
+  public hasRecoveredWrite(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    const order = this.queuedWriteErrors.get(error);
+    return order !== undefined && this.replayedWriteOrders.has(order);
+  }
+
   // A successful HTTP write must not be sent again just because local cleanup
   // failed. Keep it here until queue reconciliation succeeds on this page.
   private acknowledgedRequestKeys = new Set<IDBValidKey>();
@@ -628,7 +637,7 @@ export class OfflineRequestHandler {
           // TypeError indicates network connectivity issues
           // This catches scenarios like timeouts, resolution failures, etc.
           if (e instanceof TypeError && !metadata?.requireAcknowledgement) {
-            await this.saveRequest(
+            const queued = await this.saveRequest(
               url,
               options,
               type,
@@ -636,6 +645,9 @@ export class OfflineRequestHandler {
               metadata,
               writeOrder
             );
+            if (queued && type === 'submit') {
+              this.queuedWriteErrors.set(e, writeOrder);
+            }
             onQueued?.();
             // Don't immediately trigger replay - this can cause infinite loops
             // when the same request keeps failing. Instead, rely on:
@@ -1150,6 +1162,13 @@ export class OfflineRequestHandler {
         continue;
       }
       markFileUploadRetrySuccess(fieldKey, this.formKey);
+      if (
+        request.type === 'submit' &&
+        request.pageId === this.pageId &&
+        request.writeOrder !== undefined
+      ) {
+        this.replayedWriteOrders.add(request.writeOrder);
+      }
       if (key !== undefined) this.acknowledgedRequestKeys.add(key);
       // Queue failures propagate separately from HTTP failures. A retry only
       // reconciles this acknowledged row; it cannot repeat an upload or append.
