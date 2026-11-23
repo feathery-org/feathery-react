@@ -666,6 +666,31 @@ export const getFormContext = (formUuid: string) => {
           )
         );
       }
+      // A packet call with no signing inputs means fill, not the flow's
+      // default sign; undefined below becomes 'sign' in generateEnvelopes.
+      const resolvedEnvelopeAction =
+        envelopeAction ??
+        (!signMethod && !signers?.length && !toolbarActions?.length && !redirect
+          ? download
+            ? 'download'
+            : mergeGroups?.length
+            ? 'fill'
+            : undefined
+          : undefined);
+      if (
+        mergeGroups?.length &&
+        signMethod !== 'docusign' &&
+        (resolvedEnvelopeAction === undefined || resolvedEnvelopeAction === 'sign')
+      ) {
+        // Signing a packet needs DocuSign; otherwise the backend 400s only
+        // after field flushes and source-file saves. Fail fast instead.
+        return Promise.reject(
+          new Error(
+            "generateDocuments: mergeGroups signing requires signMethod 'docusign'; " +
+              'set envelopeAction to fill/download/save, or signMethod to docusign'
+          )
+        );
+      }
       const unknownUploadKeys: string[] = [];
       let missingUploadField = false;
       documentIds = documentIds.map((doc) => {
@@ -715,20 +740,8 @@ export const getFormContext = (formUuid: string) => {
             type: 'open_fuser_envelopes',
             documents: documentIds,
             // The flow has no separate download flag; it's an envelope action,
-            // unless the call already asks to sign. A packet call with no
-            // signing inputs means fill, not the flow's default sign.
-            envelope_action:
-              envelopeAction ??
-              (!signMethod &&
-              !signers?.length &&
-              !toolbarActions?.length &&
-              !redirect
-                ? download
-                  ? 'download'
-                  : mergeGroups?.length
-                  ? 'fill'
-                  : undefined
-                : undefined),
+            // unless the call already asks to sign (see resolvedEnvelopeAction).
+            envelope_action: resolvedEnvelopeAction,
             sign_method: signMethod,
             ...(draft !== undefined ? { draft } : {}),
             // Omitted rather than nulled: the backend's role_id rejects an

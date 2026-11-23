@@ -891,8 +891,11 @@ export default class IntegrationClient {
       };
     }
 
-    // The container route goes through client-utils, which would silently
-    // drop these options; error rather than deliver unmerged/unchunked copies.
+    // The usual container action (open_in_editor) is handled above via
+    // generateEnvelopesForEditor, which forwards these. This catches the
+    // leftover case — a container with a non-overlay editor_mode that isn't
+    // open_in_editor — which falls through to client-utils and would silently
+    // drop them; error rather than deliver unmerged/unchunked copies.
     if (
       editorContainerId(action) &&
       (action.merge_groups?.length ||

@@ -665,6 +665,16 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
         merge: true
       })
     ).rejects.toThrow(/mergeGroups cannot combine/);
+
+    // A packet that resolves to a sign without DocuSign fails fast in the SDK,
+    // not as a late backend 400 after field flushes and source-file saves.
+    await expect(
+      getFormContext(uuid).generateDocuments({
+        documentIds: ['tpl-1'],
+        mergeGroups: [['tpl-1']],
+        signers: [{ documentId: 'tpl-1', email: 'a@x.com' }]
+      })
+    ).rejects.toThrow(/mergeGroups signing requires signMethod/);
   });
 
   it('rejects options the headless path cannot honor instead of dropping them', async () => {
