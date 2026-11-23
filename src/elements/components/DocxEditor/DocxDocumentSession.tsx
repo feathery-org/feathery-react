@@ -318,7 +318,7 @@ export default function DocxDocumentSession({
   const bindingsEnabled =
     FORCE_DOCUMENT_BINDINGS || syncfusion.bindings === true;
   // The most recent committed document-field values, read at save time.
-  const bindingValuesRef = useRef<Record<string, string>>({});
+  const bindingValuesRef = useRef<Record<string, string | null>>({});
   const pendingWritebackRef = useRef<Record<string, any>>({});
 
   const saveEnvelope = useCallback(
@@ -355,8 +355,9 @@ export default function DocxDocumentSession({
         if (name in fieldValues) newValues[name] = value;
       }
       for (const name of Object.keys(newValues)) {
+        // A blank field holds '' and a blank number binding null, the same value
         if (
-          fieldValues[name] === newValues[name] &&
+          (fieldValues[name] ?? '') === (newValues[name] ?? '') &&
           !(name in pendingWritebackRef.current)
         )
           delete newValues[name];

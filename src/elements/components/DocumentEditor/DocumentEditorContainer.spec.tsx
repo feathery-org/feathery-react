@@ -188,6 +188,13 @@ jest.mock('../DocxEditor', () => {
               closeSession: true
             })
         }),
+      onSave &&
+        React.createElement('button', {
+          key: 'save-blank-number',
+          'data-testid': 'save-blank-number',
+          onClick: () =>
+            onSave(new Blob(['docx']), { bindingValues: { amount: null } })
+        }),
       React.createElement('button', {
         'data-testid': 'report-error',
         onClick: () => onError?.('Save failed; retry')
@@ -526,6 +533,25 @@ describe('DocumentEditorContainer signing outcomes', () => {
       closeSession: true,
       authors: [{ kind: 'user', label: 'You' }]
     });
+  });
+
+  it('does not write a blank number back over a field that is already blank', async () => {
+    mockSubmitCustom.mockClear();
+    const sdkKey = initState.sdkKey;
+    initState.sdkKey = 'test-key';
+    fieldValues.amount = '';
+    seed({});
+    const { getByTestId } = mount();
+    await waitFor(() => expect(getByTestId('save-blank-number')).toBeTruthy());
+
+    await act(async () => {
+      getByTestId('save-blank-number').click();
+    });
+
+    await waitFor(() => expect(mockSaveEnvelopeFile).toHaveBeenCalled());
+    expect(mockSubmitCustom).not.toHaveBeenCalled();
+    delete fieldValues.amount;
+    initState.sdkKey = sdkKey;
   });
 
   it('keeps the editable document mounted when an operation fails', async () => {

@@ -1,4 +1,10 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import DocxEditor from '../DocxEditor';
 import EditorPreview from './EditorPreview';
 import DocumentTabs from './DocumentTabs';
@@ -9,6 +15,10 @@ import {
   EDITOR_PLACEHOLDER_ERROR_COLOR,
   EDITOR_PLACEHOLDER_STYLE
 } from './placeholderStyle';
+import {
+  onRobinHostChange,
+  robinHostMounted
+} from '../../../robin/document/mounts';
 import FeatheryClient from '../../../utils/featheryClient';
 import { initState } from '../../../utils/init';
 import internalState from '../../../utils/internalState';
@@ -147,6 +157,15 @@ export default function DocumentEditorContainer({
     resolveTabEnvelope
   } = packet;
   const [packetBusy, setPacketBusy] = useState(false);
+  // Where the form's Robin root is mounted; pptx tabs only get Robin when it is.
+  const [robinHost, setRobinHostMounted] = useState(() =>
+    formId ? robinHostMounted(formId) : false
+  );
+  useEffect(() => {
+    if (!formId) return undefined;
+    setRobinHostMounted(robinHostMounted(formId));
+    return onRobinHostChange(formId, setRobinHostMounted);
+  }, [formId]);
 
   // A deck's Save / Download has no finalize to report document_review, so the
   // container reports the same trigger from its own toolbar.
@@ -234,6 +253,7 @@ export default function DocumentEditorContainer({
         onBusy={setPacketBusy}
         onError={setOperationError}
         onReviewAction={fireReviewAction}
+        robinEnabled={!!assistantEnabled && robinHost}
       />,
       editorWrap
     );
