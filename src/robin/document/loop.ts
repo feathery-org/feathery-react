@@ -3,9 +3,8 @@
  * and target the write was for (`journalKey`), so two editors written in one turn keep their own
  * records.
  *
- * It records committed writes only: never a dry run, a refusal, a conflict, a no-change answer or a
- * read-only answer, because a journaled dry run would otherwise be replayed to the real write that
- * follows it. A resent identical write (same changes and formats) returns the recorded result
+ * It records committed writes only: never a refusal, a conflict, a no-change answer or a read-only
+ * answer. A resent identical write (same changes and formats) returns the recorded result
  * without executing; a different write in the same turn executes as a new commit, whose card is
  * `<turnId>.2`, `<turnId>.3`. The form holds one journal per form session, so a resent request
  * still finds its record after the editor remounted.

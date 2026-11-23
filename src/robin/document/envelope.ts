@@ -530,8 +530,7 @@ const writeShapeSchema = z.strictObject({
   intent: z.string().min(1).max(INTENT_MAX),
   scope: scopeSchema,
   formats: z.record(tempIdSchema, jsonObjectSchema).optional(),
-  changes: z.array(changeSchema).max(WRITE_CHANGES_MAX),
-  dryRun: z.boolean().optional()
+  changes: z.array(changeSchema).max(WRITE_CHANGES_MAX)
 });
 
 /** Temporary ids a written node declares on itself and its nested nodes, in document order. */
@@ -720,7 +719,7 @@ export const COMMITTED_OUTCOMES = [
   'skipped',
   'rolled-back'
 ] as const;
-/** `skipped` when nothing was committed to prove (a dry run, a refusal, a conflict). */
+/** `skipped` when nothing was committed to prove (a refusal, a conflict). */
 export const PROOF_OUTCOMES = ['passed', 'failed', 'skipped'] as const;
 
 export const traceSchema = z.looseObject({
@@ -732,8 +731,7 @@ export const traceSchema = z.looseObject({
     kinds: z.record(z.string(), z.int().min(0)),
     scopeIds: z.int().min(0),
     bulk: z.int().min(0),
-    formats: z.int().min(0),
-    dryRun: z.boolean()
+    formats: z.int().min(0)
   }),
   verified: z.looseObject({
     outcome: z.enum(VERIFIED_OUTCOMES),
@@ -929,7 +927,6 @@ export type FinalizerScope = { name: string; ids: string[] };
 export const writeSuccessResultSchema = z.looseObject({
   ok: z.literal(true),
   committed: z.boolean(),
-  dryRun: z.boolean(),
   cardId: z.string().min(1).nullable(),
   landed: z.enum(LANDED_VALUES),
   outlineHash: z.string().min(1),
@@ -1225,6 +1222,10 @@ export const listStyleSchema = z.looseObject({
   look: z.enum(['bullet', 'numbered'])
 });
 export type ListStyle = z.output<typeof listStyleSchema>;
+
+/** How a card is named to Robin: the start of its id, and which of its turn's cards it is */
+export const shortCardId = (id: string): string =>
+  `${id.slice(0, 8)}${/\.\d+$/.exec(id)?.[0] ?? ''}`;
 
 /** What the buttons in the editor's own toolbar do with the document */
 export const EDITOR_TOOLBAR_OUTCOMES = [

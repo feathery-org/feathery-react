@@ -8,8 +8,11 @@ export interface CardTableEntry {
   intent?: string;
 }
 
-// eslint-disable-next-line no-control-regex
-const NOT_XML = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g;
+const NOT_XML = new RegExp(
+  // eslint-disable-next-line no-control-regex
+  '[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\uD800-\\uDFFF\\uFFFE\\uFFFF]',
+  'gu'
+);
 
 const escapeXml = (value: string) =>
   value

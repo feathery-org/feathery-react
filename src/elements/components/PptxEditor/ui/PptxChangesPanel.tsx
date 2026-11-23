@@ -16,6 +16,7 @@ import {
   usePptxEditorStore
 } from '../state/PptxEditorContext';
 import type { PptxChangeRecord } from '../engine/changes';
+import type { DeckJSON } from '../core/model/json';
 
 // Tracked-edits panel: the engine's transaction log grouped by slide, newest
 // first. Clicking a record selects its shape; pending assistant suggestions
@@ -26,6 +27,29 @@ function timeLabel(iso: string): string {
   return Number.isNaN(date.getTime())
     ? ''
     : date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+/** The slide a record is about: a deck-wide change is placed on the slide it added, moved or removed */
+function slidePathOf(record: PptxChangeRecord): string | undefined {
+  const target = record.targets[0];
+  if (target?.slideId !== '*') return target?.slideId;
+  const before = (record.before as Record<string, DeckJSON>)['*'].slides.map(
+    (slide) => slide.path
+  );
+  const after = (record.after as Record<string, DeckJSON>)['*'].slides.map(
+    (slide) => slide.path
+  );
+  const added = after.find((path) => !before.includes(path));
+  if (added) return added;
+  const removedAt = before.findIndex((path) => !after.includes(path));
+  if (removedAt >= 0) return after[Math.min(removedAt, after.length - 1)];
+  const shift = (path: string) =>
+    Math.abs(after.indexOf(path) - before.indexOf(path));
+  return after.reduce<string | undefined>(
+    (moved, path) =>
+      moved === undefined || shift(path) > shift(moved) ? path : moved,
+    undefined
+  );
 }
 
 function RecordCard({
@@ -77,9 +101,6 @@ function RecordCard({
       </button>
       <span css={{ fontSize: 11, color: INK_2 }}>
         Slide {slideIndex + 1} · {record.author.label}
-        {record.status === 'rejected' && (
-          <span css={{ color: DEL }}> · rejected</span>
-        )}
       </span>
       {pending && (
         <div css={{ display: 'flex', gap: 6 }}>
@@ -101,13 +122,24 @@ export default function PptxChangesPanel() {
   const state = usePptxEditorState();
   const [conflicts, setConflicts] = useState<Record<string, string>>({});
 
-  const records = store.engine.changes();
+  // A settled suggestion leaves the list, along with the reject's own entry;
+  // the log keeps both, and undo brings the suggestion back as pending.
+  const log = store.engine.changes();
+  const records = useMemo(
+    () =>
+      log.filter(
+        (record) =>
+          !record.rejects &&
+          !(record.origin === 'assistant' && record.status !== 'pending')
+      ),
+    [log]
+  );
   const groups = useMemo(() => {
     const deck = state.deck;
     if (!deck) return [];
     const bySlide = new Map<number, PptxChangeRecord[]>();
     for (const record of records) {
-      const slidePath = record.targets[0]?.slideId;
+      const slidePath = slidePathOf(record);
       const index = Math.max(
         0,
         deck.slides.findIndex((slide) => slide.path === slidePath)
@@ -125,16 +157,25 @@ export default function PptxChangesPanel() {
     const deck = state.deck;
     const target = record.targets[0];
     if (!deck || !target) return;
-    const index = deck.slides.findIndex(
-      (slide) => slide.path === target.slideId
-    );
+    const slidePath = slidePathOf(record);
+    const index = deck.slides.findIndex((slide) => slide.path === slidePath);
     if (index >= 0 && index !== state.activeSlide) store.setActiveSlide(index);
     if (target.shapeId) store.select(target.shapeId);
   };
 
+  // A settled card unmounts while its button holds focus; hand focus to the
+  // stage so the undo shortcut still reaches the editor.
+  const focusStage = () =>
+    store.svgRoot?.closest<HTMLElement>('[data-pptx-stage]')?.focus();
+
+  const accept = (record: PptxChangeRecord) => {
+    if (store.acceptChange(record.id)) focusStage();
+  };
+
   const reject = (record: PptxChangeRecord) => {
     const outcome = store.rejectChange(record.id);
-    if (!outcome.ok) {
+    if (outcome.ok) focusStage();
+    else {
       setConflicts((current) => ({
         ...current,
         [record.id]:
@@ -190,7 +231,7 @@ export default function PptxChangesPanel() {
                 record={record}
                 slideIndex={slideIndex}
                 onSelect={() => selectRecord(record)}
-                onAccept={() => store.acceptChange(record.id)}
+                onAccept={() => accept(record)}
                 onReject={() => reject(record)}
                 conflict={conflicts[record.id]}
               />

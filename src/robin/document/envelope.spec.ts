@@ -106,8 +106,7 @@ const trace = {
     kinds: { insert_after: 7 },
     scopeIds: 7,
     bulk: 0,
-    formats: 0,
-    dryRun: false
+    formats: 0
   },
   verified: {
     outcome: 'passed',
@@ -611,11 +610,10 @@ describe('section 6 write envelope', () => {
     expect(r.refusal.invariant).toBe(r.refusal.problems?.[0].invariant);
   });
 
-  it('accepts dryRun and new format entries keyed by temporary id', () => {
+  it('accepts new format entries keyed by temporary id', () => {
     const r = parseVerbInput(
       'write',
       write({
-        dryRun: true,
         formats: { 'tmp:heading_blue': { fontColor: '#1F3864' } }
       })
     );
@@ -758,7 +756,6 @@ describe('results validate against the result contract', () => {
     const result = {
       ok: true,
       committed: true,
-      dryRun: false,
       cardId: '3f8a1c',
       landed: 'card',
       outlineHash: 'a91e',

@@ -12,7 +12,7 @@
  * The model reads `pending` and never writes it. The engine writes it when it composes a tracked
  * change set for a document replacement; `fromNormalForm` then mints the revisions.
  */
-import type { PendingCard } from '../../../envelope';
+import { shortCardId, type PendingCard } from '../../../envelope';
 
 type Obj = Record<string, unknown>;
 
@@ -58,10 +58,6 @@ function tagOf(customData: unknown): {
     return {};
   }
 }
-
-/** How a card is named to Robin: the start of its id, and which of its turn's cards it is */
-export const shortCardId = (id: string): string =>
-  `${id.slice(0, 8)}${/\.\d+$/.exec(id)?.[0] ?? ''}`;
 
 /** Robin's cards still pending in a revisions table, oldest first */
 export function pendingCards(revisions: unknown): PendingCard[] {

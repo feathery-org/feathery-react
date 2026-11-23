@@ -7,7 +7,7 @@ import {
   setTextRangeStyle,
   setTextStyle
 } from '../core/model/edit';
-import { child, childrenOf, el, getAttr } from '../core/opc/xml';
+import { child, childrenOf, el, getAttr, tagOf } from '../core/opc/xml';
 
 const bytes = () =>
   new Uint8Array(readFileSync(resolve(__dirname, 'fixtures/sample.pptx')));
@@ -72,6 +72,36 @@ it('preserves run XML outside and inside a selected range', () => {
   ).toEqual(['rId90', 'rId90']);
   expect(runs[0].color).toBeUndefined();
   expect(runs[1].color).toBe('FF0000');
+});
+
+it('writes run formatting in the order PowerPoint reads it', () => {
+  const deck = importDeck(bytes());
+  const slide = deck.slides[0];
+  const shape = addTextBox(
+    deck,
+    slide,
+    914400,
+    914400,
+    3000000,
+    900000,
+    'Hello world'
+  );
+  childrenOf(shape.text!.paragraphs[0].runs[0].rPr!).push(
+    el('a:ln'),
+    el('a:noFill'),
+    el('a:hlinkClick', { 'r:id': 'rId90' })
+  );
+  setTextStyle(deck, slide, shape, {
+    color: 'FF0000',
+    highlight: 'FFFF00',
+    font: 'Arial'
+  });
+
+  const out = importDeck(exportDeckBytes(deck));
+  const saved = out.slides[0].shapes.find((s) => s.id === shape.id)!;
+  expect(
+    childrenOf(saved.text!.paragraphs[0].runs[0].rPr!).map(tagOf)
+  ).toEqual(['a:ln', 'a:solidFill', 'a:highlight', 'a:latin', 'a:hlinkClick']);
 });
 
 it('keeps a symbolic theme color outside an explicitly recolored word', () => {

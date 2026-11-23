@@ -278,8 +278,10 @@ function DocxEditor({
   const dirtyRef = useRef(false);
   const editRevisionRef = useRef(0);
   const snapshotRevisions = useRef(new WeakMap<Blob, number>());
-  const snapshotBindings = useRef(new WeakMap<Blob, Record<string, string>>());
-  const committedBindingsRef = useRef<Record<string, string>>({});
+  const snapshotBindings = useRef(
+    new WeakMap<Blob, Record<string, string | null>>()
+  );
+  const committedBindingsRef = useRef<Record<string, string | null>>({});
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [restoring, setRestoring] = useState(false);

@@ -360,21 +360,6 @@ export class DocumentSession {
       finalizerScope: prepared.finalizerScope,
       facts: prepared.facts
     };
-    if (write.dryRun) {
-      trace.committed('skipped', [], 0);
-      return {
-        ok: true,
-        committed: false,
-        dryRun: true,
-        cardId: null,
-        landed: 'none',
-        outlineHash: before.outlineHash,
-        ...common,
-        warnings: prepared.warnings,
-        trace: trace.build()
-      };
-    }
-
     const bases = new Map(before.view.nodes().map((n) => [n.id, baseOf(n)]));
     const restoreGuesses = this.ids.checkpointUncertain();
     const outcome = this.writing(() => {
@@ -397,6 +382,7 @@ export class DocumentSession {
           view: makeView(prepared.intended, this.pack),
           residue: prepared.intendedResidue
         },
+        copies: prepared.copies,
         adopt: (fresh) =>
           this.ids.adopt(fresh, this.pack.tree, this.pack.formatRefKeys, [
             prepared.intended,
@@ -433,7 +419,6 @@ export class DocumentSession {
       return {
         ok: true,
         committed: !!rebuilt?.changed,
-        dryRun: false,
         cardId: null,
         landed: rebuilt?.changed ? 'immediate' : 'none',
         outlineHash: rebuilt ? this.state.outlineHash : before.outlineHash,
@@ -524,7 +509,6 @@ export class DocumentSession {
     const result: VerbResult = {
       ok: true,
       committed: true,
-      dryRun: false,
       cardId: outcome.plan.landed === 'card' ? changeSetId : null,
       landed: outcome.plan.landed,
       outlineHash: (this.current as DocumentState).outlineHash,
@@ -564,12 +548,13 @@ export class DocumentSession {
   }
 
   /**
-   * Accept or reject cards through the engine: a reject of the last change set alone, with the
-   * document still as it left it, restores the snapshot byte for byte; otherwise the pack's group
-   * projection of the live document is opened for every card at once. `alongside` is the editor's
-   * own resolution of the batch's other cards, run in the same step. The resolution is one engine
-   * history entry, so one Ctrl+Z brings the cards back. False, and the document as it was, when it
-   * cannot be done.
+   * An editor that tracks suggestions itself settles the cards with its own history, one undo step
+   * per accept or reject. Otherwise accept or reject cards through the engine: a reject of the last change
+   * set alone, with the document still as it left it, restores the snapshot byte for byte;
+   * otherwise the pack's group projection of the live document is opened for every card at once.
+   * `alongside` is the editor's own resolution of the batch's other cards, run in the same step.
+   * The resolution is one engine history entry, so one Ctrl+Z brings the cards back. False, and the
+   * document as it was, when it cannot be done.
    */
   resolveCards(
     changeSetIds: string[],
@@ -577,6 +562,13 @@ export class DocumentSession {
     alongside?: () => void,
     by: 'robin' | 'person' = 'person'
   ): boolean {
+    if (this.host.resolveCards) {
+      const resolved = this.host.resolveCards(changeSetIds, accept);
+      if (resolved) alongside?.();
+      this.refresh();
+      if (resolved) this.replaced(by);
+      return resolved;
+    }
     const resolveGroup = this.pack.projections.resolveGroup;
     if (!resolveGroup) return false;
     const state = this.state;
@@ -918,7 +910,7 @@ function logWriteOutcome(turnId: string, result: VerbResult, ms: number): void {
     });
     return;
   }
-  if (r.ok) return; // a dry run
+  if (r.ok) return; // A no-change answer
   const refusal = r.refusal as Record<string, any> | undefined;
   const proof = r.trace?.proof as Record<string, any> | undefined;
   const rollback = proof?.rollback as

@@ -27,7 +27,7 @@ export interface DocxSaveMeta {
   /** True when this flush is the last save of the session. */
   closeSession?: boolean;
   /** Local-only form write-back snapshot; never sent as history metadata. */
-  bindingValues?: Record<string, string>;
+  bindingValues?: Record<string, string | null>;
 }
 
 /** One version row as the list/detail endpoints serialize it

@@ -6,7 +6,7 @@
  * existing bound table's control loses its identity).
  */
 import type { Invariant } from '../../../pack';
-import type { NfNode } from '../../../tree';
+import type { NfNode, NormalForm } from '../../../tree';
 import { KIND } from '../adapter/keys';
 import { bindingErrors } from '../features/binding';
 import { refusal } from './common';
@@ -15,24 +15,30 @@ import { arr } from '../util';
 const isObject = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === 'object' && !Array.isArray(v);
 
+/**
+ * The binding errors a change introduces, less a formula failing to evaluate: that one is
+ * orphaned-dependents' to report when what it read was removed
+ */
+export function freshBindingErrors(before: NormalForm, after: NormalForm) {
+  const keyed = (nf: NormalForm) =>
+    new Map(
+      bindingErrors(nf).map((d) => [
+        `${d.code}:${d.id ?? d.message}`,
+        { code: d.code, message: d.message, id: d.id ?? null }
+      ])
+    );
+  const was = keyed(before);
+  return [...keyed(after)]
+    .filter(([k, d]) => !was.has(k) && d.code !== 'evaluation-failed')
+    .map(([, d]) => d);
+}
+
 export const bindingConsistency: Invariant = {
   name: 'binding',
   cards: ['binding'],
   check({ before, after }) {
     const problems = [];
-    const keyed = (nf: typeof before.nf) =>
-      new Map(
-        bindingErrors(nf).map((d) => [
-          `${d.code}:${d.id ?? d.message}`,
-          { code: d.code, message: d.message, id: d.id ?? null }
-        ])
-      );
-    const was = keyed(before.nf);
-    const now = keyed(after.nf);
-    // a formula that fails only because what it read was removed is orphaned-dependents' to report
-    const fresh = [...now]
-      .filter(([k, d]) => !was.has(k) && d.code !== 'evaluation-failed')
-      .map(([, d]) => d);
+    const fresh = freshBindingErrors(before.nf, after.nf);
     if (fresh.length)
       problems.push(
         refusal(

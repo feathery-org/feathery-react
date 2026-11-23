@@ -20,6 +20,11 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      # Where sign stages the signed SBOM so filing can be retried. It names
+      # the attempt, so re-running the job signs a new copy and cannot file
+      # this one; retry with the command File Release SBOM prints instead.
+      SBOM_PENDING_ID: feathery-react/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Validate User
         env:
@@ -79,13 +84,27 @@ jobs:
             exit 1
           fi
 
-      # The only build in this workflow runs inside `npm publish` via the
-      # prepublishOnly hook, so the key must be in scope on THIS step for
-      # rollup/webpack to bake it into the bundle.
-      - name: Publish to NPM
+      # Build and pack once, then sign and publish that same tarball, so the
+      # release SBOM describes exactly the bytes npm serves. This is the only
+      # build in the workflow (publishing a tarball skips prepublishOnly), so
+      # the key must be in scope on THIS step for rollup/webpack to bake it
+      # into the bundle.
+      - name: Build Package
         env:
           SYNCFUSION_LICENSE_KEY: ${{ secrets.SYNCFUSION_LICENSE_KEY }}
-        run: npm publish
+        run: |
+          yarn build
+          mkdir -p "$RUNNER_TEMP/package"
+          npm pack --pack-destination "$RUNNER_TEMP/package"
+
+      # Fails the release before publishing unless the SBOM is signed. The
+      # signer role trusts only master, which is where releases run.
+      - name: Sign Release SBOM
+        run: node scripts/release-sbom/sign.cjs "$RUNNER_TEMP/package" "$RUNNER_TEMP/sbom" --pending-id "$SBOM_PENDING_ID"
+
+      - name: Publish to NPM
+        id: publish
+        run: npm publish "$RUNNER_TEMP"/package/*.tgz
 
       - name: Push Changes
         env:
@@ -103,3 +122,17 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.FEATHERY_BOT_TOKEN }}
+
+      # Last, so a filing failure never strands the published version, its
+      # tag or its GitHub release, but it runs whenever the publish succeeded,
+      # even if a later step failed, because the version is live on npm either
+      # way. The signed files are staged under the pending id, so filing can be
+      # retried from any machine.
+      - name: File Release SBOM
+        if: ${{ !cancelled() && steps.publish.outcome == 'success' }}
+        run: |
+          if ! python3 scripts/release-sbom/feathery_sbom.py file --pending-id "$SBOM_PENDING_ID"; then
+            echo "::error::Filing the release SBOM failed after the release shipped. Do not re-run this job (it would fail at npm publish); within 14 days, run with operator AWS credentials: python3 scripts/release-sbom/feathery_sbom.py file --pending-id $SBOM_PENDING_ID"
+            echo "::error::If a newer release was filed in the meantime, add --rollback only if this older version is really what is live; otherwise do not file it."
+            exit 1
+          fi

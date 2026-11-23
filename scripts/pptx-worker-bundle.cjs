@@ -4,6 +4,7 @@ const path = require('path');
 const { rollup } = require('rollup');
 const { nodeResolve } = require('@rollup/plugin-node-resolve');
 const ts = require('typescript');
+const bundledPackages = require('./release-sbom/bundled-packages.cjs');
 const root = path.resolve(__dirname, '..');
 const sourcePath = path.join(
   root,
@@ -38,6 +39,9 @@ async function bundlePptxWorker() {
   });
   try {
     const { output } = await bundle.generate({ format: 'iife' });
+    // The worker ships as a string inside the main bundles, so their own
+    // module lists cannot see the packages it inlines.
+    bundledPackages.record('pptx-worker', Object.keys(output[0].modules));
     return { code: output[0].code, files: bundle.watchFiles };
   } finally {
     await bundle.close();

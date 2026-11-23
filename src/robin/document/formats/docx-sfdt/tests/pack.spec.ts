@@ -199,6 +199,27 @@ describe('the format pack', () => {
     expect(mount(doc('sum(Row4Fees)')).session.descriptor()).not.toHaveProperty('bindingErrors');
   });
 
+  it('lets a total read a blank number (Hilb f02471c8)', () => {
+    const control = (tag: string, title: string, text: string) => ({ inlines: [{ text }], contentControlProperties: { lockContents: true, tag, color: '#00000000', title, type: 'Text' } });
+    const doc = JSON.stringify({
+      sections: [
+        {
+          blocks: [
+            { inlines: [{ text: 'Prior term ' }, control('[[name=PriorTermPremium|type=currency]]', 'PriorTermPremium', '')] },
+            { inlines: [{ text: 'Total' }] }
+          ]
+        }
+      ]
+    });
+    const { session, call } = mount(doc);
+    expect(session.descriptor()).not.toHaveProperty('bindingErrors');
+    const total = session.state.view.nodes().find((n) => n.kind === 'paragraph' && JSON.stringify(n).includes('"Total"')) as NfNode;
+    const node = { kind: 'paragraph', inlines: [{ kind: 'run', text: 'Total ' }, { kind: 'control', binding: { name: 'PriorTermTotalPremium', expr: 'sum(PriorTermPremium)', type: 'currency' }, inlines: [{ kind: 'run', text: '$0.00' }] }] };
+    const out = call('write', { intent: 'Add the prior term total.', scope: { ids: [total.id] }, changes: [{ kind: 'replace', id: total.id, base: baseOf(total), node }] }) as { ok: boolean };
+    expect(out.ok).toBe(true);
+    expect(session.descriptor()).not.toHaveProperty('bindingErrors');
+  });
+
   it('flags a paragraph or row holding tracked changes in the outline and on find hits, since its text joins both sides', () => {
     const doc = JSON.stringify({
       sections: [
@@ -428,7 +449,6 @@ describe('verifying a write the model got wrong', () => {
         intent: 'Give the row a new look.',
         scope: { ids: [row.id] },
         ...(formats ? { formats } : {}),
-        dryRun: true,
         changes: [{ kind: 'replace', id: row.id, base: baseOf(row), node: { id: row.id, kind: 'row', style, cells: cells.map((c) => ({ id: c.id, kind: c.kind })) } }]
       } as never);
 

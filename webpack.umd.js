@@ -1,5 +1,8 @@
 const path = require('path');
 const config = require('./webpack.config');
+const {
+  WebpackPlugin: BundledPackagesPlugin
+} = require('./scripts/release-sbom/bundled-packages.cjs');
 
 module.exports = (env) => {
   if (env.analyze) {
@@ -10,6 +13,7 @@ module.exports = (env) => {
     );
   }
 
+  config.plugins.push(new BundledPackagesPlugin('umd'));
   config.output.path = path.resolve(__dirname, 'umd');
   config.performance = {
     maxEntrypointSize: 1024000,

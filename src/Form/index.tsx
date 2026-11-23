@@ -158,7 +158,10 @@ import {
 import usePrevious from '../hooks/usePrevious';
 import ReactPortal from './components/ReactPortal';
 import { replaceTextVariables } from '../elements/components/TextNodes';
-import { getFormContext } from '../utils/formContext';
+import {
+  getFormContext,
+  waitForPendingStepSubmission
+} from '../utils/formContext';
 import { FormWebMCPTools, hasWebMCPRuntime } from '../utils/formTools/webmcp';
 import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
@@ -298,6 +301,11 @@ import {
   STEP_EVENT_SKIP,
   STEP_EVENT_SUBMIT
 } from '../utils/stepEvents';
+import {
+  loadReviewPrinter,
+  printFinalizedFiles,
+  PRINT_LOAD_ERROR
+} from '../utils/reviewPrint';
 
 const DocumentViewer = React.lazy(
   () => import('../elements/components/DocumentViewer')
@@ -1420,7 +1428,14 @@ function Form({
         if (canRunAction(logicRule, currentStepId, props, altMatchId)) {
           logicRan = true;
 
-          if (toAwait) await toAwait;
+          // Client-side rules that run before click actions don't wait on the
+          // step response; the client holds their field writes until the step
+          // answers land. Server-side rules read saved answers, so they wait.
+          if (
+            toAwait &&
+            (logicRule.server_side || logicRule.metadata?.after_click)
+          )
+            await toAwait;
 
           try {
             if (logicRule.server_side) {
@@ -1443,11 +1458,19 @@ function Form({
         }
       }
       // Change event can happen too frequently to flush every time
-      if (event !== 'change' && flush) await defaultClient.flushCustomFields();
+      if (event !== 'change' && flush)
+        await Promise.all([
+          client.flushCustomFields(),
+          defaultClient.flushCustomFields()
+        ]);
     }
 
     // Flush field updates to backend before form completes
-    if (event === 'form_complete') await defaultClient.flushCustomFields();
+    if (event === 'form_complete')
+      await Promise.all([
+        client.flushCustomFields(),
+        defaultClient.flushCustomFields()
+      ]);
 
     return logicRan;
   };
@@ -1614,9 +1637,12 @@ function Form({
                   envelopes,
                   envelopeAction,
                   draft,
+                  print,
                   refreshDraft,
                   completes
                 }: any) => {
+                  const printer = print ? await loadReviewPrinter() : null;
+                  if (print && !printer) return PRINT_LOAD_ERROR;
                   const result = await client.finalizeEnvelopeReview(action, {
                     envelopes,
                     envelopeAction,
@@ -1627,13 +1653,21 @@ function Form({
                     return { status: 'error', message: 'Finalize failed' };
                   }
                   if (result.status === 'error') return result;
-                  await runEnvelopeAction(result, envelopeAction, draft);
+                  // Print finalizes as a download, then prints the files
+                  // instead of saving them.
+                  if (printer) {
+                    const printError = await printFinalizedFiles(
+                      printer,
+                      result.files
+                    );
+                    if (printError) return printError;
+                  } else await runEnvelopeAction(result, envelopeAction, draft);
                   await runDocumentReviewLogic(
                     buildDocumentReviewTrigger({
                       action,
                       elementId: '',
                       envelopes,
-                      envelopeAction,
+                      envelopeAction: print ? 'print' : envelopeAction,
                       draft,
                       result
                     })
@@ -1644,7 +1678,11 @@ function Form({
                   if (completes)
                     finalized = {
                       ...result,
-                      reviewAction: draft ? 'draft' : envelopeAction
+                      reviewAction: draft
+                        ? 'draft'
+                        : print
+                        ? 'print'
+                        : envelopeAction
                     };
                   return result;
                 },
@@ -1773,6 +1811,7 @@ function Form({
           }
         },
         sendDocusignEnvelope: async (params: SendDocusignParams) => {
+          await waitForPendingStepSubmission(client);
           await Promise.all([
             client.flushCustomFields(),
             defaultClient.flushCustomFields()
@@ -1803,6 +1842,7 @@ function Form({
           envelopes,
           attachments
         }: FillQuikParams) => {
+          await waitForPendingStepSubmission(client);
           await Promise.all([
             client.flushCustomFields(),
             defaultClient.flushCustomFields()
@@ -3807,13 +3847,17 @@ function Form({
                 envelopes,
                 envelopeAction,
                 draft,
+                print,
                 refreshDraft
               }: {
                 envelopes: { envelopeId: string }[];
                 envelopeAction: 'sign' | 'fill' | 'download' | 'save';
                 draft: boolean;
+                print: boolean;
                 refreshDraft: boolean;
               }) => {
+                const printer = print ? await loadReviewPrinter() : null;
+                if (print && !printer) return PRINT_LOAD_ERROR;
                 const result = await client.finalizeEnvelopeReview(action, {
                   envelopes,
                   envelopeAction,
@@ -3831,13 +3875,21 @@ function Form({
                     message: 'Failed to finalize documents. Please try again.'
                   };
                 if (result.status === 'error') return result;
-                await runEnvelopeAction(result, envelopeAction, draft);
+                // Print finalizes as a download, then prints the files
+                // instead of saving them.
+                if (printer) {
+                  const printError = await printFinalizedFiles(
+                    printer,
+                    result.files
+                  );
+                  if (printError) return printError;
+                } else await runEnvelopeAction(result, envelopeAction, draft);
                 await runDocumentReviewLogic(
                   buildDocumentReviewTrigger({
                     action,
                     elementId: element.id,
                     envelopes,
-                    envelopeAction,
+                    envelopeAction: print ? 'print' : envelopeAction,
                     draft,
                     result
                   })
