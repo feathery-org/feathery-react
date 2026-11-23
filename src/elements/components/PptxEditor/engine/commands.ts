@@ -8,6 +8,11 @@ import type {
 } from '../core/model/edit';
 import type { Bullet, Xfrm } from '../core/model/types';
 
+export interface TableCellAddress {
+  row: number;
+  col: number;
+}
+
 export interface ShapeGeometryUpdate {
   shapeId: string;
   geometry: Partial<Xfrm>;
@@ -58,11 +63,12 @@ export type SlideBackground =
 
 export type TableEditOperation =
   | { kind: 'set-cell-text'; row: number; col: number; value: string }
-  | { kind: 'add-row'; index?: number }
+  | { kind: 'add-row'; index?: number; like?: number }
   | { kind: 'remove-row'; index?: number }
-  | { kind: 'add-column'; index?: number }
+  | { kind: 'add-column'; index?: number; like?: number }
   | { kind: 'remove-column'; index?: number }
   | { kind: 'set-column-width'; index: number; width: number }
+  | { kind: 'fit-columns'; width: number }
   | { kind: 'set-row-height'; index: number; height: number }
   | { kind: 'fit-rows' }
   | { kind: 'fit-column'; index: number }
@@ -102,6 +108,7 @@ export type EditorCommand =
       type: 'format-text';
       slideId: string;
       shapeId: string;
+      cell?: TableCellAddress;
       style: TextStyle;
       ranges?: TextRange[];
     }
@@ -123,6 +130,7 @@ export type EditorCommand =
       type: 'replace-rich-text';
       slideId: string;
       shapeId: string;
+      cell?: TableCellAddress;
       paragraphs: RichPara[];
     }
   | {

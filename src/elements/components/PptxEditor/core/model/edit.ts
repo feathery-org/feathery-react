@@ -1123,6 +1123,21 @@ function blankCell(): ONode {
   ]);
 }
 
+// PowerPoint tells rows and columns apart by the ids in their extensions, so a copy drops them
+function withoutIds(node: ONode): ONode {
+  const kids = childrenOf(node);
+  for (let i = kids.length - 1; i >= 0; i--)
+    if (tagOf(kids[i]) === 'a:extLst') kids.splice(i, 1);
+  return node;
+}
+
+// A copied look never carries a merge
+function unmerged(cell: ONode): ONode {
+  for (const mark of ['gridSpan', 'rowSpan', 'hMerge', 'vMerge'])
+    removeAttr(cell, mark);
+  return cell;
+}
+
 function syncTableFrame(shape: Shape): void {
   const cols = tableColumns(shape);
   const rows = tableRows(shape);
@@ -1233,12 +1248,13 @@ export function setTableCellPlainText(
   markDirty(deck, slide);
 }
 
-/** Insert a row; `atIndex` places it at that position (default: append). */
+/** Insert a row, in the look of another when asked */
 export function addTableRow(
   deck: Deck,
   slide: Slide,
   shape: Shape,
-  atIndex?: number
+  atIndex?: number,
+  like?: number
 ): void {
   const tbl = tableNode(shape);
   const rows = tableRows(shape);
@@ -1248,11 +1264,15 @@ export function addTableRow(
     rows[Math.min(atIndex ?? rows.length - 1, rows.length - 1)] ??
     rows[rows.length - 1];
   const h = neighbor ? Number(getAttr(neighbor, 'h')) || 400000 : 400000;
-  const newRow = el(
-    'a:tr',
-    { h: String(h) },
-    Array.from({ length: Math.max(1, cols.length) }, blankCell)
-  );
+  const source = like === undefined ? undefined : rows[like];
+  const newRow = source
+    ? withoutIds(deepClone(source))
+    : el(
+        'a:tr',
+        { h: String(h) },
+        Array.from({ length: Math.max(1, cols.length) }, blankCell)
+      );
+  tableCells(newRow).forEach(unmerged);
   const kids = childrenOf(tbl);
   if (atIndex !== undefined && rows[atIndex]) {
     kids.splice(kids.indexOf(rows[atIndex]), 0, newRow);
@@ -1281,12 +1301,13 @@ export function removeTableRow(
   markDirty(deck, slide);
 }
 
-/** Insert a column; `atIndex` places it at that position (default: append). */
+/** Insert a column, in the look of another when asked */
 export function addTableColumn(
   deck: Deck,
   slide: Slide,
   shape: Shape,
-  atIndex?: number
+  atIndex?: number,
+  like?: number
 ): void {
   const tbl = tableNode(shape);
   const cols = tableColumns(shape);
@@ -1298,7 +1319,10 @@ export function addTableColumn(
   const grid = child(tbl, 'a:tblGrid');
   if (!grid) return;
   const gridKids = childrenOf(grid);
-  const newCol = el('a:gridCol', { w: String(w) });
+  const source = like === undefined ? undefined : cols[like];
+  const newCol = source
+    ? withoutIds(deepClone(source))
+    : el('a:gridCol', { w: String(w) });
   if (atIndex !== undefined && cols[atIndex]) {
     gridKids.splice(gridKids.indexOf(cols[atIndex]), 0, newCol);
   } else {
@@ -1307,11 +1331,15 @@ export function addTableColumn(
   for (const row of tableRows(shape)) {
     const cells = tableCells(row);
     const rowKids = childrenOf(row);
-    if (atIndex !== undefined && cells[atIndex]) {
-      rowKids.splice(rowKids.indexOf(cells[atIndex]), 0, blankCell());
-    } else {
-      rowKids.push(blankCell());
-    }
+    const likeCell = like === undefined ? undefined : cells[like];
+    const cell = likeCell ? unmerged(deepClone(likeCell)) : blankCell();
+    // A row's cells come before its extensions
+    const next =
+      atIndex !== undefined && cells[atIndex]
+        ? cells[atIndex]
+        : rowKids.find((node) => tagOf(node) === 'a:extLst');
+    if (next) rowKids.splice(rowKids.indexOf(next), 0, cell);
+    else rowKids.push(cell);
   }
   syncTableFrame(shape);
   markDirty(deck, slide);
@@ -1353,6 +1381,39 @@ export function setTableColumnWidth(
   const col = tableColumns(shape)[index];
   if (!col) return;
   setAttr(col, 'w', String(Math.max(90000, Math.round(width))));
+  syncTableFrame(shape);
+  markDirty(deck, slide);
+}
+
+/** Spread a width over the columns, leading columns keep theirs and the trailing run of equal columns shares the rest */
+export function fitTableColumns(
+  deck: Deck,
+  slide: Slide,
+  shape: Shape,
+  width: number
+): void {
+  const cols = tableColumns(shape);
+  if (!cols.length) return;
+  const widths = cols.map((col) => Number(getAttr(col, 'w')) || 0);
+  let run = 1;
+  while (
+    run < widths.length &&
+    Math.abs(widths[widths.length - run - 1] - widths[widths.length - 1]) <=
+      widths.length
+  )
+    run++;
+  let lead = widths.slice(0, widths.length - run);
+  let share = Math.floor((width - lead.reduce((a, b) => a + b, 0)) / run);
+  if (share <= 0) {
+    lead = [];
+    share = Math.floor(width / widths.length);
+  }
+  const fitted = [
+    ...lead,
+    ...Array.from({ length: widths.length - lead.length }, () => share)
+  ];
+  fitted[fitted.length - 1] += width - fitted.reduce((a, b) => a + b, 0);
+  cols.forEach((col, i) => setAttr(col, 'w', String(fitted[i])));
   syncTableFrame(shape);
   markDirty(deck, slide);
 }

@@ -30,6 +30,7 @@ import {
   deleteShape,
   insertImage,
   insertSlideNumber,
+  fitTableColumns,
   insertTable,
   mergeTableCells,
   removeTableColumn,
@@ -60,9 +61,16 @@ import {
   snapTableRowsToContent,
   unmergeTableCells
 } from '../core/model/edit';
+import { readTextBody } from '../core/model/read';
+import { tableCell } from '../core/model/table';
 import type { Deck, Shape, Slide } from '../core/model/types';
-import type { OTree } from '../core/opc/xml';
-import type { CommandMeta, EditorCommand, Invalidation } from './commands';
+import { child, type OTree } from '../core/opc/xml';
+import type {
+  CommandMeta,
+  EditorCommand,
+  Invalidation,
+  TableCellAddress
+} from './commands';
 import { deriveChangeRecord, type PptxChangeRecord } from './changes';
 
 const HISTORY_LIMIT = 100;
@@ -344,7 +352,11 @@ export class PptxEditorEngine {
       }
       case 'format-text': {
         const slide = this.requireSlide(command.slideId);
-        const shape = this.requireTextShape(slide, command.shapeId);
+        const shape = this.requireTextTarget(
+          slide,
+          command.shapeId,
+          command.cell
+        );
         if (command.ranges?.length)
           setTextRangeStyle(deck, slide, shape, command.ranges, command.style);
         else setTextStyle(deck, slide, shape, command.style);
@@ -391,7 +403,11 @@ export class PptxEditorEngine {
       }
       case 'replace-rich-text': {
         const slide = this.requireSlide(command.slideId);
-        const shape = this.requireTextShape(slide, command.shapeId);
+        const shape = this.requireTextTarget(
+          slide,
+          command.shapeId,
+          command.cell
+        );
         setShapeRichText(deck, slide, shape, command.paragraphs);
         invalidations = [
           { kind: 'shapes', slideId: slide.path, shapeIds: [shape.id] }
@@ -431,7 +447,7 @@ export class PptxEditorEngine {
       }
       case 'edit-table': {
         const slide = this.requireSlide(command.slideId);
-        const shape = this.requireShape(slide, command.shapeId);
+        const shape = this.requireShapeOrGroupMember(slide, command.shapeId);
         if (shape.type !== 'table')
           throw new Error(
             `Table ${command.shapeId} was not found on ${slide.path}`
@@ -449,16 +465,25 @@ export class PptxEditorEngine {
               );
               break;
             case 'add-row':
-              addTableRow(deck, slide, shape, operation.index);
+              addTableRow(deck, slide, shape, operation.index, operation.like);
               break;
             case 'remove-row':
               removeTableRow(deck, slide, shape, operation.index);
               break;
             case 'add-column':
-              addTableColumn(deck, slide, shape, operation.index);
+              addTableColumn(
+                deck,
+                slide,
+                shape,
+                operation.index,
+                operation.like
+              );
               break;
             case 'remove-column':
               removeTableColumn(deck, slide, shape, operation.index);
+              break;
+            case 'fit-columns':
+              fitTableColumns(deck, slide, shape, operation.width);
               break;
             case 'set-column-width':
               setTableColumnWidth(
@@ -1237,6 +1262,24 @@ export class PptxEditorEngine {
     if (!shape?.text)
       throw new Error(`Text shape ${shapeId} was not found on ${slide.path}`);
     return shape;
+  }
+
+  // A table cell's text is edited like a shape's, through a view of the cell's text body
+  private requireTextTarget(
+    slide: Slide,
+    shapeId: string,
+    cell: TableCellAddress | undefined
+  ): Shape {
+    if (!cell) return this.requireTextShape(slide, shapeId);
+    const shape = this.requireShapeOrGroupMember(slide, shapeId);
+    const cellNode =
+      shape.type === 'table' ? tableCell(shape, cell.row, cell.col) : undefined;
+    const text = readTextBody(cellNode && child(cellNode, 'a:txBody'));
+    if (!text)
+      throw new Error(
+        `Cell ${cell.row},${cell.col} of table ${shapeId} has no text on ${slide.path}`
+      );
+    return { ...shape, text };
   }
 
   private requireShape(slide: Slide, shapeId: string): Shape {
