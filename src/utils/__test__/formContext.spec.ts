@@ -59,6 +59,28 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     ).rejects.toThrow('customFields require');
   });
 
+  it('captures editable eSign fields before pending saves', async () => {
+    const editableEsignFields: (
+      | string
+      | { FieldName: string; Required?: boolean }
+    )[] = ['1own.*', { FieldName: '1own.SSN', Required: true }];
+    client.flushCustomFields.mockImplementation(async () => {
+      editableEsignFields.push('*');
+      const ssn = editableEsignFields[1];
+      if (typeof ssn !== 'string') ssn.Required = false;
+    });
+    await getFormContext(uuid).generateDocuments({
+      documentIds: [{ kind: 'quik' }],
+      signMethod: 'docusign',
+      envelopeAction: 'open_in_editor',
+      editableEsignFields
+    });
+    expect(flow.mock.calls[0][0].editable_esign_fields).toEqual([
+      '1own.*',
+      { FieldName: '1own.SSN', Required: true }
+    ]);
+  });
+
   it.each(['open_in_editor', 'sign'] as const)(
     'captures dynamic CC recipients for %s before pending saves',
     async (envelopeAction) => {

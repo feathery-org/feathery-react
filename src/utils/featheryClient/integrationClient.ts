@@ -1262,7 +1262,8 @@ export default class IntegrationClient {
     >;
     hubAssociation?: HubAssociation;
     // DocuSign sign only: the Quik fields signers may edit, replacing the
-    // integration's list. Omitted (not emptied) to keep the integration's.
+    // integration's list. An empty list leaves none editable; omit it to keep
+    // the integration's.
     editableEsignFields?: EditableEsignField[];
   }) {
     const { userId } = initInfo();
@@ -1306,7 +1307,7 @@ export default class IntegrationClient {
     if (sourceElementId) payload.source_element_id = sourceElementId;
     if (ccRecipients !== undefined) payload.cc_recipients = ccRecipients;
     if (customFields !== undefined) payload.custom_fields = customFields;
-    if (editableEsignFields?.length)
+    if (editableEsignFields != null)
       payload.editable_esign_fields = editableEsignFields;
     if (signers.length) payload.signers = signers;
     if (repeatable) payload.repeatable = repeatable;
@@ -1398,7 +1399,7 @@ export default class IntegrationClient {
       payload.cc_recipients = action.cc_recipients;
     if (action.custom_fields !== undefined)
       payload.custom_fields = action.custom_fields;
-    if (action.editable_esign_fields?.length)
+    if (action.editable_esign_fields != null)
       payload.editable_esign_fields = action.editable_esign_fields;
 
     const url = `${getApiUrl()}document/form/finalize/`;

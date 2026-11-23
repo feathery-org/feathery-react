@@ -1104,6 +1104,17 @@ describe('IntegrationClient', () => {
       expect(body.custom_fields).toBeUndefined();
       // Omitted so the Quik integration's own list applies
       expect(body.editable_esign_fields).toBeUndefined();
+
+      // An empty list is an override too: nothing editable
+      global.fetch.mockClear();
+      await integrationClient.generateEnvelopes({
+        documents: ['doc1'],
+        run_async: false,
+        sign_method: 'docusign',
+        editable_esign_fields: []
+      });
+      body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.editable_esign_fields).toEqual([]);
     });
 
     it('ignores the form signer field for a docusign sign, keeping the role mappings', async () => {
@@ -1583,7 +1594,7 @@ describe('IntegrationClient', () => {
         { envelopes: [{ envelopeId: 'env-1' }], envelopeAction: 'sign' }
       );
 
-      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      let body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(body.sms_authentication).toBe(true);
       expect(body.source_element_id).toBe('button-1');
       expect(body.email_subject).toBe('Signed, sealed');
@@ -1595,6 +1606,18 @@ describe('IntegrationClient', () => {
         account_submission_id: 'account-123'
       });
       expect(body.editable_esign_fields).toEqual(['1own.*']);
+
+      global.fetch.mockClear();
+      await integrationClient.finalizeEnvelopeReview(
+        {
+          run_async: false,
+          sign_method: 'docusign',
+          editable_esign_fields: []
+        },
+        { envelopes: [{ envelopeId: 'env-1' }], envelopeAction: 'sign' }
+      );
+      body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.editable_esign_fields).toEqual([]);
     });
 
     it('polls until complete when finalize runs async', async () => {

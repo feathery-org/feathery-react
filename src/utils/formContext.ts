@@ -608,6 +608,9 @@ export const getFormContext = (formUuid: string) => {
             }
           : doc
       );
+      const editableFields = editableEsignFields?.map((field) =>
+        typeof field === 'string' ? field : { ...field }
+      );
       const hasReferences = documentIds.some(
         (doc) =>
           typeof doc !== 'string' &&
@@ -725,7 +728,7 @@ export const getFormContext = (formUuid: string) => {
               : {}),
             cc_recipients: ccCopies,
             custom_fields: customFields,
-            editable_esign_fields: editableEsignFields,
+            editable_esign_fields: editableFields,
             repeatable,
             merge_docs: merge,
             merged_file_name: mergedFileName,
