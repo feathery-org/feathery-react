@@ -670,6 +670,28 @@ describe('PowerPoint tables', () => {
       expect(runWith(deck, text, 'turn-3').highlight).toBeUndefined();
   });
 
+  it('finds runs by highlight and colour, and clears every highlight from one search', () => {
+    const { deck, table } = deckWithTable();
+    expectCard(
+      replaceTable(deck, table, (node) => {
+        runOf(node, 1, 1).highlight = '#FFFF00';
+        runOf(node, 0, 0).highlight = '#FFFF00';
+        runOf(node, 1, 0).color = '#FF0000';
+      })
+    );
+    acceptAll(deck);
+    const hits = (query: object) =>
+      (deck.call('find', query, 'turn-2') as { hits: Array<{ id: string }> })
+        .hits.length;
+    expect(hits({ feature: { name: 'highlight' } })).toBe(2);
+    expect(hits({ feature: { name: 'color', value: '#FF0000' } })).toBe(1);
+
+    const find = { feature: { name: 'highlight' } };
+    expectCard(bulkSet(deck, find, { highlight: 'none' }, 'turn-2'));
+    acceptAll(deck);
+    expect(hits({ feature: { name: 'highlight' } })).toBe(0);
+  });
+
   it('removes a row, as a suggestion that accepting settles and rejecting takes back', () => {
     const removeRow = (deck: Deck, table: string) =>
       replaceTable(deck, table, (node) => {

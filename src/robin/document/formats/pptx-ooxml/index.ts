@@ -28,6 +28,8 @@ import { pptxTree } from './tree';
 import VOCABULARY from './vocabulary';
 import type { PendingSuggestion } from './native';
 
+const FEATURES: readonly string[] = ['color', 'highlight'];
+
 export const pptxPack: Pack = {
   format: 'pptx-ooxml',
   vocabulary: VOCABULARY,
@@ -36,7 +38,15 @@ export const pptxPack: Pack = {
   adapter: { toNormalForm, fromNormalForm },
   outline: { defaultDepth: 1, belowBlocks, detail },
   text: ownText,
-  features: () => [],
+  // Runs are found by their colour and highlight, the way people point at them
+  features: (node) =>
+    FEATURES.filter((name) => typeof node[name] === 'string').map((name) => ({
+      name,
+      value: node[name] as string
+    })),
+  featureSpecs: (schemaFor('run') ?? []).filter((spec) =>
+    FEATURES.includes(spec.name)
+  ),
   annotate: () => new Map(),
   properties: {
     schema: schemaFor,
