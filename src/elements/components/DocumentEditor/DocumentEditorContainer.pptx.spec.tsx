@@ -217,6 +217,18 @@ describe('DocumentEditorContainer pptx dispatch', () => {
     expect(editor).toHaveAttribute('data-hide-download', 'false');
   });
 
+  it('contains the PowerPoint editor to the width its host gives it', async () => {
+    stashEnvelope();
+    const { container } = render(
+      <DocumentEditorContainer containerId={CONTAINER} formId='form-1' />
+    );
+    await screen.findByTestId('pptx-editor:https://example.com/deck.pptx');
+
+    expect(container.firstElementChild).toHaveStyle({
+      contain: 'inline-size'
+    });
+  });
+
   it('keeps unsupported envelope types on the placeholder', async () => {
     stashEnvelope({ type: 'csv', file: 'https://example.com/data.csv' });
     render(<DocumentEditorContainer containerId={CONTAINER} formId='form-1' />);

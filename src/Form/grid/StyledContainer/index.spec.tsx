@@ -378,6 +378,29 @@ describe('StyledContainer document editor', () => {
     });
   });
 
+  it.each(['hidden', 'scroll'])(
+    'keeps a live-form document editor with Overflow %s at its pixel height',
+    (overflow) => {
+      const { container } = render(
+        <StyledContainer
+          node={{
+            ...baseNode,
+            height: '760px',
+            children: [{}],
+            properties: { document_editor: true },
+            styles: { ...baseNode.styles, height: 760, overflow }
+          }}
+          breakpoint={480}
+        />
+      );
+
+      expect(container.querySelector('.inner-container')).toHaveStyle({
+        height: '100%',
+        minHeight: '0'
+      });
+    }
+  );
+
   it('uses the mobile fill behavior while preserving the desktop pixel height', () => {
     const node = {
       ...baseNode,
