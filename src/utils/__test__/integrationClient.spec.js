@@ -1930,6 +1930,24 @@ describe('IntegrationClient', () => {
       ]);
     });
 
+    it('rejects cc excludedPackets (sendDocusignEnvelope has no packets)', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'env-1' })
+      });
+      // This endpoint has no merge_groups to resolve a packet name against, so
+      // excludedPackets can't take effect. Throw instead of dropping it, which
+      // would fail open (the CC would get every document meant to be hidden).
+      expect(() =>
+        integrationClient.sendDocusignEnvelope({
+          documents: ['doc-1'],
+          ccRecipients: [{ email: 'a@mail.com', excludedPackets: ['Packet A'] }]
+        })
+      ).toThrow(/excludedPackets is only supported on generateDocuments/);
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
     it('omits cc_recipients when a rule passes null', async () => {
       // Logic rules are untyped, so `someField || null` is plausible input;
       // the backend's list field rejects null with a 400.

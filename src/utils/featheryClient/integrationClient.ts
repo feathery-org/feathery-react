@@ -1267,7 +1267,7 @@ export default class IntegrationClient {
     mergeDocs: boolean;
     // Packets: each inner list of document references / template ids merges
     // into one PDF (one download file, or one DocuSign document).
-    mergeGroups?: string[][];
+    mergeGroups?: (string[] | { name: string; documents: string[] })[];
     mergedFileName?: string;
     // False for a direct DocuSign sign, which also needs this call because
     // client-utils can't forward sign_method.
@@ -1287,7 +1287,11 @@ export default class IntegrationClient {
     sourceElementId?: string;
     ccRecipients?: (
       | string
-      | { email: string; name?: string; excluded_documents?: number[] }
+      | {
+          email: string;
+          name?: string;
+          excluded_documents?: number[];
+        }
     )[];
     customFields?: Record<
       string,
@@ -1546,6 +1550,18 @@ export default class IntegrationClient {
     ignoreTemplateFieldMapping
   }: SendDocusignParams) {
     const { userId } = initInfo();
+    // excludedPackets only works on generateDocuments (merge packets). This
+    // endpoint has no merge_groups to resolve a packet name against, so reject
+    // it loudly: dropping it would send the CC every document the author meant
+    // to hide (fail-open). Logic rules are untyped, so guard the runtime shape.
+    if (
+      ccRecipients?.some(
+        (cc) => cc && typeof cc === 'object' && 'excludedPackets' in cc
+      )
+    )
+      throw new Error(
+        'ccRecipients.excludedPackets is only supported on generateDocuments (merge packets); sendDocusignEnvelope has no packets to exclude.'
+      );
     const url = `${API_URL}docusign/envelope/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
@@ -1616,6 +1632,7 @@ export default class IntegrationClient {
                   email: cc.email,
                   name: cc.name,
                   excluded_documents: cc.excludedDocuments
+                  // No excluded_packets: this endpoint has no merge_groups.
                 }
               : cc
           ) ?? undefined,
