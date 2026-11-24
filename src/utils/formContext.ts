@@ -618,7 +618,7 @@ export const getFormContext = (formUuid: string) => {
               documents: [...group.documents],
               // fileName (API) -> file_name (wire); the backend defaults it to
               // the packet name when omitted.
-              ...(group.fileName ? { file_name: group.fileName } : {}),
+              ...(group.fileName ? { file_name: group.fileName } : {})
             }
       ) as typeof mergeGroups;
       // Capture explicit Quik inputs before awaiting saves or opening review.
