@@ -1307,7 +1307,10 @@ export default class IntegrationClient {
     });
   }
 
-  getEgnyteFile({ path }: GetEgnyteFileParams) {
+  async getEgnyteFile(fileParams: GetEgnyteFileParams) {
+    const path = fileParams?.path;
+    if (!path)
+      throw Error('getEgnyteFile needs the path of the file to download.');
     const { userId } = initInfo();
     const params = encodeGetParams({
       fuser_key: userId,
@@ -1315,12 +1318,18 @@ export default class IntegrationClient {
       path
     });
     const url = `${API_URL}egnyte/file/?${params}`;
-    return this._fetch(url, {}, false).then(async (response) => {
-      if (response) {
-        if (response.ok) return await response.json();
-        else throw Error(parseAPIError(await response.json()));
-      }
-    });
+    const response = await this._fetch(url, {}, false);
+    if (!response) return;
+    if (!response.ok) throw Error(parseAPIError(await response.json()));
+    try {
+      return await response.json();
+    } catch {
+      // The file is streamed inside the 200, so a transfer that fails part
+      // way arrives as a body that ends early.
+      throw Error(
+        `The Egnyte download of "${path}" was cut short before the whole file arrived. Try again.`
+      );
+    }
   }
 
   QUIK_CHECK_INTERVAL = 2000;

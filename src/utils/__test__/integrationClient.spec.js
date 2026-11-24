@@ -31,6 +31,7 @@ describe('IntegrationClient', () => {
   // rather than a serialized string, so key order and unrelated added fields
   // don't matter.
   const requestUrl = (call = 0) => global.fetch.mock.calls[call][0];
+  const queryOf = (url) => new URLSearchParams(url.split('?')[1]);
   const requestMethod = (call = 0) => global.fetch.mock.calls[call][1].method;
   const requestBody = (call = 0) =>
     JSON.parse(global.fetch.mock.calls[call][1].body);
@@ -1689,6 +1690,109 @@ describe('IntegrationClient', () => {
       );
       expect(requestBody().voided_reason).toBeUndefined();
       expect(result).toEqual({ status: 'discarded' });
+    });
+  });
+
+  describe('listEgnyteFolder', () => {
+    it('leaves out the parameters the caller did not pass', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: [], folders: [] })
+      });
+
+      await integrationClient.listEgnyteFolder({
+        path: undefined,
+        count: undefined,
+        offset: undefined
+      });
+      await integrationClient.listEgnyteFolder({
+        path: 'Clients',
+        count: 25,
+        offset: 0
+      });
+
+      const bare = queryOf(requestUrl(0));
+      expect([...bare.keys()].sort()).toEqual(['form_key', 'fuser_key']);
+      const paged = queryOf(requestUrl(1));
+      expect(paged.get('path')).toBe('Clients');
+      expect(paged.get('count')).toBe('25');
+      expect(paged.get('offset')).toBe('0');
+    });
+  });
+
+  describe('getEgnyteFile', () => {
+    it('refuses a call without a path instead of asking for "undefined"', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+
+      for (const params of [undefined, {}, { path: undefined }, { path: '' }]) {
+        await expect(integrationClient.getEgnyteFile(params)).rejects.toThrow(
+          'getEgnyteFile needs the path of the file to download'
+        );
+      }
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('returns the downloaded file', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      const file = {
+        name: 'Statement.pdf',
+        path: 'Clients/Statement.pdf',
+        content_type: 'application/pdf',
+        data: 'YWJj',
+        size: 3
+      };
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(file)
+      });
+
+      const result = await integrationClient.getEgnyteFile({
+        path: 'Clients/Statement.pdf'
+      });
+
+      expect(queryOf(requestUrl()).get('path')).toBe('Clients/Statement.pdf');
+      expect(result).toEqual(file);
+    });
+
+    // The file is streamed inside a 200, so a transfer that dies part way
+    // shows up as a body that cannot be read, not as an error status.
+    it('says the download was cut short when the body does not arrive whole', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+
+      for (const failure of [
+        new SyntaxError('Unterminated string in JSON at position 262144'),
+        new TypeError('network error')
+      ]) {
+        global.fetch.mockResolvedValue({
+          ok: true,
+          json: jest.fn().mockRejectedValue(failure)
+        });
+
+        await expect(
+          integrationClient.getEgnyteFile({ path: 'Clients/Statement.pdf' })
+        ).rejects.toThrow(
+          'The Egnyte download of "Clients/Statement.pdf" was cut short before the whole file arrived. Try again.'
+        );
+      }
+    });
+
+    it('passes on the reason the server gives for refusing', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: false,
+        status: 404,
+        json: jest.fn().mockResolvedValue([
+          {
+            message: 'Nothing was found in Egnyte at "Clients/Gone.pdf".',
+            code: 'default-error'
+          }
+        ])
+      });
+
+      await expect(
+        integrationClient.getEgnyteFile({ path: 'Clients/Gone.pdf' })
+      ).rejects.toThrow('Nothing was found in Egnyte at "Clients/Gone.pdf".');
     });
   });
 });
