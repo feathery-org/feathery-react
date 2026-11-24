@@ -55,8 +55,9 @@ function nameKey(text: string) {
   return key.startsWith('the ') ? key.slice(4) : key;
 }
 
-// The browser's English region names ("Czechia", "Türkiye") are CLDR's, the
-// same short names the backend reads from babel.
+// The browser's English region names ("Czechia", "Türkiye"). The backend only
+// has a short alias list, so a few of these ("St. Lucia") it would refuse;
+// the code is what gets sent, so that's harmless.
 function cldrNames(codes: string[]): Array<[string, string]> {
   try {
     const names = new Intl.DisplayNames(['en'], {

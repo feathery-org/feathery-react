@@ -238,7 +238,9 @@ export function validateCellValue(
     case 'uuid':
       return UUID_PATTERN.test(text) ? null : 'Invalid UUID';
     case 'zip_code':
-      return ZIP_PATTERN.test(text) ? null : 'Must be 12345 or 12345-6789';
+      return ZIP_PATTERN.test(text)
+        ? null
+        : 'Must be a 5-digit ZIP code or ZIP+4';
     case 'us_state':
       return allowedCodes(rule).has(text) ? null : 'Must be a valid US state';
     case 'country_code':
@@ -426,7 +428,9 @@ export function hubCellRules(
       type: HUB_TYPES[field.type] ?? 'any',
       required: field.required,
       unique: field.unique,
-      options: HUB_TYPE_OPTIONS[field.type] ?? metadata.options,
+      options:
+        HUB_TYPE_OPTIONS[field.type] ??
+        (field.type === 'text' ? metadata.options : undefined),
       minLength: metadata.min_length,
       maxLength: metadata.max_length,
       minValue: metadata.min_value,

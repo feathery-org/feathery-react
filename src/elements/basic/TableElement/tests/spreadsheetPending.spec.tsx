@@ -557,9 +557,12 @@ describe('cell editors follow the column', () => {
     // A letter jumps to the first matching choice…
     fireEvent.keyDown(grid(), { key: 's' });
     await waitFor(() => expect(highlighted()).toBe('Sent'));
-    // …and another letter while open jumps again.
+    // …and after a pause, another letter while open starts a new search.
+    const later = Date.now() + 2000;
+    const now = jest.spyOn(Date, 'now').mockReturnValue(later);
     fireEvent.keyDown(grid(), { key: 'r' });
     expect(highlighted()).toBe('Ready');
+    now.mockRestore();
     fireEvent.keyDown(grid(), { key: 'Escape' });
 
     // One that matches nothing keeps the stored value.

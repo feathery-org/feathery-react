@@ -641,6 +641,30 @@ describe('row insertion and deletion', () => {
     ]);
   });
 
+  test('typing a code onto a selected dropdown cell picks that code', () => {
+    // The opening key starts the search, so N, Y doesn't land on NE.
+    const onCellsEdit = jest.fn();
+    render(
+      <SpreadsheetTable
+        {...dropdownProps({ onCellsEdit, cellRules: stateRules() })}
+      />
+    );
+    fireEvent.mouseDown(cell('Reno'));
+    fireEvent.keyDown(grid(), { key: 'N' });
+    fireEvent.keyDown(grid(), { key: 'Y' });
+    fireEvent.keyDown(grid(), { key: 'Enter' });
+    expect(onCellsEdit).toHaveBeenCalledWith([
+      { rowIndex: 2, fieldKey: 'city_key', value: 'NY' }
+    ]);
+
+    // Space opens the menu without starting the search.
+    fireEvent.mouseDown(cell('Reno'));
+    fireEvent.keyDown(grid(), { key: ' ' });
+    fireEvent.keyDown(grid(), { key: 'T' });
+    fireEvent.keyDown(grid(), { key: 'X' });
+    expect(option('TX')).toHaveAttribute('aria-selected', 'true');
+  });
+
   test('only pinning in the row menu, and no add strip, when adding and deleting are off', () => {
     renderTable({ add_delete_rows: false });
     openRowMenu(2);

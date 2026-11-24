@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import {
   cellErrorKey,
   fieldCellRules,
@@ -81,7 +82,9 @@ describe('validateCellValue', () => {
     const zip = { label: 'ZIP', type: 'zip_code' } as const;
     expect(validateCellValue('02134', zip)).toBeNull();
     expect(validateCellValue('02134-1234', zip)).toBeNull();
-    expect(validateCellValue('2134', zip)).toBe('Must be 12345 or 12345-6789');
+    expect(validateCellValue('2134', zip)).toBe(
+      'Must be a 5-digit ZIP code or ZIP+4'
+    );
     const state = { label: 'State', type: 'us_state' } as const;
     expect(validateCellValue('CA', state)).toBeNull();
     expect(validateCellValue('XX', state)).toBe('Must be a valid US state');
@@ -294,23 +297,46 @@ describe('rule derivation', () => {
         { field_key: 'c', name: 'Country', hub_field_key: 'country' }
       ],
       [
-        // Their own code lists win over options a text field left behind.
-        { key: 'state', type: 'us_state', metadata: { options: ['North'] } },
+        { key: 'state', type: 'us_state' },
         { key: 'country', type: 'country_code' }
       ]
     );
     expect(rules.s.type).toBe('us_state');
     expect(editorKindFor(rules.s)).toBe('select');
     expect(editorKindFor(rules.c)).toBe('select');
-    // Pinned to the hub's lists (apps/hub/locations.py, US_STATE_DATA): a
-    // code added or dropped on one side alone fails here, as CI once did.
-    expect(rules.s.options).toHaveLength(62);
-    expect(rules.c.options).toHaveLength(250);
-    expect(rules.s.options).not.toContain('North');
+    // The same digests are pinned with the hub's lists (apps/hub/locations.py,
+    // US_STATE_DATA), so a code added, dropped or swapped on one side fails.
+    const digest = (codes: string[]) =>
+      createHash('sha256')
+        .update([...codes].sort().join(','))
+        .digest('hex');
+    expect(digest(rules.s.options ?? [])).toBe(
+      'fce580ed6b1e18b65e39ea67e4da40ca4fcd20c71bce0335601dbb65d1076d8a'
+    );
+    expect(digest(rules.c.options ?? [])).toBe(
+      'f414083c9f5eec3b4ab92d710e4ae7a2683d33e3dadad5cae7e5626920cee320'
+    );
     expect(rules.c.options).toEqual(
       expect.arrayContaining(['CI', 'CW', 'SX', 'BQ', 'AQ', 'EH', 'UM'])
     );
     expect(rules.c.options).not.toContain('AN');
+  });
+
+  test('options a text field left behind stay on text columns only', () => {
+    const leftover = { options: ['North', 'South'] };
+    const rules = hubCellRules(
+      [
+        { field_key: 'z', name: 'ZIP', hub_field_key: 'zip' },
+        { field_key: 't', name: 'Region', hub_field_key: 'region' }
+      ],
+      [
+        { key: 'zip', type: 'zip_code', metadata: leftover },
+        { key: 'region', type: 'text', metadata: leftover }
+      ]
+    );
+    expect(rules.z.options).toBeUndefined();
+    expect(editorKindFor(rules.z)).toBe('text');
+    expect(rules.t.options).toEqual(['North', 'South']);
   });
 
   test('state and country cells check the codes their menu offers', () => {
