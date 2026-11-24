@@ -1169,14 +1169,18 @@ export function setTableCellText(
   }
   const oldRPr = descendant(cell, 'a:rPr') || descendant(cell, 'a:endParaRPr');
   const kids = childrenOf(body);
+  const oldPPrs = children(body, 'a:p').map((p) => child(p, 'a:pPr'));
   for (let i = kids.length - 1; i >= 0; i--)
     if (tagOf(kids[i]) === 'a:p') kids.splice(i, 1);
-  for (const line of value.replace(/\r/g, '').split('\n')) {
+  for (const [i, line] of value.replace(/\r/g, '').split('\n').entries()) {
     const rPr = oldRPr
       ? deepClone(oldRPr)
       : el('a:rPr', { lang: 'en-US', sz: String(ptToSz(12)) });
+    // Each line keeps the paragraph look of the line it replaces, bullets included
+    const pPr = oldPPrs[Math.min(i, oldPPrs.length - 1)];
     kids.push(
       el('a:p', undefined, [
+        ...(pPr ? [deepClone(pPr)] : []),
         el('a:r', undefined, [rPr, el('a:t', undefined, [textNode(line)])])
       ])
     );
@@ -1755,7 +1759,7 @@ export function setTableCellRangeAlign(
       ]);
       childrenOf(cell).unshift(body);
     }
-    if (vertical) setAttr(ensureChild(body, 'a:bodyPr'), 'anchor', vertical);
+    if (vertical) setAttr(ensureChild(cell, 'a:tcPr'), 'anchor', vertical);
     if (align) {
       const paragraphs = children(body, 'a:p');
       if (!paragraphs.length) paragraphs.push(ensureChild(body, 'a:p'));

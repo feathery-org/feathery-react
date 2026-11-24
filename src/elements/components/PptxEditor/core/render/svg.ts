@@ -36,24 +36,24 @@ import { readSlide } from '../model/import';
 import {
   PH_NO_IDX,
   resolveListProps,
+  type ResolvedListProps,
   resolveShapeFill,
   type ResolvedRunDefaults
 } from '../model/resolve';
 import {
   tableCellAlign,
   tableCellBorderEdge,
-  tableCellFill,
   tableCellFontSize,
   tableCellGridSpan,
   tableCellIsMergeContinuation,
   tableCellRowSpan,
-  tableCellText,
   tableCellVerticalAlign,
   tableCells,
   tableColumns,
+  tableNode,
   tableRows
 } from '../model/table';
-import type { Deck, Slide, Shape, Run } from '../model/types';
+import type { Deck, Slide, Shape, Run, Paragraph } from '../model/types';
 import {
   readBodyProps,
   readParagraphProps,
@@ -65,7 +65,8 @@ import {
   type ChartSeries,
   type ChartTextStyle
 } from '../model/chart';
-import { readShapeNode } from '../model/read';
+import { readShapeNode, readTextBody } from '../model/read';
+import { tableCellLook } from './tableStyle';
 
 let svgThemeFonts: ThemeFonts = { major: 'Helvetica', minor: 'Helvetica' };
 // deck/slide context for inheritance resolution during a render pass. Rendering
@@ -884,7 +885,11 @@ function spacingCss(
 /** Draw a DrawingML table as real SVG cells plus small HTML text boxes. The
  * foreignObjects use the same EMU-to-px scale as ordinary text, which keeps
  * wrapping and double-click editing stable at any zoom. */
-function tableGroup(shape: Shape, pkg: OPCPackage): SVGGElement {
+function tableGroup(
+  shape: Shape,
+  pkg: OPCPackage,
+  fittedHeights?: number[]
+): SVGGElement {
   const g = featheryDoc().createElementNS(SVGNS, 'g') as SVGGElement;
   const cols = tableColumns(shape);
   const rows = tableRows(shape);
@@ -893,11 +898,13 @@ function tableGroup(shape: Shape, pkg: OPCPackage): SVGGElement {
       Number(getAttr(column, 'w')) ||
       (shape.xfrm?.cx || 0) / Math.max(cols.length, 1)
   );
-  const rowHeights = rows.map(
-    (row) =>
-      Number(getAttr(row, 'h')) ||
-      (shape.xfrm?.cy || 0) / Math.max(rows.length, 1)
-  );
+  const rowHeights =
+    fittedHeights ??
+    rows.map(
+      (row) =>
+        Number(getAttr(row, 'h')) ||
+        (shape.xfrm?.cy || 0) / Math.max(rows.length, 1)
+    );
   const columnOffsets = columnWidths.map((_, index) =>
     columnWidths.slice(0, index).reduce((sum, width) => sum + width, 0)
   );
@@ -929,7 +936,22 @@ function tableGroup(shape: Shape, pkg: OPCPackage): SVGGElement {
       rect.setAttribute('y', String(y));
       rect.setAttribute('width', String(w));
       rect.setAttribute('height', String(h));
-      rect.setAttribute('fill', `#${tableCellFill(cell) || 'FFFFFF'}`);
+      const look = tableCellLook(
+        tableNode(shape) as ONode,
+        pkg,
+        rowIndex,
+        colIndex,
+        rows.length,
+        cols.length
+      );
+      const tcPr = child(cell, 'a:tcPr');
+      const ownFill = tcPr && child(tcPr, 'a:solidFill');
+      rect.setAttribute(
+        'fill',
+        tcPr && child(tcPr, 'a:noFill')
+          ? 'none'
+          : resolveColor(ownFill ?? look.fill, pkg) || '#FFFFFF'
+      );
       g.appendChild(rect);
       const lines: Array<{
         edge: 'L' | 'T' | 'R' | 'B';
@@ -951,7 +973,10 @@ function tableGroup(shape: Shape, pkg: OPCPackage): SVGGElement {
         line.setAttribute('y1', String(spec.y1));
         line.setAttribute('x2', String(spec.x2));
         line.setAttribute('y2', String(spec.y2));
-        line.setAttribute('stroke', `#${border.color || '8896A8'}`);
+        line.setAttribute(
+          'stroke',
+          resolveColor(border.fill, pkg) || '#8896A8'
+        );
         line.setAttribute('stroke-width', String(border.widthEMU));
         if (border.dash !== 'solid')
           line.setAttribute(
@@ -973,23 +998,12 @@ function tableGroup(shape: Shape, pkg: OPCPackage): SVGGElement {
       fo.setAttribute('width', String(w / EMU_PER_PX));
       fo.setAttribute('height', String(h / EMU_PER_PX));
       const div = featheryDoc().createElementNS(XHTML, 'div') as HTMLDivElement;
-      const rPr = descendant(cell, 'a:rPr') || descendant(cell, 'a:endParaRPr');
       const fontPt = tableCellFontSize(cell) || 12;
-      const color =
-        resolveColor(rPr && child(rPr, 'a:solidFill'), pkg) || '#000000';
-      const bold = rPr && getAttr(rPr, 'b') === '1' ? 'font-weight:700;' : '';
-      const italic =
-        rPr && getAttr(rPr, 'i') === '1' ? 'font-style:italic;' : '';
-      const decoration = [
-        rPr && getAttr(rPr, 'u') && getAttr(rPr, 'u') !== 'none'
-          ? 'underline'
-          : '',
-        rPr && getAttr(rPr, 'strike') && getAttr(rPr, 'strike') !== 'noStrike'
-          ? 'line-through'
-          : ''
-      ]
-        .filter(Boolean)
-        .join(' ');
+      const cellDefaults: ParaDefault = {
+        sizePt: fontPt,
+        color: look.textColor && resolveColor(look.textColor, pkg),
+        bold: look.bold
+      };
       const cellAlign = tableCellAlign(cell);
       const cellVertical = tableCellVerticalAlign(cell);
       const textAlign =
@@ -1009,16 +1023,47 @@ function tableGroup(shape: Shape, pkg: OPCPackage): SVGGElement {
       div.dataset.tableCell = '';
       div.dataset.row = String(rowIndex);
       div.dataset.col = String(colIndex);
+      if (rowSpan > 1) div.dataset.rowSpan = String(rowSpan);
+      const margin = (side: string, fallback: number) =>
+        Number((tcPr && getAttr(tcPr, side)) ?? fallback) / EMU_PER_PX;
       div.style.cssText = `box-sizing:border-box;width:${
         w / EMU_PER_PX
-      }px;height:${
-        h / EMU_PER_PX
-      }px;padding:5px 7px;overflow:hidden;white-space:pre-wrap;word-break:break-word;line-height:1.2;font-size:${ptToCssPx(
+      }px;height:${h / EMU_PER_PX}px;padding:${margin(
+        'marT',
+        CELL_MARGIN_TB
+      )}px ${margin('marR', CELL_MARGIN_LR)}px ${margin(
+        'marB',
+        CELL_MARGIN_TB
+      )}px ${margin(
+        'marL',
+        CELL_MARGIN_LR
+      )}px;overflow:hidden;white-space:pre-wrap;word-break:break-word;line-height:1.2;font-size:${ptToCssPx(
         fontPt
-      )}px;color:${color};text-align:${textAlign};display:flex;flex-direction:column;justify-content:${justifyContent};${bold}${italic}${
-        decoration ? `text-decoration:${decoration};` : ''
-      }`;
-      div.textContent = tableCellText(cell);
+      )}px;text-align:${textAlign};display:flex;flex-direction:column;justify-content:${justifyContent};`;
+      const body = readTextBody(child(cell, 'a:txBody'));
+      const cellLook = Object.fromEntries(
+        Object.entries(cellDefaults).filter(([, value]) => value !== undefined)
+      );
+      for (const pDiv of paragraphDivs(body?.paragraphs ?? [], {
+        fontScale: 1,
+        lineSpaceReduction: 0,
+        topAnchored: cellVertical === 't',
+        inheritedAt: (level) => {
+          const inherited =
+            curDeck && curSlide
+              ? resolveListProps(curDeck, curSlide, { node: cell }, level)
+              : {};
+          return {
+            ...inherited,
+            defRPr: {
+              ...inherited.defRPr,
+              ...cellLook,
+              ...(cellLook.color ? { colorScheme: undefined } : {})
+            }
+          };
+        }
+      }))
+        div.appendChild(pDiv);
       fo.appendChild(div);
       textG.appendChild(fo);
       g.appendChild(textG);
@@ -1027,7 +1072,55 @@ function tableGroup(shape: Shape, pkg: OPCPackage): SVGGElement {
     y += rowHeight;
   });
   for (const line of borderLines) g.appendChild(line);
-  return g;
+  if (fittedHeights) return g;
+  const fitted = rowsFittedToText(g, rowHeights);
+  const table = tableNode(shape);
+  if (table) {
+    if (fitted) fittedRowHeights.set(table, fitted);
+    else fittedRowHeights.delete(table);
+  }
+  return fitted ? tableGroup(shape, pkg, fitted) : g;
+}
+
+const CELL_MARGIN_LR = 91440;
+const CELL_MARGIN_TB = 45720;
+const fittedRowHeights = new WeakMap<ONode, number[]>();
+
+/** The row heights a table is drawn with once its rows grow to fit their text */
+export function drawnTableRowHeights(shape: Shape): number[] | undefined {
+  const table = tableNode(shape);
+  return table && fittedRowHeights.get(table);
+}
+
+/** Each row grown to fit its tallest cell's text the way PowerPoint draws it, or null when every row already fits */
+function rowsFittedToText(
+  g: SVGGElement,
+  rowHeights: number[]
+): number[] | null {
+  const doc = featheryDoc();
+  if (!doc.body) return null;
+  const host = doc.createElement('div');
+  host.style.cssText =
+    'position:fixed;left:-100000px;top:0;visibility:hidden;pointer-events:none';
+  const svg = doc.createElementNS(SVGNS, 'svg');
+  svg.appendChild(g);
+  host.appendChild(svg);
+  doc.body.appendChild(host);
+  const fitted = [...rowHeights];
+  for (const div of g.querySelectorAll<HTMLDivElement>('[data-table-cell]')) {
+    if (div.dataset.rowSpan) continue;
+    const drawn = div.style.height;
+    div.style.height = 'auto';
+    const needed = div.offsetHeight * EMU_PER_PX;
+    div.style.height = drawn;
+    const row = Number(div.dataset.row);
+    if (needed > fitted[row]) fitted[row] = needed;
+  }
+  g.remove();
+  host.remove();
+  return fitted.some((height, row) => height > rowHeights[row] + EMU_PER_PX)
+    ? fitted
+    : null;
 }
 
 // Symbol-font bullet chars (Wingdings etc.) render as wrong glyphs in normal
@@ -1196,14 +1289,43 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       allowOverflow ? 'visible' : 'hidden'
     };line-height:1.2;outline:none;`;
 
-  const autoNumbers = new Map<string, number>();
-  for (const [paragraphIndex, p] of shape.text.paragraphs.entries()) {
-    // Resolve what the paragraph inherits from the placeholder's list style
-    // (layout -> master) when its own pPr is silent: bullets + default run props.
-    const inherited =
+  for (const pDiv of paragraphDivs(shape.text.paragraphs, {
+    wrap: body.wrap,
+    fontScale,
+    lineSpaceReduction:
+      body.autofit?.type === 'normal'
+        ? body.autofit.lineSpaceReductionPct ?? 0
+        : 0,
+    topAnchored,
+    inheritedAt: (level) =>
       curDeck && curSlide
-        ? resolveListProps(curDeck, curSlide, shape, p.level ?? 0)
-        : {};
+        ? resolveListProps(curDeck, curSlide, shape, level)
+        : {}
+  }))
+    div.appendChild(pDiv);
+  fo.appendChild(div);
+  g.appendChild(fo);
+  return g;
+}
+
+interface ParagraphLayout {
+  wrap?: string;
+  fontScale: number;
+  lineSpaceReduction: number;
+  topAnchored: boolean;
+  inheritedAt: (level: number) => ResolvedListProps;
+}
+
+/** A text body's paragraphs drawn the way PowerPoint lays them out, in text boxes and table cells alike */
+function paragraphDivs(
+  paragraphs: Paragraph[],
+  layout: ParagraphLayout
+): HTMLDivElement[] {
+  const { wrap, fontScale, lineSpaceReduction, topAnchored } = layout;
+  const divs: HTMLDivElement[] = [];
+  const autoNumbers = new Map<string, number>();
+  for (const [paragraphIndex, p] of paragraphs.entries()) {
+    const inherited = layout.inheritedAt(p.level ?? 0);
     const paraProps = readParagraphProps(p.node);
     const lineSpacing = paraProps.lineSpacing ?? inherited.lineSpacing;
     const bullet = p.bullet ?? inherited.bullet;
@@ -1230,9 +1352,9 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     // Prevent flexbox from compressing paragraphs to the box height. With a
     // centered anchor, their natural height then extends above and below it.
     let css = `flex-shrink:0;text-align:${align};white-space:${
-      body.wrap === 'none' ? 'pre' : 'pre-wrap'
+      wrap === 'none' ? 'pre' : 'pre-wrap'
     };`;
-    if (body.wrap !== 'none') css += 'overflow-wrap:break-word;';
+    if (wrap !== 'none') css += 'overflow-wrap:break-word;';
     if (bullet && bullet.kind !== 'none') {
       // The marker hangs beside the text. Both the first text line and any
       // Shift+Enter/wrapped lines start at the same padding edge.
@@ -1250,21 +1372,18 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
     const baseFontPx =
       ptToCssPx(p.runs[0]?.sizePt ?? endParaSzPt ?? paraDef?.sizePt ?? 18) *
       fontScale;
-    const lineSpaceReduction =
-      body.autofit?.type === 'normal'
-        ? body.autofit.lineSpaceReductionPct ?? 0
-        : 0;
     // PowerPoint percent/single spacing multiplies the font's line box (~1.2x
     // the size), not the bare em, so 150% = 1.5 x 1.2 x size (rules expect this).
     const NATURAL_LINE = 1.2;
+    const lineFactor =
+      lineSpacing?.kind === 'percent'
+        ? NATURAL_LINE *
+          Math.max(0.1, (lineSpacing.valPct - lineSpaceReduction) / 100)
+        : NATURAL_LINE;
     const lineHeightPx =
       lineSpacing?.kind === 'points'
         ? ptToCssPx(lineSpacing.valPt)
-        : lineSpacing?.kind === 'percent'
-        ? baseFontPx *
-          NATURAL_LINE *
-          Math.max(0.1, (lineSpacing.valPct - lineSpaceReduction) / 100)
-        : baseFontPx * NATURAL_LINE;
+        : baseFontPx * lineFactor;
     // Expanded spacing belongs to the line box. Moving its top half into a
     // negative margin lifts every line above PowerPoint's baseline. Keep the
     // existing compressed-line treatment, without redistributing extra leading.
@@ -1275,10 +1394,22 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       (baseFontPx * NATURAL_LINE - lineHeightPx) / 2
     );
     const numPx = (v: string | undefined) => (v ? parseFloat(v) : 0);
+    // PowerPoint ignores space before the first paragraph and after the last
     let marginTopPx =
-      numPx(spacingCss(paraProps.spaceBefore, baseFontPx)) - halfLeading;
+      (paragraphIndex === 0
+        ? 0
+        : numPx(
+            spacingCss(
+              paraProps.spaceBefore ?? inherited.spaceBefore,
+              baseFontPx
+            )
+          )) - halfLeading;
     const marginBottomPx =
-      numPx(spacingCss(paraProps.spaceAfter, baseFontPx)) + halfLeading;
+      (paragraphIndex === paragraphs.length - 1
+        ? 0
+        : numPx(
+            spacingCss(paraProps.spaceAfter ?? inherited.spaceAfter, baseFontPx)
+          )) + halfLeading;
     const leadFont = splitFontWeight(
       resolveFont(p.runs[0]?.font ?? paraDef?.font, svgThemeFonts)
     );
@@ -1290,9 +1421,9 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
         excessTopLeadingRatio(leadFont.family, wt, curDeck ?? undefined) *
         baseFontPx;
     }
-    // Unitless 1 matches PowerPoint's single spacing (the font's content line),
-    // tighter than CSS 'normal'; explicit percent/points keep the px value.
-    const cssLineHeight = lineSpacing ? `${lineHeightPx}px` : '1';
+    // Each line sizes from its own largest font, as PowerPoint does, unless spacing is in points
+    const cssLineHeight =
+      lineSpacing?.kind === 'points' ? `${lineHeightPx}px` : `${lineFactor}`;
     // Size the line-box strut from the lead run; otherwise it inherits the
     // host's 16px font and sinks/loosens any text smaller than that.
     css += `font-size:${baseFontPx}px;font-family:${cssFamilyList(
@@ -1360,10 +1491,11 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
       pDiv.appendChild(m);
     }
 
-    // An empty paragraph (no runs, or runs with no visible text) still needs a
+    // An empty paragraph (no runs, or runs with no text) still needs a
     // line box; an empty <span> collapses to zero height, so force a line break.
     const hasSoftBreak = p.runs.some((r) => tagOf(r.node) === 'a:br');
-    if (!paraHasText && !hasSoftBreak)
+    const isEmpty = p.runs.every((r) => !r.text);
+    if (isEmpty && !hasSoftBreak)
       pDiv.appendChild(featheryDoc().createElementNS(XHTML, 'br'));
     for (const [runIndex, r] of p.runs.entries()) {
       if (tagOf(r.node) === 'a:br') {
@@ -1420,15 +1552,23 @@ function textForeign(shape: Shape, w: number, h: number): SVGGElement | null {
         link.style.color = 'inherit';
         link.style.textDecoration = 'inherit';
         link.style.cursor = 'pointer';
+        // PowerPoint draws links in the theme's link colour unless the link asks for its text colour
+        const keepsTextColor = !!(
+          hyperlink && descendant(hyperlink, 'ahyp:hlinkClr')
+        );
+        const hlink =
+          !keepsTextColor && curDeck
+            ? schemeColorHex('hlink', curDeck.pkg)
+            : undefined;
+        if (hlink) span.style.color = `#${hlink.replace('#', '')}`;
+        span.style.textDecoration = 'underline';
         link.appendChild(span);
         pDiv.appendChild(link);
       } else pDiv.appendChild(span);
     }
-    div.appendChild(pDiv);
+    divs.push(pDiv);
   }
-  fo.appendChild(div);
-  g.appendChild(fo);
-  return g;
+  return divs;
 }
 
 function chartText(

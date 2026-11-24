@@ -20,8 +20,7 @@ function imageUrl(
   slidePath: string,
   node: ONode
 ): string | undefined {
-  const blip = descendant(node, 'a:blip');
-  const rid = blip && getAttr(blip, 'r:embed');
+  const rid = pictureRelationship(node);
   if (!rid) return undefined;
   const target = pkg.relTarget(slidePath, rid);
   const bytes = target && pkg.binary(target);
@@ -42,9 +41,11 @@ function imageUrl(
   );
 }
 
+/** The picture's image part, or its SVG part when PowerPoint saved no raster copy */
 function pictureRelationship(node: ONode): string | undefined {
   const blip = descendant(node, 'a:blip');
-  return blip && getAttr(blip, 'r:embed');
+  const svg = blip && descendant(blip, 'asvg:svgBlip');
+  return blip && (getAttr(blip, 'r:embed') ?? (svg && getAttr(svg, 'r:embed')));
 }
 
 export function readSlide(

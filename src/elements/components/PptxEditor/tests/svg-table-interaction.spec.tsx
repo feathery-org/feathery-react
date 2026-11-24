@@ -1,5 +1,6 @@
 /* eslint-disable no-restricted-globals -- jsdom test */
 import React from 'react';
+import { strToU8, unzipSync, zipSync } from 'fflate';
 import { importDeck } from '../core/model/import';
 import { exportDeckBytes } from '../core/model/export';
 import { insertTable, setTableCellText } from '../core/model/edit';
@@ -10,7 +11,7 @@ import {
   tableColumns,
   tableRows
 } from '../core/model/table';
-import { child, descendant, getAttr, setAttr } from '../core/opc/xml';
+import { child, children, descendant, getAttr, setAttr } from '../core/opc/xml';
 import type { Deck, Shape, Slide } from '../core/model/types';
 import { SvgSlide } from '../ui/SlideStage';
 import { Toolbar } from '../ui/PptxToolbar';
@@ -75,6 +76,107 @@ async function mountTable() {
   return { deck, slide, table, host, store };
 }
 
+it('paints a table in its style and each run of a cell in its own look', async () => {
+  const STYLE = '{11111111-2222-3333-4444-555555555555}';
+  const files = unzipSync(sampleBytes());
+  files['ppt/tableStyles.xml'] = strToU8(
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:tblStyleLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" def="${STYLE}"><a:tblStyle styleId="${STYLE}" styleName="Plans"><a:wholeTbl><a:tcStyle><a:fill><a:solidFill><a:srgbClr val="EEEEEE"/></a:solidFill></a:fill></a:tcStyle></a:wholeTbl><a:firstRow><a:tcTxStyle b="on"><a:srgbClr val="FFFFFF"/></a:tcTxStyle><a:tcStyle><a:fill><a:solidFill><a:srgbClr val="1F4E79"/></a:solidFill></a:fill></a:tcStyle></a:firstRow></a:tblStyle></a:tblStyleLst>`
+  );
+  jest
+    .spyOn(SVGSVGElement.prototype, 'getBoundingClientRect')
+    .mockReturnValue(STAGE_RECT);
+  mounted = await mountEditor(<SvgSlide />);
+  const store = mounted.store;
+  let slideId = '';
+  let tableId = '';
+  await act(async () => {
+    store.loadFile(zipSync(files), 'styled.pptx');
+    const deck = store.getState().deck!;
+    const slide = deck.slides[0];
+    const table = insertTable(deck, slide, 2, 2, 0, 0, 2000000, 800000);
+    const tblPr = descendant(table.node, 'a:tblPr')!;
+    tblPr['a:tblPr'] = [{ 'a:tableStyleId': [{ '#text': STYLE }] }];
+    // New tables paint every cell white; drop that so the style shows
+    for (const row of tableRows(table))
+      for (const cell of tableCells(row))
+        cell['a:tc'] = (cell['a:tc'] as Array<Record<string, unknown>>).filter(
+          (kid) => !('a:tcPr' in kid)
+        ) as never;
+    setTableCellText(deck, slide, table, 0, 0, 'Plan');
+    setTableCellText(deck, slide, table, 1, 1, '$45');
+    const run = descendant(tableCell(table, 1, 1)!, 'a:rPr')!;
+    run['a:rPr'] = [
+      { 'a:highlight': [{ 'a:srgbClr': [], ':@': { '@_val': 'FFFF00' } }] }
+    ];
+    const plain = tableCell(table, 1, 0)!;
+    plain['a:tc'] = [
+      ...(plain['a:tc'] as unknown[]),
+      {
+        'a:tcPr': [
+          {
+            'a:solidFill': [
+              {
+                'a:schemeClr': [{ 'a:tint': [], ':@': { '@_val': '40000' } }],
+                ':@': { '@_val': 'accent1' }
+              }
+            ]
+          }
+        ]
+      }
+    ] as never;
+    slideId = slide.path;
+    tableId = table.id;
+    store.resetHistory();
+  });
+  await act(async () =>
+    store.executeCommand(
+      {
+        type: 'edit-table',
+        slideId,
+        shapeId: tableId,
+        operations: [{ kind: 'set-cell-text', row: 0, col: 1, value: 'Other' }]
+      },
+      'Edit cell'
+    )
+  );
+  const host = mounted.host;
+  const fill = (row: number, col: number) =>
+    host
+      .querySelector(
+        `[data-table-cell-bg][data-row="${row}"][data-col="${col}"]`
+      )
+      ?.getAttribute('fill')
+      ?.toUpperCase();
+  const span = (row: number, col: number) =>
+    host.querySelector(
+      `[data-table-cell][data-row="${row}"][data-col="${col}"] span`
+    ) as HTMLSpanElement;
+
+  expect(fill(0, 0)).toBe('#1F4E79');
+  expect(fill(1, 1)).toBe('#EEEEEE');
+  expect(fill(1, 0)).not.toBe('#FFFFFF');
+  expect(span(0, 0).style.fontWeight).toBe('700');
+  expect(span(0, 0).style.color).toBe('rgb(255, 255, 255)');
+  expect(span(1, 1).getAttribute('style')).toContain('#FFFF00');
+});
+
+it('grows a row to fit its tallest cell and keeps every other row at its own height', async () => {
+  jest
+    .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+    .mockImplementation(function (this: HTMLElement) {
+      return this.dataset.row === '0' && this.dataset.col === '1' ? 120 : 20;
+    });
+  const { host } = await mountTable();
+  const cell = (row: number, col: number) =>
+    host.querySelector(
+      `[data-table-cell-bg][data-row="${row}"][data-col="${col}"]`
+    )!;
+
+  expect(Number(cell(0, 0).getAttribute('height'))).toBe(120 * 9525);
+  expect(Number(cell(1, 0).getAttribute('y'))).toBe(120 * 9525);
+  expect(Number(cell(1, 0).getAttribute('height'))).toBe(500000);
+});
+
 it('selects the complete table grid even when its XML frame height differs from row heights', async () => {
   const { deck, host } = await mountTable();
   const overlay = Array.from(host.querySelectorAll('div[data-overlay]')).find(
@@ -113,9 +215,11 @@ it('renders a merged table anchor across its full column and row span without pa
   expect(background.getAttribute('width')).toBe('2000000');
   expect(background.getAttribute('height')).toBe('1000000');
   expect(host.querySelectorAll('[data-table-cell]')).toHaveLength(1);
-  expect(host.querySelector('[data-table-cell]')?.textContent).toBe(
-    'First\nSecond value'
-  );
+  expect(
+    [...(host.querySelector('[data-table-cell]')?.children ?? [])].map(
+      (paragraph) => paragraph.textContent
+    )
+  ).toEqual(['First', 'Second value']);
   await act(async () =>
     store.setTableSelection({
       shapeId: table.id,
@@ -281,6 +385,96 @@ it('flushes an in-progress cell edit through the store commit hook, as keyboard 
   )!;
   expect(tableCellText(tableCell(exported, 0, 0))).toBe('Typed');
   expect(store.commitSvgTextEdit).toBeNull();
+});
+
+it.each([
+  [
+    'leaves a cell holding a blank line untouched when editing ends without typing',
+    'Alpha\n\nGamma',
+    '',
+    'Alpha\n\nGamma'
+  ],
+  [
+    'keeps the blank line of a cell typed in, adding no paragraph',
+    'Alpha\n\nGamma',
+    'X',
+    'XAlpha\n\nGamma'
+  ],
+  [
+    'keeps a paragraph of spaces as it is when typing elsewhere in the cell',
+    'one\n ',
+    'X',
+    'Xone\n '
+  ]
+])('%s', async (_, before, typed, expected) => {
+  const { slide, table, host, store } = await mountTable();
+  await act(async () =>
+    store.executeCommand(
+      {
+        type: 'edit-table',
+        slideId: slide.path,
+        shapeId: table.id,
+        operations: [{ kind: 'set-cell-text', row: 0, col: 0, value: before }]
+      },
+      'Edit cell'
+    )
+  );
+  const first = host.querySelector(
+    '[data-table-cell][data-row="0"][data-col="0"]'
+  ) as HTMLElement;
+  await act(async () =>
+    first.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+  );
+  expect(first.getAttribute('contenteditable')).toBe('true');
+  // Chrome lays out the line break an empty or blank paragraph is drawn with as a line of its own
+  for (const paragraph of first.children)
+    Object.defineProperty(paragraph, 'innerText', {
+      configurable: true,
+      get: () =>
+        paragraph.textContent?.trim()
+          ? paragraph.textContent
+          : `\n${paragraph.textContent}`
+    });
+  const lead = first.firstElementChild!;
+  lead.insertBefore(document.createTextNode(typed), lead.firstChild);
+  await act(async () => first.blur());
+  expect(tableCellText(tableCell(table, 0, 0))).toBe(expected);
+});
+
+it("keeps each run's own formatting when the person edits part of a cell", async () => {
+  const { slide, table, host, store } = await mountTable();
+  await act(async () =>
+    store.executeCommand(
+      {
+        type: 'replace-rich-text',
+        slideId: slide.path,
+        shapeId: table.id,
+        cell: { row: 0, col: 0 },
+        paragraphs: [
+          {
+            runs: [{ text: 'Deductible: ', bold: true }, { text: '$500' }]
+          }
+        ]
+      },
+      'Edit cell'
+    )
+  );
+  const first = host.querySelector(
+    '[data-table-cell][data-row="0"][data-col="0"]'
+  ) as HTMLElement;
+  await act(async () =>
+    first.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+  );
+  const value = first.querySelector('[data-source-run="1"]')!;
+  value.textContent = '$750';
+  await act(async () => first.blur());
+
+  const bold = children(
+    child(child(tableCell(table, 0, 0)!, 'a:txBody')!, 'a:p')!,
+    'a:r'
+  ).map((run) => getAttr(child(run, 'a:rPr') ?? {}, 'b'));
+  expect(tableCellText(tableCell(table, 0, 0))).toBe('Deductible: $750');
+  expect(bold).toEqual(['1', undefined]);
 });
 
 it('tabs past a merged continuation into the next editable cell on the second row', async () => {

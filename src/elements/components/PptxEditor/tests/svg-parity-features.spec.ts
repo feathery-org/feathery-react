@@ -1,3 +1,4 @@
+import { strToU8 } from 'fflate';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import {
@@ -9,6 +10,7 @@ import {
   setParagraphBullet,
   setPictureCrop,
   setTableCellRangeAlign,
+  setTableCellText,
   setTextStyle
 } from '../core/model/edit';
 import { exportDeckBytes } from '../core/model/export';
@@ -20,7 +22,15 @@ import {
   bulletGlyph
 } from '../core/render/svg';
 import { setPresentationSize } from '../core/model/slideSize';
-import { child, childrenOf, el } from '../core/opc/xml';
+import {
+  child,
+  childrenOf,
+  descendant,
+  el,
+  getAttr,
+  setAttr
+} from '../core/opc/xml';
+import { tableCell } from '../core/model/table';
 import { readShapeNode } from '../core/model/read';
 import { applySlideJSON } from '../core/model/applyJson';
 
@@ -109,6 +119,22 @@ it('renders theme-based run highlights after import and preserves them on export
   ).toBeDefined();
 });
 
+it("sizes unsized text from the text box's own list style before the master's", () => {
+  const deck = fixture();
+  const slide = deck.slides[0];
+  const shape = addTextBox(deck, slide, 100000, 100000, 2000000, 500000, 'Small');
+  const lstStyle = descendant(shape.node, 'a:lstStyle')!;
+  lstStyle['a:lstStyle'] = [
+    el('a:lvl1pPr', undefined, [el('a:defRPr', { sz: '1000' })])
+  ];
+  delete descendant(shape.node, 'a:rPr')![':@']!['@_sz'];
+  shape.text = readShapeNode(shape.node)!.text;
+  const span = renderSlideSvg(deck, slide).querySelector(
+    `[data-shape-id="${shape.id}"] [data-source-run]`
+  ) as HTMLElement;
+  expect(parseFloat(span.style.fontSize)).toBeCloseTo((10 * 96) / 72, 1);
+});
+
 it('supports arrow, dash, lower-alpha, and lower-roman bullets', () => {
   expect(bulletGlyph('➤', undefined)).toBe('➤');
   expect(bulletGlyph('–', undefined)).toBe('–');
@@ -161,6 +187,120 @@ it('aligns selected table cells horizontally and vertically and exposes it in JS
     deckToJSON(deck).slides[0].shapes.find((shape) => shape.id === table.id)!
       .table!.rows[0].cells[0]
   ).toMatchObject({ align: 'ctr', verticalAlign: 'b' });
+});
+
+it('keeps a table cell\'s vertical alignment on the cell, where PowerPoint reads it', () => {
+  const deck = fixture();
+  const slide = deck.slides[0];
+  const table = insertTable(deck, slide, 1, 2, 100000, 100000, 1500000, 600000);
+  setAttr(child(tableCell(table, 0, 0)!, 'a:tcPr')!, 'anchor', 'ctr');
+  setTableCellRangeAlign(
+    deck,
+    slide,
+    table,
+    { startRow: 0, endRow: 0, startCol: 1, endCol: 1 },
+    undefined,
+    'b'
+  );
+  const cells = renderSlideSvg(deck, slide).querySelectorAll(
+    `[data-shape-id="${table.id}"] [data-table-cell]`
+  ) as NodeListOf<HTMLElement>;
+  expect(cells[0].style.justifyContent).toBe('center');
+  expect(getAttr(child(tableCell(table, 0, 1)!, 'a:tcPr')!, 'anchor')).toBe(
+    'b'
+  );
+});
+
+it('spaces paragraphs by the space their list style inherits', () => {
+  const deck = fixture();
+  const slide = deck.slides[0];
+  const shape = addTextBox(deck, slide, 0, 0, 2000000, 900000, 'One');
+  const body = child(shape.node, 'p:txBody')!;
+  childrenOf(body).push(JSON.parse(JSON.stringify(child(body, 'a:p'))));
+  shape.text = readShapeNode(shape.node)!.text;
+  descendant(shape.node, 'a:lstStyle')!['a:lstStyle'] = [
+    el('a:lvl1pPr', undefined, [
+      el('a:spcAft', undefined, [el('a:spcPts', { val: '1200' })])
+    ])
+  ];
+  const paragraph = renderSlideSvg(deck, slide).querySelector(
+    `[data-shape-id="${shape.id}"] [data-source-paragraph="0"]`
+  ) as HTMLElement;
+  expect(parseFloat(paragraph.style.marginBottom)).toBeGreaterThan(10);
+});
+
+it('draws a table cell border in its theme colour', () => {
+  const deck = fixture();
+  const slide = deck.slides[0];
+  const table = insertTable(deck, slide, 1, 1, 0, 0, 1500000, 600000);
+  const tcPr = child(tableCell(table, 0, 0)!, 'a:tcPr')!;
+  childrenOf(tcPr).unshift(
+    el('a:lnL', { w: '12700' }, [
+      el('a:solidFill', undefined, [el('a:schemeClr', { val: 'bg1' })])
+    ])
+  );
+  const strokes = [
+    ...renderSlideSvg(deck, slide).querySelectorAll(
+      `[data-shape-id="${table.id}"] line`
+    )
+  ].map((line) => line.getAttribute('stroke')?.toUpperCase());
+  expect(strokes).toContain('#FFFFFF');
+});
+
+it('draws bullets in table cells and keeps them when a cell is retyped', () => {
+  const deck = fixture();
+  const slide = deck.slides[0];
+  const table = insertTable(deck, slide, 1, 1, 0, 0, 1500000, 600000);
+  setTableCellText(deck, slide, table, 0, 0, 'Eligible?');
+  const paragraph = descendant(tableCell(table, 0, 0)!, 'a:p')!;
+  childrenOf(paragraph).unshift(
+    el('a:pPr', { marL: '117475', indent: '-117475' }, [
+      el('a:buChar', { char: '-' })
+    ])
+  );
+  const marker = () =>
+    renderSlideSvg(deck, slide).querySelector(
+      `[data-shape-id="${table.id}"] [data-table-cell] [data-bullet]`
+    );
+  expect(marker()?.textContent).toContain('-');
+  setTableCellText(deck, slide, table, 0, 0, 'Covered?');
+  expect(marker()?.textContent).toContain('-');
+});
+
+it('shows a picture PowerPoint saved only as SVG', () => {
+  const deck = fixture();
+  const slide = deck.slides[0];
+  const picture = insertImage(
+    deck,
+    slide,
+    strToU8('<svg xmlns="http://www.w3.org/2000/svg"/>'),
+    'svg',
+    0,
+    0,
+    100000,
+    100000
+  );
+  const blip = descendant(picture.node, 'a:blip')!;
+  const relationship = getAttr(blip, 'r:embed')!;
+  delete blip[':@'];
+  blip['a:blip'] = [
+    el('a:extLst', undefined, [
+      el('a:ext', { uri: '{96DAC541-7B7A-43D3-8B79-37D633B846F1}' }, [
+        el('asvg:svgBlip', { 'r:embed': relationship })
+      ])
+    ])
+  ];
+  const original = URL.createObjectURL;
+  URL.createObjectURL = jest.fn(() => 'blob:svg');
+  try {
+    const reopened = importDeck(exportDeckBytes(deck));
+    const shown = reopened.slides[0].shapes.find(
+      (shape) => shape.id === picture.id
+    );
+    expect(shown?.imageSrc).toBe('blob:svg');
+  } finally {
+    URL.createObjectURL = original;
+  }
 });
 
 it('renders and round-trips an A4 presentation size through JSON and PPTX', () => {
