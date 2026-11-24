@@ -89,6 +89,30 @@ export const CONFIG = { colors, size: colors.length };`
     ).resolves.toEqual([1, 2]);
   });
 
+  it('supports default and side-effect imports', async () => {
+    const feathery = { calls: 0 };
+    const modules = {
+      L: `feathery.calls += 1;\nexport const greet = () => 'hi';`
+    };
+    await expect(
+      runRule(`import greet from 'L';\nimport 'L';\nreturn greet();`, modules, {
+        feathery
+      })
+    ).resolves.toBe('hi');
+    expect(feathery.calls).toBe(1);
+  });
+
+  it('handles module keys that are also object builtins', async () => {
+    await expect(
+      runRule(`import { a } from 'constructor';\nreturn a;`, {})
+    ).rejects.toThrow(`This rule imports shared code "constructor"`);
+    await expect(
+      runRule(`import { a } from 'toString';\nreturn a;`, {
+        toString: 'export const a = 1;'
+      })
+    ).resolves.toBe(1);
+  });
+
   it('lets shared code import other shared code', async () => {
     const modules = {
       Base: `export const TAX = 0.5;`,
@@ -196,6 +220,26 @@ export const local = () => typeof secret;`
         Bad: 'export const a = ;'
       })
     ).rejects.toThrow('Shared code "Bad" has a syntax error');
+  });
+
+  it('ignores export forms the dashboard flags and keeps the other exports', async () => {
+    const modules = {
+      L: `const hidden = 1;
+export const kept = 2;
+export { hidden };
+export { hidden as renamed };
+export default hidden;
+export * from 'Other';
+export { x } from 'Other';`
+    };
+    await expect(
+      runRule(`import { kept } from 'L';\nreturn kept;`, modules)
+    ).resolves.toBe(2);
+    await expect(
+      runRule(`import { renamed } from 'L';\nreturn renamed;`, modules)
+    ).rejects.toThrow(
+      `This rule imports "renamed" from shared code "L", which doesn't export it`
+    );
   });
 
   it('runs shared code whose stored valid flag is false', async () => {

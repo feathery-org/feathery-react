@@ -54,6 +54,13 @@ const PARSE_OPTIONS: Options = {
   sourceType: 'module'
 };
 
+// `export { a }`, `export default` and `export * from`
+const UNSUPPORTED_EXPORTS = [
+  'ExportNamedDeclaration',
+  'ExportDefaultDeclaration',
+  'ExportAllDeclaration'
+];
+
 function applyEdits(code: string, edits: TextEdit[]): string {
   return [...edits]
     .sort((a, b) => b.start - a.start)
@@ -155,6 +162,10 @@ function compileModule({ key, code }: SharedCodeInfo): SharedCodeModule {
       // `export const a = 1` -> `const a = 1`
       edits.push({ start: node.start, end: node.declaration.start, text: '' });
       exports.push(...declarationNames(node.declaration));
+    } else if (UNSUPPORTED_EXPORTS.includes(node.type)) {
+      // The dashboard flags these forms. They export nothing, as before, so
+      // the module's other exports keep working.
+      edits.push(blankOut(code, node));
     }
   }
 
@@ -204,7 +215,10 @@ function getModule(
   key: string,
   importer: string
 ): SharedCodeModule {
-  const module = modules[key];
+  // Own keys only, so a key like "constructor" doesn't resolve to a builtin
+  const module = Object.prototype.hasOwnProperty.call(modules, key)
+    ? modules[key]
+    : undefined;
   if (!module) {
     throw new Error(
       `${importer} imports shared code "${key}", which doesn't exist`
@@ -289,7 +303,7 @@ export function linkSharedCode(
       `${JSON.stringify(module.key)}: async () => {\n${module.body}\n}`
   );
   const prelude = [
-    `const ${CACHE_VAR} = {};`,
+    `const ${CACHE_VAR} = Object.create(null);`,
     `const ${MODULES_VAR} = {\n${factories.join(',\n')}\n};`,
     `function ${IMPORT_FN}(key) {`,
     `  if (!${CACHE_VAR}[key]) ${CACHE_VAR}[key] = ${MODULES_VAR}[key]();`,
