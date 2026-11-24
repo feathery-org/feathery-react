@@ -27,12 +27,22 @@ export const loadReviewPrinter = (): Promise<Printer | null> =>
       return null;
     });
 
-/** Print a finalized review's files. Resolves to an error result for the
+// The same stored file signed twice differs only in its query string.
+const withoutQuery = (url: string) => url.split(/[?#]/)[0];
+
+/** Print a finalized review's files, leaving out `unprintableFiles` (the
+ * attachments shown as file cards). Resolves to an error result for the
  * review screen to show instead of throwing, or null once printing starts. */
-export async function printFinalizedFiles(printer: Printer, files?: string[]) {
-  if (!files?.length) return PRINT_NO_FILES_ERROR;
+export async function printFinalizedFiles(
+  printer: Printer,
+  files: string[] = [],
+  unprintableFiles: string[] = []
+) {
+  const skipped = new Set(unprintableFiles.map(withoutQuery));
+  const printable = files.filter((file) => !skipped.has(withoutQuery(file)));
+  if (!printable.length) return PRINT_NO_FILES_ERROR;
   try {
-    await printer(files);
+    await printer(printable);
     return null;
   } catch (e) {
     console.warn('Unable to print the documents', e);

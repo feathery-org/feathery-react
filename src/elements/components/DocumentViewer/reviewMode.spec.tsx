@@ -120,6 +120,7 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       envelopeAction: 'download',
       draft: false,
       print: false,
+      unprintableFiles: [],
       refreshDraft: false,
       completes: true
     });
@@ -178,6 +179,7 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       envelopeAction: 'sign',
       draft: false,
       print: false,
+      unprintableFiles: [],
       refreshDraft: false,
       completes: true
     });
@@ -212,6 +214,7 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       envelopeAction: 'sign',
       draft: true,
       print: false,
+      unprintableFiles: [],
       refreshDraft: false,
       completes: true
     });
@@ -247,6 +250,7 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
       envelopeAction: 'sign',
       draft: true,
       print: false,
+      unprintableFiles: [],
       refreshDraft: false,
       completes: true
     });
@@ -283,6 +287,7 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
         envelopeAction: 'download',
         draft: false,
         print: true,
+        unprintableFiles: [],
         refreshDraft: false,
         completes: true
       });
@@ -428,6 +433,7 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
         envelopeAction: 'sign',
         draft: false,
         print: false,
+        unprintableFiles: [],
         refreshDraft: false,
         completes: true
       });
@@ -859,6 +865,10 @@ describe('DocumentViewer — packet editing (editor_allow_attachments)', () => {
 
     await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
     expect(finalizedIds(onFinalize)).toEqual(['att-1', 'env-1', 'env-2']);
+    // A file card has no pages, so print is told to leave it out.
+    expect(onFinalize.mock.calls[0][0].unprintableFiles).toEqual([
+      'http://x/bundle.zip'
+    ]);
   });
 
   it('removes an attachment on the backend and drops it from finalize', async () => {

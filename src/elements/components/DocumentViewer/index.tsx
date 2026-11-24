@@ -259,6 +259,8 @@ interface DocumentViewerProps {
     draft: boolean;
     // Download only: print the finalized files instead of saving them.
     print: boolean;
+    // Files print leaves out: attachments the viewer shows as file cards.
+    unprintableFiles: string[];
     // Replace the documents on the DocuSign draft this session already
     // created, because the filler edited them since.
     refreshDraft: boolean;
@@ -689,6 +691,9 @@ export default function DocumentViewer({
         envelopeAction: TOOLBAR_ACTION_ENVELOPE_ACTION[toolbarAction],
         draft: toolbarAction === 'draft',
         print: toolbarAction === 'print',
+        unprintableFiles: documents.flatMap((doc) =>
+          !doc.pdf_url && doc.file_url ? [doc.file_url] : []
+        ),
         refreshDraft,
         completes: outcome !== 'stay'
       });

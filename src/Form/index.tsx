@@ -1639,6 +1639,7 @@ function Form({
                   envelopeAction,
                   draft,
                   print,
+                  unprintableFiles,
                   refreshDraft,
                   completes
                 }: any) => {
@@ -1659,7 +1660,8 @@ function Form({
                   if (printer) {
                     const printError = await printFinalizedFiles(
                       printer,
-                      result.files
+                      result.files,
+                      unprintableFiles
                     );
                     if (printError) return printError;
                   } else await runEnvelopeAction(result, envelopeAction, draft);
@@ -3849,12 +3851,14 @@ function Form({
                 envelopeAction,
                 draft,
                 print,
+                unprintableFiles,
                 refreshDraft
               }: {
                 envelopes: { envelopeId: string }[];
                 envelopeAction: 'sign' | 'fill' | 'download' | 'save';
                 draft: boolean;
                 print: boolean;
+                unprintableFiles: string[];
                 refreshDraft: boolean;
               }) => {
                 const printer = print ? await loadReviewPrinter() : null;
@@ -3881,7 +3885,8 @@ function Form({
                 if (printer) {
                   const printError = await printFinalizedFiles(
                     printer,
-                    result.files
+                    result.files,
+                    unprintableFiles
                   );
                   if (printError) return printError;
                 } else await runEnvelopeAction(result, envelopeAction, draft);
