@@ -1138,28 +1138,36 @@ export class PptxEditorEngine {
     meta: CommandMeta = {}
   ): CommandResult {
     const deck = this.requireDeck();
-    const before = this.present || captureHistorySnapshot(deck);
-    const after = captureHistorySnapshot(deck, before);
-    this.present = after;
     invalidations = this.groupOwnedInvalidations(invalidations);
     const open = this.openTransaction;
-    if (!open)
-      return this.record(
-        before,
-        after,
-        label,
-        invalidations,
-        event,
-        createdShapeIds,
-        meta
-      );
-    const changed = !sameHistoryDocument(before, after);
-    if (changed) {
+    // A transaction snapshots the deck once when it closes, not after every command
+    if (open) {
+      this.present = null;
       open.labels.push(label);
       open.invalidations.push(...invalidations);
       open.createdShapeIds.push(...createdShapeIds);
+      const snapshot = () => this.snapshot();
+      return {
+        changed: true,
+        invalidations,
+        createdShapeIds,
+        get snapshot() {
+          return snapshot();
+        }
+      };
     }
-    return this.result(changed, invalidations, createdShapeIds);
+    const before = this.present || captureHistorySnapshot(deck);
+    const after = captureHistorySnapshot(deck, before);
+    this.present = after;
+    return this.record(
+      before,
+      after,
+      label,
+      invalidations,
+      event,
+      createdShapeIds,
+      meta
+    );
   }
 
   private pushHistory(entry: PptxHistoryEntry): void {
