@@ -44,7 +44,10 @@ describe('PowerPoint structure', () => {
         changes: [{ kind: 'delete', id: shape, base: deck.read(shape).base }]
       })
     );
-    expect(deck.find('Q1')[0]).toBeDefined(); // still shown, as a suggested removal
+    expect(deck.read(shape, 'turn-2').pending).toEqual(
+      expect.objectContaining({ deletion: expect.anything() })
+    );
+    expect(deck.find('Q1', 'turn-2')).toHaveLength(0);
     rejectAll(deck);
     expect(slidesOf(deck)).toEqual(original);
   });
@@ -670,7 +673,7 @@ describe('PowerPoint tables', () => {
       expect(runWith(deck, text, 'turn-3').highlight).toBeUndefined();
   });
 
-  it('finds runs by highlight and colour, and clears every highlight from one search', () => {
+  it('finds runs by highlight and colour, and recolours them after clearing every highlight while that is still a suggestion', () => {
     const { deck, table } = deckWithTable();
     expectCard(
       replaceTable(deck, table, (node) => {
@@ -688,8 +691,13 @@ describe('PowerPoint tables', () => {
 
     const find = { feature: { name: 'highlight' } };
     expectCard(bulkSet(deck, find, { highlight: 'none' }, 'turn-2'));
+    expect(hits({ feature: { name: 'color', value: '#FF0000' } })).toBe(1);
+
+    const red = { feature: { name: 'color', value: '#FF0000' } };
+    expectCard(bulkSet(deck, red, { color: '#000000' }, 'turn-3'));
     acceptAll(deck);
     expect(hits({ feature: { name: 'highlight' } })).toBe(0);
+    expect(hits(red)).toBe(0);
   });
 
   it('removes a row, as a suggestion that accepting settles and rejecting takes back', () => {
