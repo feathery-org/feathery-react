@@ -1389,7 +1389,7 @@ export function setTableColumnWidth(
   markDirty(deck, slide);
 }
 
-/** Spread a width over the columns, leading columns keep theirs and the trailing run of equal columns shares the rest */
+/** Spread a width over the columns: a trailing run of equal columns shares what leading columns leave, else every column scales */
 export function fitTableColumns(
   deck: Deck,
   slide: Slide,
@@ -1399,23 +1399,21 @@ export function fitTableColumns(
   const cols = tableColumns(shape);
   if (!cols.length) return;
   const widths = cols.map((col) => Number(getAttr(col, 'w')) || 0);
+  const last = widths[widths.length - 1];
+  // Columns within 1% of each other count as equal, as hand-dragged ones rarely match exactly
   let run = 1;
   while (
     run < widths.length &&
-    Math.abs(widths[widths.length - run - 1] - widths[widths.length - 1]) <=
-      widths.length
+    Math.abs(widths[widths.length - run - 1] - last) <= last / 100
   )
     run++;
-  let lead = widths.slice(0, widths.length - run);
-  let share = Math.floor((width - lead.reduce((a, b) => a + b, 0)) / run);
-  if (share <= 0) {
-    lead = [];
-    share = Math.floor(width / widths.length);
-  }
-  const fitted = [
-    ...lead,
-    ...Array.from({ length: widths.length - lead.length }, () => share)
-  ];
+  const lead = widths.slice(0, widths.length - run);
+  const share = Math.floor((width - lead.reduce((a, b) => a + b, 0)) / run);
+  const total = widths.reduce((a, b) => a + b, 0);
+  const fitted =
+    run >= 2 && share >= 90000
+      ? [...lead, ...Array.from({ length: run }, () => share)]
+      : widths.map((w) => Math.floor((w * width) / (total || 1)));
   fitted[fitted.length - 1] += width - fitted.reduce((a, b) => a + b, 0);
   cols.forEach((col, i) => setAttr(col, 'w', String(fitted[i])));
   syncTableFrame(shape);

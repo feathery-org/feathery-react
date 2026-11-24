@@ -477,6 +477,73 @@ it("keeps each run's own formatting when the person edits part of a cell", async
   expect(bold).toEqual(['1', undefined]);
 });
 
+it('draws a run without its own size at the cell size it inherits, not its neighbour size', async () => {
+  const { slide, table, host, store } = await mountTable();
+  await act(async () =>
+    store.executeCommand(
+      {
+        type: 'replace-rich-text',
+        slideId: slide.path,
+        shapeId: table.id,
+        cell: { row: 0, col: 0 },
+        paragraphs: [{ runs: [{ text: 'Head', sizePt: 28 }, { text: 'body' }] }]
+      },
+      'Edit cell'
+    )
+  );
+  const cell = host.querySelector(
+    '[data-table-cell][data-row="0"][data-col="0"]'
+  ) as HTMLElement;
+  const size = (run: number) =>
+    (cell.querySelector(`[data-source-run="${run}"]`) as HTMLElement).style
+      .fontSize;
+  // The fixture's master gives table text 18pt
+  expect(size(1)).toBe(`${(18 * 96) / 72}px`);
+});
+
+it.each([
+  ['between two lines', 'Gamma\nSoft', 2],
+  ['at the end of the last line', 'Gamma\n\n', 1],
+  ['left as a plain line break after deleting what followed it', '<br>', 1]
+])(
+  'keeps a soft line break typed into a cell %s',
+  async (_, typed, runCount) => {
+    const { slide, table, host, store } = await mountTable();
+    await act(async () =>
+      store.executeCommand(
+        {
+          type: 'replace-rich-text',
+          slideId: slide.path,
+          shapeId: table.id,
+          cell: { row: 0, col: 0 },
+          paragraphs: [{ runs: [{ text: 'Gamma' }] }]
+        },
+        'Edit cell'
+      )
+    );
+    const cell = host.querySelector(
+      '[data-table-cell][data-row="0"][data-col="0"]'
+    ) as HTMLElement;
+    await act(async () =>
+      cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    );
+    // Chrome types Shift+Enter as a newline in the run's own text
+    const run = cell.querySelector('[data-source-run="0"]')!;
+    if (typed === '<br>') {
+      run.textContent = 'Gamma';
+      run.after(document.createElement('br'));
+    } else run.textContent = typed;
+    await act(async () => cell.blur());
+
+    const paragraph = child(
+      child(tableCell(table, 0, 0)!, 'a:txBody')!,
+      'a:p'
+    )!;
+    expect(children(paragraph, 'a:br')).toHaveLength(1);
+    expect(children(paragraph, 'a:r')).toHaveLength(runCount);
+  }
+);
+
 it('tabs past a merged continuation into the next editable cell on the second row', async () => {
   const { slide, table, host, store } = await mountTable();
   await act(async () =>

@@ -16,7 +16,7 @@ const stylesCache = new WeakMap<OPCPackage, Map<string, Map<string, ONode>>>();
 
 /** The fill, text colour and weight a table style gives a cell */
 export interface TableCellLook {
-  fill?: ONode;
+  fill?: ONode | 'none';
   textColor?: ONode;
   bold?: boolean;
 }
@@ -43,7 +43,8 @@ function partsFor(
   rowCount: number,
   colCount: number
 ): string[] {
-  const on = (flag: string) => !!tblPr && getAttr(tblPr, flag) === '1';
+  const on = (flag: string) =>
+    !!tblPr && ['1', 'true'].includes(getAttr(tblPr, flag) ?? '');
   const parts = ['a:wholeTbl'];
   if (on('bandCol')) {
     const band = col - (on('firstCol') ? 1 : 0);
@@ -81,7 +82,8 @@ export function tableCellLook(
     const tcStyle = child(part, 'a:tcStyle');
     const fill = tcStyle && child(tcStyle, 'a:fill');
     const solid = fill && child(fill, 'a:solidFill');
-    if (solid || (fill && child(fill, 'a:noFill'))) look.fill = solid;
+    if (solid) look.fill = solid;
+    else if (fill && child(fill, 'a:noFill')) look.fill = 'none';
     const txStyle = child(part, 'a:tcTxStyle');
     if (!txStyle) continue;
     if (COLOR_TAGS.some((tag) => child(txStyle, tag))) look.textColor = txStyle;

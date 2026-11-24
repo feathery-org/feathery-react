@@ -948,9 +948,12 @@ function tableGroup(
       const ownFill = tcPr && child(tcPr, 'a:solidFill');
       rect.setAttribute(
         'fill',
-        tcPr && child(tcPr, 'a:noFill')
+        (tcPr && child(tcPr, 'a:noFill')) || (!ownFill && look.fill === 'none')
           ? 'none'
-          : resolveColor(ownFill ?? look.fill, pkg) || '#FFFFFF'
+          : resolveColor(
+              ownFill ?? (look.fill === 'none' ? undefined : look.fill),
+              pkg
+            ) || '#FFFFFF'
       );
       g.appendChild(rect);
       const lines: Array<{
@@ -1000,7 +1003,6 @@ function tableGroup(
       const div = featheryDoc().createElementNS(XHTML, 'div') as HTMLDivElement;
       const fontPt = tableCellFontSize(cell) || 12;
       const cellDefaults: ParaDefault = {
-        sizePt: fontPt,
         color: look.textColor && resolveColor(look.textColor, pkg),
         bold: look.bold
       };
@@ -1053,10 +1055,12 @@ function tableGroup(
             curDeck && curSlide
               ? resolveListProps(curDeck, curSlide, { node: cell }, level)
               : {};
+          // A run without its own size takes the cell's inherited one, not its neighbour's
           return {
             ...inherited,
             defRPr: {
               ...inherited.defRPr,
+              sizePt: inherited.defRPr?.sizePt ?? 12,
               ...cellLook,
               ...(cellLook.color ? { colorScheme: undefined } : {})
             }

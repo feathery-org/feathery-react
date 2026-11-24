@@ -909,6 +909,24 @@ describe('PowerPoint tables', () => {
     expect(deck.find('$90', 'turn-2')).toHaveLength(1);
   });
 
+  it('writes into a cell the file leaves without a text body', () => {
+    const deck = sampleWithSlide4((xml) => {
+      const row = xml.indexOf('<a:tr', xml.indexOf('<a:tr') + 1);
+      const body = xml.indexOf('<a:txBody>', row);
+      return (
+        xml.slice(0, body) +
+        xml.slice(xml.indexOf('</a:txBody>', body) + '</a:txBody>'.length)
+      );
+    });
+    expectCard(
+      replaceTable(deck, tableWithColumns(deck, 4), (node) => {
+        node.rows[1].cells[0].paragraphs = [newCell('New').paragraphs[0]];
+      })
+    );
+    acceptAll(deck);
+    expect(deck.find('New', 'turn-2')).toHaveLength(1);
+  });
+
   it('copies a row of a table saved by PowerPoint, whose rows carry ids', () => {
     const deck = sampleWithSlide4((xml) => xml);
     expectCard(

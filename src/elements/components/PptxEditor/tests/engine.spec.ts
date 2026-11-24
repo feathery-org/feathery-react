@@ -778,6 +778,162 @@ it('spreads a width over a table, leading columns keeping theirs', () => {
   ]);
 });
 
+it.each([
+  ['crushing the last', [1600000, 1190000, 1210000]],
+  ['flattening a wider label', [1600000, 1210000, 1190000]]
+])(
+  'spreads a width over nearly equal columns without %s column',
+  (_, widths) => {
+    const deck = importDeck(fixture);
+    const slide = deck.slides[0];
+    const table = insertTable(deck, slide, 1, 3, 0, 0, 4000000, 400000);
+    new PptxEditorEngine(deck).execute({
+      type: 'edit-table',
+      slideId: slide.path,
+      shapeId: table.id,
+      operations: [
+        ...widths.map((width, index) => ({
+          kind: 'set-column-width' as const,
+          index,
+          width
+        })),
+        { kind: 'add-column', index: 1, like: 1 },
+        { kind: 'fit-columns', width: 4000000 }
+      ]
+    });
+
+    const fitted = tableColumns(table).map((col) => Number(getAttr(col, 'w')));
+    expect(Math.min(...fitted)).toBeGreaterThanOrEqual(90000);
+    expect(fitted[0]).toBeGreaterThan(Math.max(...fitted.slice(1)));
+    expect(fitted.reduce((a, b) => a + b, 0)).toBe(4000000);
+  }
+);
+
+it('reports a change made inside an open transaction to reads before it closes', () => {
+  const deck = importDeck(fixture);
+  const slide = deck.slides[0];
+  const table = insertTable(deck, slide, 1, 2, 0, 0, 2000000, 400000);
+  const engine = new PptxEditorEngine(deck);
+  engine.markSaved();
+  engine.transaction({ label: 'Edit' }, () => {
+    engine.execute({
+      type: 'edit-table',
+      slideId: slide.path,
+      shapeId: table.id,
+      operations: [{ kind: 'set-cell-text', row: 0, col: 0, value: 'Now' }]
+    });
+    expect(engine.isDirty()).toBe(true);
+    expect(engine.savePoint()).not.toBeNull();
+  });
+  expect(engine.isDirty()).toBe(true);
+});
+
+it('writes text into a cell that has no text body yet', () => {
+  const deck = importDeck(fixture);
+  const slide = deck.slides[0];
+  const table = insertTable(deck, slide, 1, 2, 0, 0, 2000000, 400000);
+  const cell = tableCell(table, 0, 0)!;
+  childrenOf(cell).splice(
+    childrenOf(cell).indexOf(child(cell, 'a:txBody')!),
+    1
+  );
+  new PptxEditorEngine(deck).execute({
+    type: 'replace-rich-text',
+    slideId: slide.path,
+    shapeId: table.id,
+    cell: { row: 0, col: 0 },
+    paragraphs: [{ runs: [{ text: 'Filled' }] }]
+  });
+
+  expect(tableCellText(tableCell(table, 0, 0))).toBe('Filled');
+});
+
+it.each([
+  [
+    'keeps an uneven last column usable',
+    [1600000, 1190000, 1190000, 1300000],
+    4090000,
+    (fitted: number[]) =>
+      expect(Math.min(...fitted)).toBeGreaterThanOrEqual(900000)
+  ],
+  [
+    'keeps a wide last column the widest',
+    [1000000, 1000000, 1000000, 2000000],
+    4000000,
+    (fitted: number[]) =>
+      expect(fitted[3]).toBeGreaterThan(Math.max(...fitted.slice(0, 3)))
+  ],
+  [
+    'shares freed width between nearly equal trailing columns',
+    [1200000, 900000, 901000],
+    3901000,
+    (fitted: number[]) => {
+      expect(fitted[0]).toBe(1200000);
+      expect(Math.abs(fitted[1] - fitted[2])).toBeLessThanOrEqual(1);
+    }
+  ]
+])('fitting a table to a width %s', (_, widths, width, check) => {
+  const deck = importDeck(fixture);
+  const slide = deck.slides[0];
+  const table = insertTable(
+    deck,
+    slide,
+    1,
+    widths.length,
+    0,
+    0,
+    widths.reduce((a, b) => a + b, 0),
+    400000
+  );
+  new PptxEditorEngine(deck).execute({
+    type: 'edit-table',
+    slideId: slide.path,
+    shapeId: table.id,
+    operations: [
+      ...widths.map((w, index) => ({
+        kind: 'set-column-width' as const,
+        index,
+        width: w
+      })),
+      { kind: 'fit-columns', width }
+    ]
+  });
+
+  const fitted = tableColumns(table).map((col) => Number(getAttr(col, 'w')));
+  check(fitted);
+  expect(fitted.reduce((a, b) => a + b, 0)).toBe(width);
+});
+
+it('rejects a suggestion from inside a transaction that already changed something else', () => {
+  const deck = importDeck(fixture);
+  const slide = deck.slides[0];
+  const table = insertTable(deck, slide, 1, 2, 0, 0, 2000000, 400000);
+  const box = addTextBox(deck, slide, 0, 500000, 1000000, 400000, 'Box');
+  const engine = new PptxEditorEngine(deck);
+  const editCell = () =>
+    engine.execute({
+      type: 'edit-table',
+      slideId: slide.path,
+      shapeId: table.id,
+      operations: [{ kind: 'set-cell-text', row: 0, col: 0, value: 'Robin' }]
+    });
+  engine.transaction({ origin: 'assistant' }, editCell);
+  const [suggestion] = engine
+    .changes()
+    .filter((record) => record.status === 'pending');
+
+  let outcome: { ok: boolean } | undefined;
+  engine.transaction({ label: 'Edit' }, () => {
+    engine.execute({
+      type: 'set-shape-geometries',
+      slideId: slide.path,
+      updates: [{ shapeId: box.id, geometry: { x: 100000 } }]
+    });
+    outcome = engine.rejectChange(suggestion.id);
+  });
+  expect(outcome).toEqual(expect.objectContaining({ ok: true }));
+});
+
 it('refuses a cell target on a shape that is not a table', () => {
   const deck = importDeck(fixture);
   const slide = deck.slides[0];

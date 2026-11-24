@@ -64,7 +64,7 @@ import {
 import { readTextBody } from '../core/model/read';
 import { tableCell } from '../core/model/table';
 import type { Deck, Shape, Slide } from '../core/model/types';
-import { child, type OTree } from '../core/opc/xml';
+import { child, childrenOf, el, type OTree } from '../core/opc/xml';
 import type {
   CommandMeta,
   EditorCommand,
@@ -299,7 +299,7 @@ export class PptxEditorEngine {
     // untouched slides structurally). Consumers must deepClone before mutating
     // a draft - the JSON panel and applySlideJson callers already do.
     const document =
-      this.present?.document || (this.deck ? deckToJSON(this.deck) : null);
+      this.current()?.document || (this.deck ? deckToJSON(this.deck) : null);
     return {
       document,
       dirty: !!(
@@ -934,7 +934,7 @@ export class PptxEditorEngine {
         deck,
         keepingOtherSlides(
           snapshots.before,
-          this.present as PptxHistorySnapshot,
+          this.current() as PptxHistorySnapshot,
           slidesChangedBetween(snapshots.before, snapshots.after)
         )
       );
@@ -1040,7 +1040,7 @@ export class PptxEditorEngine {
 
   // Every target's XML still looks the way the suggestion left it, wherever it sits now
   private isUnchangedSince(record: PptxChangeRecord): boolean {
-    const present = this.present;
+    const present = this.current();
     const snapshots = this.pendingSnapshots.get(record.id);
     if (!present || !snapshots) return false;
     return record.targets.every((target) => {
@@ -1066,16 +1066,24 @@ export class PptxEditorEngine {
 
   /** Cheap dirty check against the saved baseline (no snapshot cloning). */
   isDirty(): boolean {
+    const present = this.current();
     return !!(
-      this.present &&
+      present &&
       this.baseline &&
-      !sameHistoryDocument(this.present, this.baseline)
+      !sameHistoryDocument(present, this.baseline)
     );
   }
 
   /** Handle to the current state, to pass to markSaved once an export of it
    *  has been persisted (edits made meanwhile stay dirty). */
   savePoint(): PptxSavePoint | null {
+    return this.current();
+  }
+
+  // A transaction snapshots the deck when it closes, a read before then takes one on demand
+  private current(): PptxHistorySnapshot | null {
+    if (!this.present && this.deck)
+      this.present = captureHistorySnapshot(this.deck);
     return this.present;
   }
 
@@ -1282,6 +1290,11 @@ export class PptxEditorEngine {
     const shape = this.requireShapeOrGroupMember(slide, shapeId);
     const cellNode =
       shape.type === 'table' ? tableCell(shape, cell.row, cell.col) : undefined;
+    // A cell may leave out its text body until it holds text
+    if (cellNode && !child(cellNode, 'a:txBody'))
+      childrenOf(cellNode).unshift(
+        el('a:txBody', undefined, [el('a:bodyPr'), el('a:lstStyle'), el('a:p')])
+      );
     const text = readTextBody(cellNode && child(cellNode, 'a:txBody'));
     if (!text)
       throw new Error(

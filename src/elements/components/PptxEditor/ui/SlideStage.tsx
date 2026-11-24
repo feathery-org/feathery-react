@@ -441,7 +441,8 @@ function extractRichText(
         acceptNode: (n: Node) => {
           if (n instanceof Element) {
             if (n.hasAttribute('data-bullet')) return NodeFilter.FILTER_REJECT;
-            return n.tagName === 'BR' && n.hasAttribute('data-soft-break')
+            // A line break the person typed may come back without the marks of a drawn one
+            return n.tagName === 'BR'
               ? NodeFilter.FILTER_ACCEPT
               : NodeFilter.FILTER_SKIP;
           }
@@ -466,8 +467,16 @@ function extractRichText(
         continue;
       }
       const r = runFromTextNode(n as Text);
-      if (r) runs.push(r);
+      // Shift+Enter types a newline into the text, which is a soft line break
+      r?.text.split('\n').forEach((text, i) => {
+        if (i > 0) runs.push({ text: '\n', break: true });
+        if (text) runs.push({ ...r, text });
+      });
     }
+    // Chrome doubles a line break that ends a paragraph, or fills an empty one, only to show the line
+    const last = runs[runs.length - 1];
+    const placeholder = runs.length === 1 || runs[runs.length - 2]?.break;
+    if (last?.break && !last.source && placeholder) runs.pop();
     return runs;
   };
   const paras: RichPara[] = [];
@@ -1204,10 +1213,7 @@ export function SvgSlide({
             operations: [{ kind: 'add-row' }]
           });
         });
-      const { row, col } = anchor ?? {
-        row: tableRows(target).length - 1,
-        col: 0
-      };
+      const { row, col } = anchor ?? { row: newRow, col: 0 };
       // Tab and Shift+Tab advance to the next cell, as requested.
       store.setTableSelection({
         shapeId: target.id,

@@ -40,5 +40,14 @@ it('clears a weaker part fill when a stronger part sets no fill', () => {
   )!;
   const fill = child(child(child(style, 'a:band2H')!, 'a:tcStyle')!, 'a:fill')!;
   childrenOf(fill).splice(0, childrenOf(fill).length, el('a:noFill'));
-  expect(band2HLook(deck).fill).toBeUndefined();
+  expect(band2HLook(deck).fill).toBe('none');
+});
+
+it('reads a table style flag written as true', () => {
+  const deck = sampleDeck();
+  const shape = deck.slides[3].shapes.find((candidate) =>
+    tableNode(candidate)
+  )!;
+  setAttr(child(tableNode(shape)!, 'a:tblPr')!, 'bandRow', 'true');
+  expect(band2HLook(deck)).toEqual(band2HLook());
 });
