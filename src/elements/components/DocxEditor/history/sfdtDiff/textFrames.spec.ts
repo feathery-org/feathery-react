@@ -75,6 +75,24 @@ describe('text boxes in version history diffs', () => {
     ).toBe(true);
   });
 
+  it('strikes the text of a deleted text box that had its own paragraph', () => {
+    const before = doc(para('Intro'), para(shape(7, 'Gone box')), para('End'));
+    const after = doc(para('Intro'), para('End'));
+
+    const changes = diff(before, after, 'you');
+    const display = applyHunks(after, changes);
+
+    // The box comes back as a deleted paragraph; its text must be struck too.
+    const box = display.sections[0].blocks
+      .flatMap((b: any) => b.inlines ?? [])
+      .find((i: any) => i.textFrame);
+    expect(box.revisionIds?.length).toBe(1);
+    expect(box.textFrame.blocks[0].inlines[0].revisionIds).toEqual(
+      box.revisionIds
+    );
+    expect(changes.changeCount).toBe(1);
+  });
+
   it('does not spill a deleted shape’s text into the body', () => {
     const before = doc(
       para('Intro ', shape(7, 'Gone with the box')),

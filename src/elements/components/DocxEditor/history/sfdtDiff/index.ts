@@ -1029,13 +1029,7 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
         for (const cell of row.cells ?? []) {
           for (const para of cell.blocks ?? []) {
             if (!Array.isArray(para?.inlines)) continue;
-            const chars = flattenForDisplay(para);
-            for (const c of chars) c.revisionIds.push(mark.revisionId);
-            para.inlines = rebuildInlines(chars);
-            para.characterFormat = {
-              ...(para.characterFormat ?? {}),
-              revisionIds: [mark.revisionId]
-            };
+            markDeletedParagraph(para, mark.revisionId);
           }
         }
       }
@@ -1044,13 +1038,7 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
     }
     const paras = hunk.blocks.map((raw: any) => {
       const para = JSON.parse(JSON.stringify(raw));
-      const chars = flattenForDisplay(para);
-      for (const c of chars) c.revisionIds.push(mark.revisionId);
-      para.inlines = rebuildInlines(chars);
-      para.characterFormat = {
-        ...(para.characterFormat ?? {}),
-        revisionIds: [mark.revisionId]
-      };
+      markDeletedParagraph(para, mark.revisionId);
       return para;
     });
     arr.splice(Math.min(index, arr.length), 0, ...paras);
@@ -1059,6 +1047,23 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
   doc.revisions = revisions;
   doc.optimizeSfdt = false;
   return doc;
+}
+
+// Marks a re-inserted paragraph as deleted. A text box in it is one token, so
+// its own text is struck too, or the box renders as if nothing changed.
+function markDeletedParagraph(para: any, revisionId: string): void {
+  const chars = flattenForDisplay(para);
+  for (const c of chars) {
+    c.revisionIds.push(revisionId);
+    for (const inner of (c.token as any)?.textFrame?.blocks ?? [])
+      if (Array.isArray(inner?.inlines))
+        markDeletedParagraph(inner, revisionId);
+  }
+  para.inlines = rebuildInlines(chars);
+  para.characterFormat = {
+    ...(para.characterFormat ?? {}),
+    revisionIds: [revisionId]
+  };
 }
 
 function comparePaths(a: BlockPath, b: BlockPath): number {
