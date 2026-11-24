@@ -270,7 +270,11 @@ interface DocumentViewerProps {
   }) => Promise<FinalizeResult | void>;
   // Upload a file the filler attaches (`editor_allow_attachments`), resolving
   // to its viewer entry. Absent = attaching is off whatever the action says.
-  onUploadAttachment?: (file: File) => Promise<ViewerDocument>;
+  // Aborting `cancel` ends the upload early.
+  onUploadAttachment?: (
+    file: File,
+    cancel: AbortSignal
+  ) => Promise<ViewerDocument>;
   // Remove an attachment's envelope, so a later review doesn't bring it back.
   onRemoveAttachment?: (envelopeId: string) => Promise<void>;
   // Persist a PDF the filler edited in the viewer back to its envelope.
@@ -570,6 +574,14 @@ export default function DocumentViewer({
     el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth' });
   }, []);
 
+  // Set while a batch uploads, so the filler isn't held by a stalled one.
+  const [uploadCancel, setUploadCancel] = useState<AbortController | null>(
+    null
+  );
+  const uploadCancelRef = useRef(uploadCancel);
+  uploadCancelRef.current = uploadCancel;
+  useEffect(() => () => uploadCancelRef.current?.abort(), []);
+
   // Uploads hold the toolbar (via busyKey) so finalize can't run without them.
   const addAttachments = async (files: File[]) => {
     if (!onUploadAttachment || !files.length) return;
@@ -583,6 +595,8 @@ export default function DocumentViewer({
     }
     const attached = documents.filter((d) => d.type === 'attachment').length;
     const room = Math.max(0, MAX_ATTACHMENTS - attached);
+    const cancel = new AbortController();
+    setUploadCancel(cancel);
     setBusyKey('attachment');
     setError('');
     // Each file stands alone: one failing doesn't drop the rest.
@@ -596,7 +610,7 @@ export default function DocumentViewer({
     const results: (ViewerDocument | null)[] = queue.map(() => null);
     let next = 0;
     const worker = async () => {
-      while (next < queue.length) {
+      while (next < queue.length && !cancel.signal.aborted) {
         const index = next++;
         const file = queue[index];
         if (file.size > MAX_ATTACHMENT_BYTES) {
@@ -604,9 +618,11 @@ export default function DocumentViewer({
           continue;
         }
         try {
-          results[index] = await onUploadAttachment(file);
+          results[index] = await onUploadAttachment(file, cancel.signal);
         } catch (e) {
-          failures.push(`${file.name}: ${errorMessage(e)}`);
+          // A cancelled upload is the filler's choice, not a failure.
+          if (!cancel.signal.aborted)
+            failures.push(`${file.name}: ${errorMessage(e)}`);
         }
       }
     };
@@ -617,6 +633,7 @@ export default function DocumentViewer({
     const added = results.filter((doc): doc is ViewerDocument => !!doc);
     if (added.length) setDocuments((prev) => [...prev, ...added]);
     if (failures.length) setError(`Couldn't attach ${failures.join('; ')}`);
+    setUploadCancel(null);
     setBusyKey(null);
   };
 
@@ -781,6 +798,9 @@ export default function DocumentViewer({
               ? {
                   disabled: busyKey !== null || isPacketLocked,
                   onAddFiles: addAttachments,
+                  onCancelUpload: uploadCancel
+                    ? () => uploadCancel.abort()
+                    : undefined,
                   onMove: moveDocument,
                   onRemove: removeAttachment
                 }

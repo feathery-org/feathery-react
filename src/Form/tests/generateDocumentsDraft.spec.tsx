@@ -484,7 +484,8 @@ describe('the review screen with attachments allowed', () => {
       expect(state.client.removeReviewAttachment).toHaveBeenCalledWith('att-1')
     );
     expect(state.client.uploadReviewAttachment).toHaveBeenCalledWith(
-      expect.any(File)
+      expect.any(File),
+      expect.any(AbortSignal)
     );
   });
 

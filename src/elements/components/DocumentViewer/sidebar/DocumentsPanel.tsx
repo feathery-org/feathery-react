@@ -14,6 +14,8 @@ import {
 export interface PacketEditor {
   disabled: boolean;
   onAddFiles: (files: File[]) => void;
+  // Present only while files upload.
+  onCancelUpload?: () => void;
   onMove: (from: number, to: number) => void;
   // Resolves to whether the attachment was removed.
   onRemove: (index: number) => Promise<boolean>;
@@ -40,6 +42,9 @@ export default function DocumentsPanel({
   // A failed remove gives focus back to its row once the panel is enabled.
   const [refocusIndex, setRefocusIndex] = useState<number | null>(null);
   const removeButtonRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // [up, down] per row, and the one to focus once a move has rendered.
+  const moveButtonRefs = useRef<(HTMLButtonElement | null)[][]>([]);
+  const focusAfterMove = useRef<{ index: number; down: boolean } | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [announcement, setAnnouncement] = useState('');
@@ -53,6 +58,16 @@ export default function DocumentsPanel({
       rowButtonRefs.current[Math.min(index, documents.length - 1)] ??
       addButtonRef.current;
     target?.focus();
+  }, [documents]);
+
+  useEffect(() => {
+    const moved = focusAfterMove.current;
+    if (!moved) return;
+    focusAfterMove.current = null;
+    // At either end the pressed direction is disabled, so take the other.
+    const [up, down] = moveButtonRefs.current[moved.index] ?? [];
+    const [first, second] = moved.down ? [down, up] : [up, down];
+    (first && !first.disabled ? first : second)?.focus();
   }, [documents]);
 
   useEffect(() => {
@@ -185,8 +200,14 @@ export default function DocumentsPanel({
                 <button
                   type='button'
                   aria-label={`Move ${documentName(doc)} up`}
+                  ref={(el) => {
+                    (moveButtonRefs.current[index] ??= [])[0] = el;
+                  }}
                   disabled={!editable || index === 0}
-                  onClick={() => move(index, index - 1)}
+                  onClick={() => {
+                    focusAfterMove.current = { index: index - 1, down: false };
+                    move(index, index - 1);
+                  }}
                   css={rowIconButtonCss}
                 >
                   <ChevronUpIcon size={14} />
@@ -194,8 +215,14 @@ export default function DocumentsPanel({
                 <button
                   type='button'
                   aria-label={`Move ${documentName(doc)} down`}
+                  ref={(el) => {
+                    (moveButtonRefs.current[index] ??= [])[1] = el;
+                  }}
                   disabled={!editable || index === documents.length - 1}
-                  onClick={() => move(index, index + 1)}
+                  onClick={() => {
+                    focusAfterMove.current = { index: index + 1, down: true };
+                    move(index, index + 1);
+                  }}
                   css={rowIconButtonCss}
                 >
                   <ChevronDownIcon size={14} />
@@ -232,12 +259,21 @@ export default function DocumentsPanel({
           <button
             type='button'
             ref={addButtonRef}
-            disabled={packetEditor.disabled}
-            onClick={() => fileInputRef.current?.click()}
+            disabled={packetEditor.disabled && !packetEditor.onCancelUpload}
+            onClick={
+              packetEditor.onCancelUpload ??
+              (() => fileInputRef.current?.click())
+            }
             css={{ ...secondaryButtonCss, width: '100%' }}
           >
-            <PaperclipIcon size={14} />
-            Add attachment
+            {packetEditor.onCancelUpload ? (
+              'Cancel upload'
+            ) : (
+              <>
+                <PaperclipIcon size={14} />
+                Add attachment
+              </>
+            )}
           </button>
           <input
             ref={fileInputRef}

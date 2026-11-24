@@ -4440,8 +4440,8 @@ function Form({
               }}
               onComplete={reviewViewerPayload.onComplete}
               onFinalize={reviewViewerPayload.onFinalize}
-              onUploadAttachment={(file: File) =>
-                clientRef.current.uploadReviewAttachment(file)
+              onUploadAttachment={(file: File, cancel: AbortSignal) =>
+                clientRef.current.uploadReviewAttachment(file, cancel)
               }
               onRemoveAttachment={(envelopeId: string) =>
                 clientRef.current.removeReviewAttachment(envelopeId)

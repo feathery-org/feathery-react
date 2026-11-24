@@ -1354,7 +1354,8 @@ export default class IntegrationClient {
 
   // Upload a file the filler attaches in the review viewer. Resolves to the
   // viewer document entry; finalize then takes its envelope id like any other.
-  async uploadReviewAttachment(file: File) {
+  // Aborting `cancel` rejects with a 'cancelled' DocumentPersistenceError.
+  async uploadReviewAttachment(file: File, cancel?: AbortSignal) {
     const { userId } = initInfo();
     const formData = new FormData();
     formData.append('form_key', this.formKey);
@@ -1365,26 +1366,30 @@ export default class IntegrationClient {
     formData.append('file', file, file.name);
     const url = `${getApiUrl()}document/form/attachment/`;
     try {
-      return await withDocumentDeadline(async (signal) => {
-        const response = await this._fetch(
-          url,
-          { method: 'POST', body: formData, keepalive: false, signal },
-          false
-        );
-        // Undefined on a network failure, which _fetch swallows here.
-        if (!response)
-          throw new Error(
-            'The upload failed. Check your connection and try again.'
+      return await withDocumentDeadline(
+        async (signal) => {
+          const response = await this._fetch(
+            url,
+            { method: 'POST', body: formData, keepalive: false, signal },
+            false
           );
-        // A proxy rejecting the upload (e.g. a 413) answers with HTML, not JSON.
-        const data = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(data ? parseAPIError(data) : 'Upload failed');
-        }
-        // Appended to the packet as is, so it must name its envelope.
-        if (!data?.envelope_id) throw new Error('Upload failed');
-        return data;
-      }, UPLOAD_TIMEOUT_MS);
+          // Undefined on a network failure, which _fetch swallows here.
+          if (!response)
+            throw new Error(
+              'The upload failed. Check your connection and try again.'
+            );
+          // A proxy rejecting the upload (e.g. a 413) answers with HTML, not JSON.
+          const data = await response.json().catch(() => null);
+          if (!response.ok) {
+            throw new Error(data ? parseAPIError(data) : 'Upload failed');
+          }
+          // Appended to the packet as is, so it must name its envelope.
+          if (!data?.envelope_id) throw new Error('Upload failed');
+          return data;
+        },
+        UPLOAD_TIMEOUT_MS,
+        cancel
+      );
     } catch (e) {
       if (isDocumentPersistenceError(e) && e.kind === 'timeout')
         throw new Error('The upload timed out. Try again.');

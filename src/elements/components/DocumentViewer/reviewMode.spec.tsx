@@ -852,7 +852,10 @@ describe('DocumentViewer — packet editing (editor_allow_attachments)', () => {
     const { onFinalize, onUploadAttachment } = renderViewer();
 
     await attach();
-    expect(onUploadAttachment).toHaveBeenCalledWith(expect.any(File));
+    expect(onUploadAttachment).toHaveBeenCalledWith(
+      expect.any(File),
+      expect.any(AbortSignal)
+    );
     expect(screen.getByText('ZIP file · 2 KB — no preview available'));
     expect(screen.getByRole('link', { name: 'Download' })).toHaveAttribute(
       'href',
@@ -920,6 +923,51 @@ describe('DocumentViewer — packet editing (editor_allow_attachments)', () => {
       );
     }
   );
+
+  it('keeps focus on the moved document, switching direction at an end', async () => {
+    renderViewer({
+      payload: { ...twoDocs, documents: [...twoDocs.documents, attachment] }
+    });
+
+    const up = screen.getByRole('button', { name: 'Move bundle up' });
+    up.focus();
+    fireEvent.click(up);
+    await waitFor(() => expect(up).toHaveFocus());
+    // At the top "up" is disabled, so focus takes the row's other button.
+    fireEvent.click(up);
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Move bundle down' })
+      ).toHaveFocus()
+    );
+  });
+
+  it('cancels a stalled upload, keeping the files that finished', async () => {
+    const signals: AbortSignal[] = [];
+    const onUploadAttachment = jest.fn((file: File, cancel: AbortSignal) => {
+      signals.push(cancel);
+      if (file.name === 'a.zip')
+        return Promise.resolve({ ...attachment, envelope_id: 'att-a' });
+      return new Promise<any>((resolve, reject) =>
+        cancel.addEventListener('abort', () => reject(new Error('Cancelled')))
+      );
+    });
+    const props = renderViewer({ onUploadAttachment });
+
+    fireEvent.change(screen.getByTestId('attachment-input'), {
+      target: { files: ['a', 'b'].map((n) => new File(['x'], `${n}.zip`)) }
+    });
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Cancel upload' })
+    );
+
+    await screen.findByRole('button', { name: 'Add attachment' });
+    expect(signals[1].aborted).toBe(true);
+    expect(screen.queryByText(/Couldn't attach/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+    await waitFor(() => expect(props.onFinalize).toHaveBeenCalled());
+    expect(finalizedIds(props.onFinalize)).toEqual(['env-1', 'env-2', 'att-a']);
+  });
 
   it('moves focus to the next document after a remove', async () => {
     renderViewer({
