@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import { keyframes } from '@emotion/react';
 
 import { INK_3, PAPER } from '../TrackedChangeGroups/styles';
@@ -13,6 +19,7 @@ import { hiddenEditorConverter } from './convertOriginal';
 import { populateVersionBindings } from './populateVersionBindings';
 import { normalizeForDiff } from './sfdtDiff';
 import {
+  cacheImportedVersion,
   FoldedVersions,
   useVersionDocument,
   LiveVersionDocument
@@ -89,6 +96,10 @@ export interface VersionMeta {
 }
 
 interface Props {
+  /** Retain this document’s reading position when its inactive preview is released. */
+  viewportRef?: {
+    current: { versionId: string; top: number; left: number } | null;
+  };
   host: DocxHistoryHost;
   version: DocxVersion;
   serviceUrl?: string;
@@ -120,6 +131,7 @@ interface Props {
 // assistant/rail can't see it. Reused across version selections.
 export default function VersionViewer({
   host,
+  viewportRef,
   version,
   serviceUrl,
   headers,
@@ -165,6 +177,22 @@ export default function VersionViewer({
   onZoomFactorChangeRef.current = onZoomFactorChange;
   const onDisplayedVersionRef = useRef(onDisplayedVersion);
   onDisplayedVersionRef.current = onDisplayedVersion;
+
+  // Capture before React removes the scroll container. Passive cleanup runs
+  // after removal, when the browser has already reset scrollTop to zero.
+  useLayoutEffect(
+    () => () => {
+      const viewport = editorRef.current?.documentHelper?.viewerContainer;
+      if (viewportRef && viewport && displayedVersionIdRef.current) {
+        viewportRef.current = {
+          versionId: displayedVersionIdRef.current,
+          top: viewport.scrollTop,
+          left: viewport.scrollLeft
+        };
+      }
+    },
+    [viewportRef]
+  );
 
   // Use a DocumentEditorContainer, not a bare DocumentEditor: only the
   // container sizes to a height:100% host, so the page isn't laid out zoomed.
@@ -272,6 +300,10 @@ export default function VersionViewer({
     containerRef.current?.statusBar?.updateZoomContent?.();
   }, [editorReady, zoomFactor]);
 
+  useLayoutEffect(() => {
+    setPhase('loading');
+  }, [host, version.id]);
+
   // Opens run one at a time: openAsync can't be aborted, so a slow stale open
   // would otherwise paint over the newer version.
   const openSeqRef = useRef(0);
@@ -319,7 +351,11 @@ export default function VersionViewer({
         let loaded: Promise<boolean>;
         if (doc.sfdt) {
           loaded = waitForDocumentLoad(viewer);
-          const sfdt = showHighlights ? doc.sfdt : acceptedSfdt(doc.sfdt);
+          if (doc.needsBindingPopulation) setPhase('loading');
+          const sfdt =
+            showHighlights || doc.needsBindingPopulation
+              ? doc.sfdt
+              : acceptedSfdt(doc.sfdt);
           if (displayedVersionIdRef.current === version.id) {
             preservePreviewViewport(viewer, () => viewer.open(sfdt));
           } else {
@@ -331,7 +367,7 @@ export default function VersionViewer({
           setPhase('loading');
           let bytes: ArrayBuffer;
           try {
-            bytes = await host.fetchVersionFile(doc.docxUrl);
+            bytes = doc.docxBytes ?? (await host.fetchVersionFile(doc.docxUrl));
           } catch (error) {
             if (
               !host.getVersion ||
@@ -354,6 +390,21 @@ export default function VersionViewer({
         if (!(await loaded))
           throw new Error('Version preview did not finish loading');
         if (cancelled) return;
+        // Apply the pending zoom property before restoring pixel offsets;
+        // otherwise EJ2's deferred dataBind scales the restored position again.
+        viewer.dataBind?.();
+        const savedViewport = viewportRef?.current;
+        if (
+          !displayedVersionIdRef.current &&
+          savedViewport?.versionId === version.id
+        ) {
+          const viewport = viewer.documentHelper?.viewerContainer;
+          if (viewport) {
+            viewport.scrollTop = savedViewport.top;
+            viewport.scrollLeft = savedViewport.left;
+            viewer.viewer?.updateScrollBars?.();
+          }
+        }
         // Re-apply after the open: opening a doc with tracked changes can flip
         // showRevisions back on and paint Syncfusion's author tints.
         if (!showHighlights) {
@@ -368,10 +419,11 @@ export default function VersionViewer({
         // The docx fallback still holds raw [[field]] / {{ jinja }} tokens; the
         // SFDT path was already populated in useVersionDocument.
         let populated = true;
-        if (doc.docxUrl) {
+        if (doc.docxUrl || doc.needsBindingPopulation) {
           try {
             const parsed = JSON.parse(viewer.serialize());
             const populatedSfdt = populateVersionBindings(parsed);
+            const importedSfdt = JSON.stringify(populatedSfdt);
             const displaySfdt = showHighlights
               ? populatedSfdt
               : normalizeForDiff(populatedSfdt, { digestImages: false });
@@ -381,6 +433,7 @@ export default function VersionViewer({
               populated = await reloaded;
               if (cancelled) return;
             }
+            if (populated) cacheImportedVersion(host, version, importedSfdt);
           } catch {
             /* population is best-effort; show the raw document if it fails */
           }
@@ -422,7 +475,12 @@ export default function VersionViewer({
   ]);
 
   return (
-    <div css={{ position: 'absolute', inset: 0, background: PAPER, zIndex: 2 }}>
+    <div
+      data-docx-version-id={version.id}
+      data-docx-version-state={doc.loading ? 'loading' : phase}
+      aria-busy={doc.loading || phase === 'loading'}
+      css={{ position: 'absolute', inset: 0, background: PAPER, zIndex: 2 }}
+    >
       {/* A normal block filling the overlay (not absolute) so the editor's
           height:100% resolves against it — mirrors the live editor's host.
           Kept invisible until the document has painted so the bare editor
@@ -433,11 +491,11 @@ export default function VersionViewer({
         css={{
           width: '100%',
           height: '100%',
-          opacity: phase === 'ready' ? 1 : 0,
+          opacity: !doc.loading && phase === 'ready' ? 1 : 0,
           transition: 'opacity 120ms ease'
         }}
       />
-      {phase !== 'ready' && (
+      {(doc.loading || phase !== 'ready') && (
         <div
           css={{
             position: 'absolute',

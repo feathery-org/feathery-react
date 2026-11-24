@@ -8,6 +8,7 @@ import babel from '@rollup/plugin-babel';
 import { readFileSync } from 'fs';
 import path from 'path';
 import pptxWorkerBuild from './scripts/pptx-worker-bundle.cjs';
+import historyWorkerBuild from './scripts/history-worker-bundle.cjs';
 import bundledPackages from './scripts/release-sbom/bundled-packages.cjs';
 
 // Read package.json
@@ -44,6 +45,7 @@ export default {
   ],
   plugins: [
     pptxWorkerBuild.pptxWorkerPlugin(),
+    historyWorkerBuild.historyWorkerPlugin(),
     del({ targets: ['dist/*', 'cjs/*'] }),
     // Ship the vendored country-flag font beside the bundle. Unlike webpack,
     // rollup leaves `new URL('./TwemojiCountryFlags.woff2', import.meta.url)`
