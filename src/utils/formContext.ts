@@ -680,7 +680,8 @@ export const getFormContext = (formUuid: string) => {
       if (
         mergeGroups?.length &&
         signMethod !== 'docusign' &&
-        (resolvedEnvelopeAction === undefined || resolvedEnvelopeAction === 'sign')
+        (resolvedEnvelopeAction === undefined ||
+          resolvedEnvelopeAction === 'sign')
       ) {
         // Signing a packet needs DocuSign; otherwise the backend 400s only
         // after field flushes and source-file saves. Fail fast instead.
