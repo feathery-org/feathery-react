@@ -5,13 +5,14 @@ export type ActivePanel = PanelTab | null;
 
 /** Open Changes when pending edits first appear, without overriding a later user choice. */
 function nextActivePanel(input: {
-  activePanel: ActivePanel;
+  activePanel: string | null;
   previousCount: number;
   count: number;
   reviewChanges: boolean;
-}): ActivePanel | undefined {
+}): 'changes' | null | undefined {
   const { activePanel, previousCount, count, reviewChanges } = input;
-  if (activePanel === 'changes' && count === 0) return null;
+  if (activePanel === 'changes' && previousCount > 0 && count === 0)
+    return null;
   if (!reviewChanges) return undefined;
   if (previousCount === 0 && count > 0 && activePanel !== 'changes')
     return 'changes';
@@ -20,10 +21,10 @@ function nextActivePanel(input: {
 
 /** Applies the pending-edit transition rule across renders. */
 export function useReviewPanelPresentation(input: {
-  activePanel: ActivePanel;
+  activePanel: string | null;
   count: number;
   reviewChanges: boolean;
-  setActivePanel: (panel: ActivePanel) => void;
+  setActivePanel: (panel: 'changes' | null) => void;
 }): void {
   const { activePanel, count, reviewChanges, setActivePanel } = input;
   const previousCount = useRef(0);

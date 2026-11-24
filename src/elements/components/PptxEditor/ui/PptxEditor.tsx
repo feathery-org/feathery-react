@@ -13,6 +13,7 @@ import { JsonPanel } from './JsonPanel';
 import PptxPanelRail, { type PptxPanelKind } from './PptxPanelRail';
 import PptxRightPanel from './PptxRightPanel';
 import PptxChangesPanel from './PptxChangesPanel';
+import { useReviewPanelPresentation } from '../../DocxEditor/reviewPanelPresentation';
 import {
   EDITOR_PLACEHOLDER_ERROR_COLOR,
   EDITOR_PLACEHOLDER_STYLE
@@ -339,6 +340,13 @@ function PptxEditorInner({
 
   const dirty = state.rev >= 0 ? store.engine.isDirty() : false;
   const historyEnabled = !!historyHost;
+  const changesCount = store.engine.pendingChangeCount();
+  useReviewPanelPresentation({
+    activePanel,
+    count: changesCount,
+    reviewChanges,
+    setActivePanel
+  });
 
   // Identical to the host's placeholder so the loading handoff is invisible.
   const placeholder = (content: React.ReactNode, error = false) => (
@@ -606,7 +614,7 @@ function PptxEditorInner({
               onToggle={(panel) =>
                 setActivePanel((current) => (current === panel ? null : panel))
               }
-              changesCount={store.engine.pendingChangeCount()}
+              changesCount={changesCount}
               historyEnabled={historyEnabled}
             />
           </>
