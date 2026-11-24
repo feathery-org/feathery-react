@@ -172,7 +172,9 @@ export type ListEgnyteFolderParams = {
   offset?: number;
 };
 export type GetEgnyteFileParams = {
-  // File path relative to the root, as returned by listEgnyteFolder
+  // File path relative to the root. Pass a path from listEgnyteFolder as it
+  // is: paths are percent-decoded once, so a listing returns a % in a name
+  // as %25.
   path: string;
 };
 export type UpdateDocusignEnvelopeParams = {
