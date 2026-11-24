@@ -214,6 +214,22 @@ export const local = () => typeof secret;`
     ).rejects.toThrow(`Shared code "A" imports "missing" from shared code "B"`);
   });
 
+  it('fails the rule when a module it imports throws while running', async () => {
+    const feathery = { calls: 0 };
+    const modules = {
+      Base: `feathery.calls += 1;\nconst x = undefined.trim();\nexport const a = 1;`,
+      Mid: `import { a } from 'Base';\nexport const b = a;`
+    };
+    await expect(
+      runRule(
+        `import { b } from 'Mid';\nimport { a } from 'Base';\nreturn a + b;`,
+        modules,
+        { feathery }
+      )
+    ).rejects.toThrow(/^Shared code "Base" threw an error: Cannot read/);
+    expect(feathery.calls).toBe(1);
+  });
+
   it('throws a clear error for shared code with a syntax error', async () => {
     await expect(
       runRule(`import { a } from 'Bad';\nreturn a;`, {

@@ -38,6 +38,7 @@ export interface LinkedRuleCode {
 const IMPORT_FN = '__featheryImport';
 const MODULES_VAR = '__featheryModules';
 const CACHE_VAR = '__featheryModuleCache';
+const FAIL_FN = '__featheryModuleFailed';
 
 interface ImportBinding extends SharedCodeImport {
   statement: string;
@@ -306,8 +307,19 @@ export function linkSharedCode(
     `const ${CACHE_VAR} = Object.create(null);`,
     `const ${MODULES_VAR} = {\n${factories.join(',\n')}\n};`,
     `function ${IMPORT_FN}(key) {`,
-    `  if (!${CACHE_VAR}[key]) ${CACHE_VAR}[key] = ${MODULES_VAR}[key]();`,
+    `  if (!${CACHE_VAR}[key]) ${CACHE_VAR}[key] = ${MODULES_VAR}[key]().catch(${FAIL_FN}(key));`,
     `  return ${CACHE_VAR}[key];`,
+    `}`,
+    // A module that throws while it runs fails the rule, naming the module
+    `function ${FAIL_FN}(key) {`,
+    `  return (cause) => {`,
+    `    if (cause && cause.sharedCodeKey) throw cause;`,
+    `    const message = cause && cause.message ? cause.message : String(cause);`,
+    `    const error = new Error('Shared code "' + key + '" threw an error: ' + message);`,
+    `    error.sharedCodeKey = key;`,
+    `    error.cause = cause;`,
+    `    throw error;`,
+    `  };`,
     `}`
   ].join('\n');
 
