@@ -509,9 +509,21 @@ export function planDeck(
     oldShapes: NfNode[],
     shapes: NfNode[]
   ): void {
+    const copiedFrom = new Set<NfNode>();
+    const repeated = new Set<NfNode>();
     const pairs = shapes.flatMap((shape) => {
       const old = oldShapes.find((c) => c.id === originOf(shape.id));
-      return old ? [{ old, shape }] : [];
+      if (!old) return [];
+      if (copiedFrom.has(old)) {
+        repeated.add(shape);
+        refuse(
+          shape.id,
+          'copies a shape already on this slide a second time, which the editor cannot do: copy each shape once, or add a new text box'
+        );
+        return [];
+      }
+      copiedFrom.add(old);
+      return [{ old, shape }];
     });
     const kept = new Set(pairs.map(({ old }) => old));
     // The editor finds a shape by its shapeId, so it cannot tell apart two that share one
@@ -564,7 +576,9 @@ export function planDeck(
       });
 
     const paired = new Set(pairs.map(({ shape }) => shape));
-    const added = shapes.filter((shape) => !paired.has(shape));
+    const added = shapes.filter(
+      (shape) => !paired.has(shape) && !repeated.has(shape)
+    );
     added.forEach((shape, i) =>
       newShape(
         slide,
@@ -581,6 +595,18 @@ export function planDeck(
       );
   }
 
+  /** The one slide every shape of a new slide was copied from, which makes it a copy of that slide */
+  function slideOfCopiedShapes(slide: NfNode): NfNode | undefined {
+    const shapes = liveShapes(slide);
+    if (!shapes.length || !shapes.every((shape) => isCopy(shape.id)))
+      return undefined;
+    const sources = new Set(
+      shapes.map((shape) => before.placement(originOf(shape.id))?.parent)
+    );
+    const [source] = sources;
+    return sources.size === 1 ? source ?? undefined : undefined;
+  }
+
   const beforeSlides = (before.nf.root.slides as NfNode[]).filter(isLive);
   const afterSlides = (intended.nf.root.slides as NfNode[]).filter(isLive);
   const keyOf = new Map<NfNode, string>();
@@ -591,7 +617,7 @@ export function planDeck(
   for (const slide of added) {
     const source = isCopy(slide.id)
       ? before.get(originOf(slide.id))
-      : undefined;
+      : slideOfCopiedShapes(slide);
     if (source?.kind !== 'slide' || !isLive(source)) {
       refuse(slide.id, `is a new slide: ${COPY_SLIDE}`);
       continue;
