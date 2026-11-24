@@ -624,7 +624,10 @@ export const getFormContext = (formUuid: string) => {
           )
         );
       }
-      if (mergeGroups?.length && (merge || envelopeAction === 'open_in_editor')) {
+      if (
+        mergeGroups?.length &&
+        (merge || envelopeAction === 'open_in_editor')
+      ) {
         // Fail fast; the backend rejects both combinations anyway.
         return Promise.reject(
           new Error(
@@ -647,7 +650,8 @@ export const getFormContext = (formUuid: string) => {
       if (
         mergeGroups?.length &&
         signMethod !== 'docusign' &&
-        (resolvedEnvelopeAction === undefined || resolvedEnvelopeAction === 'sign')
+        (resolvedEnvelopeAction === undefined ||
+          resolvedEnvelopeAction === 'sign')
       ) {
         // Signing a packet needs DocuSign; otherwise the backend 400s only
         // after field flushes and source-file saves. Fail fast instead.
@@ -788,7 +792,9 @@ export const getFormContext = (formUuid: string) => {
       }
       if (mergeGroups?.length) {
         return Promise.reject(
-          new Error('generateDocuments: mergeGroups require a mounted <Form />.')
+          new Error(
+            'generateDocuments: mergeGroups require a mounted <Form />.'
+          )
         );
       }
       if (ccRecipients !== undefined) {
