@@ -64,7 +64,15 @@ import {
 import { readTextBody } from '../core/model/read';
 import { tableCell } from '../core/model/table';
 import type { Deck, Shape, Slide } from '../core/model/types';
-import { child, childrenOf, el, type OTree } from '../core/opc/xml';
+import {
+  buildXml,
+  child,
+  childrenOf,
+  descendant,
+  el,
+  getAttr,
+  type OTree
+} from '../core/opc/xml';
 import type {
   CommandMeta,
   EditorCommand,
@@ -176,6 +184,44 @@ function jsonInvalidations(
   return invalidations;
 }
 
+/** A top-level shape's place on its slide and its XML, found by its id */
+function placedShape(
+  slide: OTree | undefined,
+  shapeId: string
+): { at: number; xml: string } | null {
+  const spTree = slide
+    ?.map((node) => descendant(node, 'p:spTree'))
+    .find(Boolean);
+  const shapes = spTree ? childrenOf(spTree) : [];
+  const at = shapes.findIndex(
+    (node) => getAttr(descendant(node, 'p:cNvPr') ?? {}, 'id') === shapeId
+  );
+  return at < 0 ? null : { at, xml: buildXml([shapes[at]]) };
+}
+
+// A transaction's command that left its shape as it was has nothing to review
+function changedOnly(
+  invalidations: Invalidation[],
+  before: PptxHistorySnapshot,
+  after: PptxHistorySnapshot
+): Invalidation[] {
+  return invalidations.flatMap((invalidation): Invalidation[] => {
+    if (invalidation.kind !== 'shapes') return [invalidation];
+    const shapeIds = invalidation.shapeIds.filter((shapeId) => {
+      const was = placedShape(
+        before.sourceSlides[invalidation.slideId],
+        shapeId
+      );
+      const now = placedShape(
+        after.sourceSlides[invalidation.slideId],
+        shapeId
+      );
+      return !was || !now || was.at !== now.at || was.xml !== now.xml;
+    });
+    return shapeIds.length ? [{ ...invalidation, shapeIds }] : [];
+  });
+}
+
 /** Framework-free owner of PPTX mutations, JSON projection, transactions and history. */
 export class PptxEditorEngine {
   private deck: Deck | null;
@@ -275,11 +321,12 @@ export class PptxEditorEngine {
     this.openTransaction = open;
     const close = () => {
       this.openTransaction = null;
+      const after = this.present || captureHistorySnapshot(deck, before);
       return this.record(
         before,
-        this.present || captureHistorySnapshot(deck, before),
+        after,
         meta.label || open.labels[0] || 'Edit',
-        open.invalidations,
+        changedOnly(open.invalidations, before, after),
         'change',
         open.createdShapeIds,
         meta

@@ -1436,17 +1436,21 @@ export function fitTableColumns(
   const total = widths.reduce((a, b) => a + b, 0);
   const narrowest = 90000;
   const scaled = widths.map((w) => Math.floor((w * width) / (total || 1)));
-  // No column goes narrower than the editor allows, the wider ones give up the difference
+  // No column goes narrower than the editor allows, the others give up what they have above that
   const short = scaled.reduce((sum, w) => sum + Math.max(0, narrowest - w), 0);
-  const roomy = scaled.filter((w) => w > narrowest).reduce((a, b) => a + b, 0);
+  const spare = scaled.reduce((sum, w) => sum + Math.max(0, w - narrowest), 0);
+  const floored =
+    short && width >= widths.length * narrowest
+      ? scaled.map((w) =>
+          w <= narrowest
+            ? narrowest
+            : Math.floor(w - (short * (w - narrowest)) / spare)
+        )
+      : scaled;
   const fitted =
     run >= 2 && share >= narrowest
       ? [...lead, ...Array.from({ length: run }, () => share)]
-      : scaled.map((w) =>
-          w <= narrowest || !roomy
-            ? Math.max(w, narrowest)
-            : Math.floor(w - (short * w) / roomy)
-        );
+      : floored;
   fitted[fitted.length - 1] += width - fitted.reduce((a, b) => a + b, 0);
   cols.forEach((col, i) => setAttr(col, 'w', String(fitted[i])));
   syncTableFrame(shape);

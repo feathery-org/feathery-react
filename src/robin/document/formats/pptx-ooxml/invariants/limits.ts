@@ -81,7 +81,14 @@ export const limits: Invariant = {
             'has a character a deck cannot hold, a control character or half of a character pair: a line break inside a paragraph is a break run'
           )
         );
-      if (Array.isArray(node.paragraphs) && !node.paragraphs.length)
+      // A cell the file leaves empty may stay empty, as a copy of it does
+      const wasEmpty =
+        Array.isArray(old?.paragraphs) && !(old.paragraphs as NfNode[]).length;
+      if (
+        Array.isArray(node.paragraphs) &&
+        !node.paragraphs.length &&
+        !wasEmpty
+      )
         problems.push(
           refusal(id, 'has no paragraph: a shape with text keeps at least one')
         );

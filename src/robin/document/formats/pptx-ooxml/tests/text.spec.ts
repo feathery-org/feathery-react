@@ -336,6 +336,27 @@ describe('PowerPoint text', () => {
     expect(new Set(card.targets.map((target) => target.shapeId)).size).toBe(1);
   });
 
+  it('reports no change, and no card, for clearing a highlight nothing has', () => {
+    const deck = openDeck('marketing-parity.pptx');
+    const find = { text: 'Company Name' };
+    const found = deck.call('find', find) as { total: number; shape: string };
+    const result = deck.write({
+      intent: 'Remove the highlight.',
+      scope: { ids: [], bulk: [{ find, total: found.total }] },
+      changes: [
+        {
+          kind: 'set',
+          target: { find, total: found.total, shape: found.shape },
+          props: { highlight: 'none' }
+        }
+      ]
+    });
+    expect(result).toEqual(
+      expect.objectContaining({ ok: true, committed: false })
+    );
+    expect(deck.pending()).toHaveLength(0);
+  });
+
   it('round-trips a deck with a theme highlight byte for byte', () => {
     const deck = injected(
       'slide1',

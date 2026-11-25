@@ -37,7 +37,8 @@ export function tableLayout(
     list.findIndex((was) => was.id === (copiedTable ? origin(id) : id));
   const isCopy = (list: NfNode[], id: string, ids: string[]) =>
     copiedTable
-      ? ids.filter((other) => origin(other) === origin(id)).length > 1
+      ? ids.filter((other) => origin(other) === origin(id)).length > 1 ||
+        (wasRead(origin(id)) && indexIn(list, id) < 0)
       : origin(id) !== id || (wasRead(id) && indexIn(list, id) < 0);
   const placed = (list: NfNode[], ids: string[]) =>
     ids.map((id) => {

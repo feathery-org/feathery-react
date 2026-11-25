@@ -717,7 +717,7 @@ export function plan(ctx: PlanContext): CommitPlan {
   // The limits invariant refuses these before a write gets here
   if (cannot.length) throw new Error(`${cannot[0].id} ${cannot[0].why}`);
   return {
-    steps: [{ seam: 'deck', payload: operations }],
+    steps: operations.length ? [{ seam: 'deck', payload: operations }] : [],
     landed: 'card',
     history: 'editor'
   };

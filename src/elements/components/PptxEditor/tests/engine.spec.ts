@@ -871,6 +871,19 @@ it.each([
     (fitted: number[]) => expect(Math.min(...fitted)).toBe(90000)
   ],
   [
+    'keeps columns just above the narrowest width from dropping under it',
+    [90000, 90000, 129200, 205000, 180000],
+    500000,
+    (fitted: number[]) =>
+      expect(Math.min(...fitted)).toBeGreaterThanOrEqual(90000)
+  ],
+  [
+    'scales a table too narrow for every column, writing no negative width',
+    [100000, 100000, 100000, 100000, 100000],
+    200000,
+    (fitted: number[]) => expect(Math.min(...fitted)).toBeGreaterThan(0)
+  ],
+  [
     'shares freed width between nearly equal trailing columns',
     [1200000, 900000, 901000],
     3901000,
@@ -961,6 +974,33 @@ it('replaces a cell saved with no fill by the fill picked, after its borders', (
   });
 
   expect(childrenOf(pr).map(tagOf)).toEqual(['a:lnL', 'a:solidFill']);
+});
+
+it('records only the shapes a transaction changed as its suggestion targets', () => {
+  const deck = importDeck(fixture);
+  const slide = deck.slides[0];
+  const edited = addTextBox(deck, slide, 0, 0, 1000000, 400000, 'Edited');
+  const untouched = addTextBox(deck, slide, 0, 500000, 1000000, 400000, 'Same');
+  const engine = new PptxEditorEngine(deck);
+  engine.transaction({ origin: 'assistant' }, () => {
+    engine.execute({
+      type: 'set-shape-geometries',
+      slideId: slide.path,
+      updates: [{ shapeId: edited.id, geometry: { x: 200000 } }]
+    });
+    engine.execute({
+      type: 'set-shape-geometries',
+      slideId: slide.path,
+      updates: [{ shapeId: untouched.id, geometry: { x: 0 } }]
+    });
+  });
+  const [suggestion] = engine
+    .changes()
+    .filter((record) => record.status === 'pending');
+
+  expect(suggestion.targets.map((target) => target.shapeId)).toEqual([
+    edited.id
+  ]);
 });
 
 it('refuses a cell target on a shape that is not a table', () => {

@@ -1034,6 +1034,62 @@ describe('PowerPoint tables', () => {
     );
   });
 
+  const slideOf = (deck: Deck, table: string) =>
+    (
+      deck.call('find', { kind: 'table' }) as {
+        hits: Array<{ id: string; within: string[] }>;
+      }
+    ).hits
+      .find((h) => h.id === table)!
+      .within.find((id) => deck.read(id).kind === 'slide')!;
+  const copySlide = (deck: Deck, slide: string, edit = (node: Node) => node) =>
+    deck.write({
+      intent: 'Copy the slide.',
+      scope: { ids: [slide] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: slide,
+          node: {
+            ...edit(JSON.parse(JSON.stringify(deck.read(slide)))),
+            id: 'tmp:copy'
+          }
+        }
+      ]
+    });
+
+  it('copies a slide whose table has a cell the file leaves without a text body', () => {
+    const deck = sampleWithSlide4((xml) => {
+      const row = xml.indexOf('<a:tr', xml.indexOf('<a:tr') + 1);
+      const body = xml.indexOf('<a:txBody>', row);
+      return (
+        xml.slice(0, body) +
+        xml.slice(xml.indexOf('</a:txBody>', body) + '</a:txBody>'.length)
+      );
+    });
+    const table = tableWithColumns(deck, 4);
+    expect(copySlide(deck, slideOf(deck, table))).toEqual(
+      expect.objectContaining({ ok: true, committed: true })
+    );
+  });
+
+  it('refuses a slide copy whose table borrows a row from another table', () => {
+    const deck = openDeck('sample.pptx');
+    const table = tableWithColumns(deck, 4);
+    const other = (
+      deck.call('find', { kind: 'table' }) as { hits: Array<{ id: string }> }
+    ).hits.find((h) => h.id !== table)!.id;
+    const borrowed = JSON.parse(JSON.stringify(deck.read(other).rows[0]));
+    const result = copySlide(deck, slideOf(deck, table), (node) => {
+      node.shapes.find((shape: Node) => shape.id === table).rows.push(borrowed);
+      return node;
+    });
+    expectLimits(result as WriteResult);
+    expect(JSON.stringify(result)).toContain(
+      'write a new row or column without ids'
+    );
+  });
+
   it('edits the text and rows of a table inside a group', () => {
     const deck = sampleWithSlide4((xml) =>
       xml
