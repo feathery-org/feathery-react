@@ -65,6 +65,14 @@ it('reuses prepared thumbnails and package bytes without refetching on first sel
   releasePreparedDeck(deck);
 });
 
+it('revalidates the deck so a reload after a save does not open a stale browser copy', async () => {
+  releasePreparedDeck(await loader.load('a', '/a.pptx', controller().signal));
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/a.pptx',
+    expect.objectContaining({ cache: 'no-cache' })
+  );
+});
+
 it('evicts old speculative decks and does not reuse an old URL after regeneration', async () => {
   for (const id of ['a', 'b', 'c'])
     await loader.prefetch(id, `/${id}`, controller().signal);
