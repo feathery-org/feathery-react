@@ -39,12 +39,16 @@ export interface ResolvedRunDefaults {
 export interface ResolvedListProps {
   bullet?: Bullet;
   lineSpacing?: Spacing;
+  spaceBefore?: Spacing;
+  spaceAfter?: Spacing;
   marLEmu?: number;
   indentEmu?: number;
   defRPr?: ResolvedRunDefaults;
 }
 
-function placeholderOf(shape: Shape): { type: string; idx: string } | null {
+function placeholderOf(
+  shape: Pick<Shape, 'node'>
+): { type: string; idx: string } | null {
   const ph = descendant(shape.node, 'p:ph');
   if (!ph) return null;
   return { type: getAttr(ph, 'type') || 'body', idx: getAttr(ph, 'idx') || '' };
@@ -54,8 +58,10 @@ function placeholderOf(shape: Shape): { type: string; idx: string } | null {
 function readLvlPr(pPr: ONode | undefined): ResolvedListProps | null {
   if (!pPr) return null;
   const out: ResolvedListProps = {};
-  const lineSpacing = readParagraphPr(pPr).lineSpacing;
+  const { lineSpacing, spaceBefore, spaceAfter } = readParagraphPr(pPr);
   if (lineSpacing) out.lineSpacing = lineSpacing;
+  if (spaceBefore) out.spaceBefore = spaceBefore;
+  if (spaceAfter) out.spaceAfter = spaceAfter;
   const buFont = child(pPr, 'a:buFont');
   const buSize = readBulletSize(pPr);
   if (child(pPr, 'a:buNone')) out.bullet = { kind: 'none' };
@@ -213,11 +219,11 @@ export function resolveShapeFill(
   return undefined;
 }
 
-/** Resolve the list/bullet/default-run props a placeholder paragraph inherits at a level. */
+/** Resolve the list/bullet/default-run props a paragraph inherits at a level, from its shape, placeholder and master */
 export function resolveListProps(
   deck: Deck,
   slide: Slide,
-  shape: Shape,
+  shape: Pick<Shape, 'node'>,
   level: number
 ): ResolvedListProps {
   const ph = placeholderOf(shape);
@@ -234,6 +240,10 @@ export function resolveListProps(
     if (merged.bullet === undefined && r.bullet) merged.bullet = r.bullet;
     if (merged.lineSpacing === undefined && r.lineSpacing)
       merged.lineSpacing = r.lineSpacing;
+    if (merged.spaceBefore === undefined && r.spaceBefore)
+      merged.spaceBefore = r.spaceBefore;
+    if (merged.spaceAfter === undefined && r.spaceAfter)
+      merged.spaceAfter = r.spaceAfter;
     if (merged.marLEmu === undefined && r.marLEmu !== undefined)
       merged.marLEmu = r.marLEmu;
     if (merged.indentEmu === undefined && r.indentEmu !== undefined)
@@ -261,6 +271,8 @@ export function resolveListProps(
     return readLvlPr(lst ? child(lst, lvlTag) : undefined);
   };
 
+  // The shape's own list style comes before anything it inherits
+  mergeIn(lvlOf(shape.node));
   // 1. layout placeholder lstStyle
   if (ph && layoutPart && pkg.hasPart(layoutPart)) {
     mergeIn(

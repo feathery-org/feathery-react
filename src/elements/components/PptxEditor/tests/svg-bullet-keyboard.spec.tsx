@@ -187,7 +187,10 @@ it('keeps Shift+Enter inside one bullet as a saved DrawingML soft break', async 
   expect((first.querySelector('[data-bullet]') as HTMLElement).style.left).toBe(
     '18px'
   );
-  first.appendChild(document.createTextNode('continued line'));
+  window
+    .getSelection()!
+    .getRangeAt(0)
+    .insertNode(document.createTextNode('continued line'));
   await act(async () => editor.dispatchEvent(new Event('blur')));
   expect(shape.text!.paragraphs).toHaveLength(1);
   expect(shape.text!.paragraphs[0].runs.map((r) => r.text)).toEqual([
@@ -205,6 +208,38 @@ it('keeps Shift+Enter inside one bullet as a saved DrawingML soft break', async 
     'continued line'
   ]);
 });
+
+it.each([1, 2])(
+  'saves %i soft breaks pressed at the end of a bullet, each showing its line',
+  async (presses) => {
+    const { shape, editor } = await openBulletEditor();
+    const first = editor.firstElementChild as HTMLElement;
+    // Chrome splits the text at the caret, leaving an empty text node after the break
+    const text = first.querySelector('[data-source-run]')!.firstChild!;
+    text.parentNode!.insertBefore(
+      document.createTextNode(''),
+      text.nextSibling
+    );
+    caretAtEnd(first);
+    for (let i = 0; i < presses; i++)
+      await act(async () =>
+        editor.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'Enter',
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true
+          })
+        )
+      );
+    expect(first.querySelectorAll('br:not([data-soft-break])')).toHaveLength(1);
+    await act(async () => editor.dispatchEvent(new Event('blur')));
+    expect(shape.text!.paragraphs[0].runs.map((r) => r.text)).toEqual([
+      'First item',
+      ...Array(presses).fill('\n')
+    ]);
+  }
+);
 
 it('creates another bullet paragraph from Enter and retains its bullet on commit', async () => {
   const { shape, editor } = await openBulletEditor();

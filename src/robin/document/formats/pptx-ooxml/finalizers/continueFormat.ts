@@ -8,6 +8,7 @@ import {
   runAt,
   textSources
 } from '../textSources';
+import { lookOf, tableLayout } from '../tableLayout';
 import { leafRuns, pptxTree } from '../tree';
 
 function fillAbsent(
@@ -30,20 +31,9 @@ export const continueFormatFinalizer: Finalizer = {
   run(after, { before, copies = {} }) {
     const ids: string[] = [];
     const origin = (id: string) => copies[id] ?? id;
-    walk(after.root, pptxTree, ({ node }) => {
-      if (!Array.isArray(node.paragraphs) || node.kind === 'cell') return;
-      const old = before.get(origin(node.id));
-      if (!old) {
-        // A new text box starts as one run of the editor's own text
-        for (const paragraph of node.paragraphs as NfNode[])
-          for (const run of leafRuns(paragraph))
-            if (
-              run.kind === 'run' &&
-              fillAbsent(run, TEXT_BOX_RUN_FORMAT, RUN_FORMAT)
-            )
-              ids.push(run.id);
-        return;
-      }
+
+    // Text written into what was read continues the text around it, a new cell the cell it copies
+    function continueText(node: NfNode, old: NfNode): void {
       if (!Array.isArray(old.paragraphs)) return;
       const known = new Set(
         (old.paragraphs as NfNode[]).flatMap((paragraph) => [
@@ -62,12 +52,47 @@ export const continueFormatFinalizer: Finalizer = {
         )
           ids.push(paragraph.id);
         leafRuns(paragraph).forEach((run, r) => {
-          if (known.has(origin(run.id)) || run.kind !== 'run') return;
+          // A run with no text keeps no formatting
+          if (
+            known.has(origin(run.id)) ||
+            run.kind !== 'run' ||
+            run.text === ''
+          )
+            return;
           const at = sources.runs[p][r];
           if (at && fillAbsent(run, runAt(old, at), RUN_FORMAT))
             ids.push(run.id);
         });
       });
+    }
+
+    walk(after.root, pptxTree, ({ node }) => {
+      if (node.kind === 'table') {
+        const old = before.get(origin(node.id));
+        const layout =
+          old && tableLayout(old, node, origin, (id) => !!before.get(id));
+        if (!old || typeof layout !== 'object') return false;
+        (node.rows as NfNode[]).forEach((row, i) =>
+          (row.cells as NfNode[]).forEach((cell, j) =>
+            continueText(cell, lookOf(old, layout, i, j))
+          )
+        );
+        return false;
+      }
+      if (!Array.isArray(node.paragraphs)) return;
+      const old = before.get(origin(node.id));
+      if (!old) {
+        // A new text box starts as one run of the editor's own text
+        for (const paragraph of node.paragraphs as NfNode[])
+          for (const run of leafRuns(paragraph))
+            if (
+              run.kind === 'run' &&
+              fillAbsent(run, TEXT_BOX_RUN_FORMAT, RUN_FORMAT)
+            )
+              ids.push(run.id);
+        return;
+      }
+      continueText(node, old);
     });
     return { ids };
   }

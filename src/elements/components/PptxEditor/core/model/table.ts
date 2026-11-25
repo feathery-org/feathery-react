@@ -91,6 +91,7 @@ export function tableCellBorder(cell: ONode | undefined): string | undefined {
 }
 export interface TableBorder {
   color?: string;
+  fill?: ONode;
   widthEMU: number;
   dash: string;
   none: boolean;
@@ -105,6 +106,7 @@ export function tableCellBorderEdge(
   const rgb = fill && child(fill, 'a:srgbClr');
   return {
     color: rgb ? getAttr(rgb, 'val') : undefined,
+    fill,
     widthEMU: Number(line && getAttr(line, 'w')) || 9525,
     dash:
       line && child(line, 'a:prstDash')
@@ -130,8 +132,10 @@ export function tableCellAlign(
 export function tableCellVerticalAlign(
   cell: ONode | undefined
 ): 't' | 'ctr' | 'b' {
+  const tcPr = cell && child(cell, 'a:tcPr');
   const body = cell && child(cell, 'a:txBody');
   const bodyPr = body && child(body, 'a:bodyPr');
-  const anchor = bodyPr && getAttr(bodyPr, 'anchor');
+  const anchor =
+    (tcPr && getAttr(tcPr, 'anchor')) ?? (bodyPr && getAttr(bodyPr, 'anchor'));
   return anchor === 'ctr' || anchor === 'b' ? anchor : 't';
 }

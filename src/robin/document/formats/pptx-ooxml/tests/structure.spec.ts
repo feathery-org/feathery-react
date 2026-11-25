@@ -44,7 +44,10 @@ describe('PowerPoint structure', () => {
         changes: [{ kind: 'delete', id: shape, base: deck.read(shape).base }]
       })
     );
-    expect(deck.find('Q1')[0]).toBeDefined(); // still shown, as a suggested removal
+    expect(deck.read(shape, 'turn-2').pending).toEqual(
+      expect.objectContaining({ deletion: expect.anything() })
+    );
+    expect(deck.find('Q1', 'turn-2')).toHaveLength(0);
     rejectAll(deck);
     expect(slidesOf(deck)).toEqual(original);
   });
@@ -340,11 +343,7 @@ describe('PowerPoint structure', () => {
     deck.store.undo();
 
     expect(
-      deck.call(
-        'resolve',
-        { cards: ['turn-0001'], accept: false },
-        'turn-0003'
-      )
+      deck.call('resolve', { cards: ['turn-0001'], accept: false }, 'turn-0003')
     ).toEqual(expect.objectContaining({ ok: false }));
     deck.store.redo();
     expect(serializeDeck(deck.engine)).toEqual(italic);
@@ -430,7 +429,7 @@ describe('PowerPoint structure', () => {
     expect(deck.pending()).toHaveLength(0);
   });
 
-  it('copies every slide of a deck with tables, refusing only a copy that changes a table or the stacking order', () => {
+  it('copies every slide of a deck with tables, and a copy can change its table text but not the stacking order', () => {
     const deck = openDeck('sample.pptx');
     const copy = (slide: string, edit: (node: any) => void = () => {}) => {
       const node = JSON.parse(JSON.stringify(deck.read(slide)));
@@ -450,12 +449,13 @@ describe('PowerPoint structure', () => {
         (shape) => shape.kind === 'table'
       )
     ) as string;
-    expectLimits(
+    expectCard(
       copy(withTable, (node) => {
         const table = node.shapes.find((shape: any) => shape.kind === 'table');
         table.rows[0].cells[0].paragraphs[0].runs[0].text = 'changed';
       })
     );
+    deck.engine.undo();
     expectLimits(
       copy(slides(deck)[0], (node) => {
         node.shapes = [node.shapes[1], node.shapes[0], ...node.shapes.slice(2)];
@@ -463,68 +463,735 @@ describe('PowerPoint structure', () => {
     );
   });
 
-  it('removes a whole table, but refuses removing one of its rows', () => {
-    const tableOf = (deck: ReturnType<typeof openDeck>) =>
-      (deck.call('outline', { depth: 6 }) as { lines: string }).lines
-        .split('\n')
-        .find((line) => / table /.test(line))
-        ?.trim()
-        .split(' ')[0] as string;
-    const remove = (deck: ReturnType<typeof openDeck>, id: string) =>
-      deck.write({
-        intent: 'Remove it.',
-        scope: { ids: [id] },
-        changes: [{ kind: 'delete', id, base: deck.read(id).base }]
-      });
+  it('removes a whole table', () => {
     const deck = openDeck('sample.pptx');
-    expectCard(remove(deck, tableOf(deck)));
-    const other = openDeck('sample.pptx');
-    const row = (other.read(tableOf(other)).rows as Array<{ id: string }>)[0]
-      .id;
-    expectLimits(remove(other, row));
-  });
-
-  it('refuses changing a table cell, which the editor writes only as plain text', () => {
-    const deck = openDeck('sample.pptx');
-    const lines = (
+    const table = (
       deck.call('outline', { depth: 6 }) as { lines: string }
-    ).lines.split('\n');
-    const table = lines
+    ).lines
+      .split('\n')
       .find((line) => / table /.test(line))
       ?.trim()
       .split(' ')[0] as string;
-    const cellParagraph = lines
-      .slice(lines.findIndex((line) => line.includes(` ${table} `)))
-      .find((line) => / paragraph /.test(line))
-      ?.trim()
-      .split(' ')[0] as string;
-    const node = deck.read(cellParagraph);
-    expectLimits(
+    expectCard(
       deck.write({
-        intent: 'Change a cell.',
-        scope: { ids: [cellParagraph] },
-        changes: [
-          {
-            kind: 'replace',
-            id: cellParagraph,
-            base: node.base,
-            node: { ...node, runs: [{ text: 'changed' }] }
-          }
-        ]
+        intent: 'Remove it.',
+        scope: { ids: [table] },
+        changes: [{ kind: 'delete', id: table, base: deck.read(table).base }]
       })
     );
   });
 });
 
-describe('PowerPoint suggestions beside the person\'s own edits', () => {
-  const copyFirstSlide = (deck: ReturnType<typeof openDeck>, turnId: string) => {
+describe('PowerPoint tables', () => {
+  type Deck = ReturnType<typeof openDeck>;
+  type Node = Record<string, any>;
+
+  /** A plan table: a header row, a bold copay row, a row to remove and a label merged down two rows */
+  function deckWithTable(): { deck: Deck; table: string } {
+    const deck = openDeck('sample.pptx');
+    const slideId = slidesOf(deck)[0].path;
+    deck.engine.execute({
+      type: 'insert-shape',
+      slideId,
+      shape: {
+        kind: 'table',
+        rows: 5,
+        columns: 2,
+        x: 100000,
+        y: 100000,
+        cx: 4000000,
+        cy: 1600000
+      }
+    });
+    editTable(deck, [
+      { kind: 'set-cell-text', row: 0, col: 0, value: 'Benefit' },
+      { kind: 'set-cell-text', row: 0, col: 1, value: 'VA PPO 1000' },
+      { kind: 'set-cell-text', row: 1, col: 0, value: 'Tier 2' },
+      { kind: 'set-cell-text', row: 1, col: 1, value: '$45' },
+      { kind: 'set-cell-text', row: 2, col: 0, value: 'Deductible Type' },
+      { kind: 'set-cell-text', row: 3, col: 0, value: 'Retail Pharmacy' },
+      {
+        kind: 'style-cells',
+        range: { startRow: 1, startCol: 1, endRow: 1, endCol: 1 },
+        style: { bold: true }
+      },
+      {
+        kind: 'merge-cells',
+        range: { startRow: 3, startCol: 0, endRow: 4, endCol: 0 }
+      }
+    ]);
+    return { deck, table: tableIn(deck) };
+  }
+
+  function tableIn(deck: Deck, turnId?: string): string {
+    return deck
+      .find('Retail Pharmacy', turnId)[0]
+      .within.find((id) => deck.read(id, turnId).kind === 'table') as string;
+  }
+
+  const replaceTable = (
+    deck: Deck,
+    table: string,
+    edit: (node: Node) => void,
+    turnId?: string
+  ) => {
+    const node = JSON.parse(JSON.stringify(deck.read(table, turnId)));
+    edit(node);
+    return deck.write(
+      {
+        intent: 'Update the table.',
+        scope: { ids: [table] },
+        changes: [{ kind: 'replace', id: table, base: node.base, node }]
+      },
+      turnId
+    );
+  };
+  // Changes the plan table through the editor, as the person would
+  const editTable = (deck: Deck, operations: object[]) => {
+    const slideId = slidesOf(deck)[0].path;
+    const shapeId = deck.engine
+      .snapshot()
+      .document.slides.find((slide: Node) => slide.path === slideId)
+      .shapes.at(-1).id as string;
+    deck.engine.execute({
+      type: 'edit-table',
+      slideId,
+      shapeId,
+      operations
+    } as Parameters<Deck['engine']['execute']>[0]);
+  };
+  const mergeHeader = (deck: Deck) =>
+    editTable(deck, [
+      {
+        kind: 'merge-cells',
+        range: { startRow: 0, startCol: 0, endRow: 0, endCol: 1 }
+      }
+    ]);
+  const bulkSet = (deck: Deck, find: object, props: object, turnId: string) => {
+    const found = deck.call('find', find, turnId) as {
+      total: number;
+      shape: string;
+    };
+    return deck.write(
+      {
+        intent: 'Change every match.',
+        scope: { ids: [], bulk: [{ find, total: found.total }] },
+        changes: [
+          {
+            kind: 'set',
+            target: { find, total: found.total, shape: found.shape },
+            props
+          }
+        ]
+      },
+      turnId
+    );
+  };
+  const tableWithColumns = (deck: Deck, columns: number, turnId = 'turn-1') =>
+    (
+      deck.call('find', { kind: 'table' }, turnId) as {
+        hits: Array<{ id: string }>;
+      }
+    ).hits
+      .map((hit) => hit.id)
+      .find(
+        (id) => deck.read(id, turnId).rows[0].cells.length === columns
+      ) as string;
+  const sampleWithSlide4 = (edit: (xml: string) => string) => {
+    const files = unzipSync(fixture('sample.pptx'));
+    const path = 'ppt/slides/slide4.xml';
+    files[path] = strToU8(edit(strFromU8(files[path])));
+    return openDeck('sample.pptx', zipSync(files));
+  };
+  const runOf = (node: Node, row: number, col: number) =>
+    node.rows[row].cells[col].paragraphs[0].runs[0];
+  const acceptAll = (deck: Deck) => {
+    for (const record of deck.pending())
+      expect(deck.engine.acceptChange(record.id)).toBe(true);
+  };
+  const runWith = (deck: Deck, text: string, turnId?: string) => {
+    const [hit] = deck.find(text, turnId);
+    return (deck.read(hit.id, turnId).runs as Node[])[0];
+  };
+
+  it('rewrites a cell in its own formatting, as a suggestion that rejecting takes back', () => {
+    const { deck, table } = deckWithTable();
+    expectCard(
+      replaceTable(deck, table, (node) => {
+        runOf(node, 1, 1).text = '$40';
+      })
+    );
+    expect(runWith(deck, '$40')).toEqual(
+      expect.objectContaining({ text: '$40', bold: true })
+    );
+
+    rejectAll(deck);
+    expect(deck.find('$40')).toHaveLength(0);
+    expect(deck.find('$45')).toHaveLength(1);
+  });
+
+  it('highlights a cell and removes the highlight again', () => {
+    const { deck, table } = deckWithTable();
+    expectCard(
+      replaceTable(deck, table, (node) => {
+        runOf(node, 1, 1).highlight = '#FFFF00';
+      })
+    );
+    acceptAll(deck);
+    expect(runWith(deck, '$45', 'turn-2').highlight).toBe('#FFFF00');
+
+    expectCard(
+      replaceTable(
+        deck,
+        tableIn(deck, 'turn-3'),
+        (node) => {
+          runOf(node, 1, 1).highlight = 'none';
+        },
+        'turn-3'
+      )
+    );
+    acceptAll(deck);
+    expect(runWith(deck, '$45', 'turn-4').highlight).toBeUndefined();
+  });
+
+  it('takes every highlight off a table in one bulk set', () => {
+    const { deck } = deckWithTable();
+    editTable(deck, [
+      {
+        kind: 'style-cells',
+        range: { startRow: 0, startCol: 0, endRow: 2, endCol: 1 },
+        style: { highlight: 'FFFF00' }
+      }
+    ]);
+    const table = tableIn(deck, 'turn-2');
+    expect(runWith(deck, '$45', 'turn-2').highlight).toBe('#FFFF00');
+
+    const find = { kind: 'paragraph', within: table };
+    expectCard(bulkSet(deck, find, { highlight: 'none' }, 'turn-2'));
+    acceptAll(deck);
+    for (const text of ['Benefit', 'VA PPO 1000', 'Tier 2', '$45'])
+      expect(runWith(deck, text, 'turn-3').highlight).toBeUndefined();
+  });
+
+  it('finds runs by highlight and colour, and recolours them after clearing every highlight while that is still a suggestion', () => {
+    const { deck, table } = deckWithTable();
+    expectCard(
+      replaceTable(deck, table, (node) => {
+        runOf(node, 1, 1).highlight = '#FFFF00';
+        runOf(node, 0, 0).highlight = '#FFFF00';
+        runOf(node, 1, 0).color = '#FF0000';
+      })
+    );
+    acceptAll(deck);
+    const hits = (query: object) =>
+      (deck.call('find', query, 'turn-2') as { hits: Array<{ id: string }> })
+        .hits.length;
+    expect(hits({ feature: { name: 'highlight' } })).toBe(2);
+    expect(hits({ feature: { name: 'color', value: '#FF0000' } })).toBe(1);
+
+    const find = { feature: { name: 'highlight' } };
+    expectCard(bulkSet(deck, find, { highlight: 'none' }, 'turn-2'));
+    expect(hits({ feature: { name: 'color', value: '#FF0000' } })).toBe(1);
+
+    const red = { feature: { name: 'color', value: '#FF0000' } };
+    expectCard(bulkSet(deck, red, { color: '#000000' }, 'turn-3'));
+    acceptAll(deck);
+    expect(hits({ feature: { name: 'highlight' } })).toBe(0);
+    expect(hits(red)).toBe(0);
+  });
+
+  it('removes a row, as a suggestion that accepting settles and rejecting takes back', () => {
+    const removeRow = (deck: Deck, table: string) =>
+      replaceTable(deck, table, (node) => {
+        node.rows.splice(2, 1);
+      });
+
+    const kept = deckWithTable();
+    expectCard(removeRow(kept.deck, kept.table));
+    rejectAll(kept.deck);
+    expect(kept.deck.find('Deductible Type')).toHaveLength(1);
+
+    const settled = deckWithTable();
+    const result = removeRow(settled.deck, settled.table);
+    expectCard(result);
+    acceptAll(settled.deck);
+    expect(settled.deck.find('Deductible Type', 'turn-2')).toHaveLength(0);
+    expect(settled.deck.find('Retail Pharmacy', 'turn-2')).toHaveLength(1);
+  });
+
+  const newCell = (text: string) => ({
+    kind: 'cell',
+    paragraphs: [{ kind: 'paragraph', runs: [{ kind: 'run', text }] }]
+  });
+
+  it('adds a row in the look of the row above it', () => {
+    const { deck, table } = deckWithTable();
+    const added = replaceTable(deck, table, (node) => {
+      node.rows.splice(2, 0, {
+        kind: 'row',
+        cells: [newCell('Tier 3'), newCell('$80')]
+      });
+    });
+    expectCard(added);
+    acceptAll(deck);
+    expect(runWith(deck, '$80', 'turn-2')).toEqual(
+      expect.objectContaining({ text: '$80', bold: true })
+    );
+    expect(deck.find('Tier 3', 'turn-2')).toHaveLength(1);
+    expect(deck.find('$45', 'turn-2')).toHaveLength(1);
+  });
+
+  it('adds a row after another row it names', () => {
+    const { deck, table } = deckWithTable();
+    const anchor = deck.read(table).rows[1].id as string;
+    expectCard(
+      deck.write({
+        intent: 'Add a Tier 3 row.',
+        scope: { ids: [anchor] },
+        changes: [
+          {
+            kind: 'insert_after',
+            anchor,
+            node: { kind: 'row', cells: [newCell('Tier 3'), newCell('$80')] }
+          }
+        ]
+      })
+    );
+    acceptAll(deck);
+    expect(runWith(deck, '$80', 'turn-2').bold).toBe(true);
+  });
+
+  it('adds a column for another plan in the look of the column beside it', () => {
+    const { deck, table } = deckWithTable();
+    const drawn = deck.read(table).frame;
+    expectCard(
+      replaceTable(deck, table, (node) => {
+        node.rows.forEach((row: Node, i: number) =>
+          row.cells.push(newCell(['VA PPO 500', '$30'][i] ?? ''))
+        );
+      })
+    );
+    acceptAll(deck);
+    expect(deck.find('VA PPO 500', 'turn-2')).toHaveLength(1);
+    expect(deck.read(tableIn(deck, 'turn-2'), 'turn-2').frame).toEqual(drawn);
+    expect(runWith(deck, '$30', 'turn-2').bold).toBe(true);
+    expect(deck.find('VA PPO 1000', 'turn-2')).toHaveLength(1);
+  });
+
+  it('removes a plan column, as a suggestion that rejecting takes back', () => {
+    const { deck, table } = deckWithTable();
+    expectCard(
+      replaceTable(deck, table, (node) => {
+        node.rows.forEach((row: Node) => row.cells.pop());
+      })
+    );
+    rejectAll(deck);
+    expect(deck.find('VA PPO 1000')).toHaveLength(1);
+
+    expectCard(
+      replaceTable(
+        deck,
+        tableIn(deck, 'turn-2'),
+        (node) => {
+          node.rows.forEach((row: Node) => row.cells.pop());
+        },
+        'turn-2'
+      )
+    );
+    acceptAll(deck);
+    expect(deck.find('VA PPO 1000', 'turn-3')).toHaveLength(0);
+    expect(deck.find('Benefit', 'turn-3')).toHaveLength(1);
+  });
+
+  it('removes a column before others in a table whose blank cells look alike', () => {
+    const deck = openDeck('sample.pptx');
+    const textOf = (cell: Node) =>
+      cell.paragraphs
+        .flatMap((p: Node) => p.runs.map((r: Node) => r.text))
+        .join('');
+    const header = deck
+      .read(tableWithColumns(deck, 4))
+      .rows[0].cells.map(textOf);
+    const removeColumn = (column: number, turnId: string) =>
+      replaceTable(
+        deck,
+        tableWithColumns(deck, 4, turnId),
+        (node) => {
+          node.rows.forEach((row: Node) => row.cells.splice(column, 1));
+        },
+        turnId
+      );
+
+    expectCard(removeColumn(1, 'turn-1'));
+    rejectAll(deck);
+    expectCard(removeColumn(0, 'turn-2'));
+    acceptAll(deck);
+    const table = tableWithColumns(deck, 3, 'turn-3');
+    expect(deck.read(table, 'turn-3').rows[0].cells.map(textOf)).toEqual(
+      header.slice(1)
+    );
+  });
+
+  it('adds a text-only row below a header merged across columns, its text in cells of its own', () => {
+    const { deck } = deckWithTable();
+    mergeHeader(deck);
+    expectCard(
+      replaceTable(
+        deck,
+        tableIn(deck, 'turn-2'),
+        (node) => {
+          node.rows.splice(1, 0, {
+            kind: 'row',
+            cells: [newCell('Tier 0'), newCell('$5')]
+          });
+        },
+        'turn-2'
+      )
+    );
+    acceptAll(deck);
+    const row = deck.read(tableIn(deck, 'turn-3'), 'turn-3').rows[1];
+    expect(row.cells.map((cell: Node) => cell.hMerge ?? cell.gridSpan)).toEqual(
+      [undefined, undefined]
+    );
+    expect(deck.find('$5', 'turn-3')).toHaveLength(1);
+  });
+
+  it('changes rows and columns of a table whose file spells out spans of 1 and merges of 0', () => {
+    const deck = sampleWithSlide4((xml) =>
+      xml.replace(/<a:tc>/g, '<a:tc rowSpan="1" gridSpan="1" hMerge="0">')
+    );
+    const wide = tableWithColumns(deck, 4);
+    expectCard(
+      replaceTable(deck, wide, (node) => {
+        node.rows.forEach((row: Node) => row.cells.pop());
+        node.rows.splice(1, 1);
+        node.rows.push({
+          kind: 'row',
+          cells: [newCell('a'), newCell('b'), newCell('c')]
+        });
+      })
+    );
+  });
+
+  it('moves a table and adds a row to it in one write', () => {
+    const { deck, table } = deckWithTable();
+    const drawn = deck.read(table).frame;
+    expectCard(
+      replaceTable(deck, table, (node) => {
+        node.frame = { ...node.frame, x: node.frame.x + 500000 };
+        node.rows.push({
+          kind: 'row',
+          cells: [newCell('Mail Order'), newCell('$90')]
+        });
+      })
+    );
+    acceptAll(deck);
+    const moved = deck.read(tableIn(deck, 'turn-2'), 'turn-2');
+    expect(moved.frame.x).toBe(drawn.x + 500000);
+    expect(moved.frame.cy).toBeGreaterThan(drawn.cy);
+    expect(deck.find('$90', 'turn-2')).toHaveLength(1);
+  });
+
+  it('writes into a cell the file leaves without a text body', () => {
+    const deck = sampleWithSlide4((xml) => {
+      const row = xml.indexOf('<a:tr', xml.indexOf('<a:tr') + 1);
+      const body = xml.indexOf('<a:txBody>', row);
+      return (
+        xml.slice(0, body) +
+        xml.slice(xml.indexOf('</a:txBody>', body) + '</a:txBody>'.length)
+      );
+    });
+    expectCard(
+      replaceTable(deck, tableWithColumns(deck, 4), (node) => {
+        node.rows[1].cells[0].paragraphs = [newCell('New').paragraphs[0]];
+      })
+    );
+    acceptAll(deck);
+    expect(deck.find('New', 'turn-2')).toHaveLength(1);
+  });
+
+  it.each([
+    [
+      'a row right after it',
+      (node: Node) =>
+        node.rows.splice(2, 0, JSON.parse(JSON.stringify(node.rows[1])))
+    ],
+    [
+      'a row first, before an earlier row',
+      (node: Node) =>
+        node.rows.unshift(JSON.parse(JSON.stringify(node.rows[1])))
+    ],
+    [
+      'a column',
+      (node: Node) =>
+        node.rows.forEach((row: Node) =>
+          row.cells.push(JSON.parse(JSON.stringify(row.cells[1])))
+        )
+    ],
+    [
+      'a cell from another row into a new row',
+      (node: Node) =>
+        node.rows.push({
+          kind: 'row',
+          cells: [
+            JSON.parse(JSON.stringify(node.rows[1].cells[0])),
+            newCell('$1')
+          ]
+        })
+    ]
+  ])('refuses copying %s by its ids, saying to write a new one', (_, edit) => {
+    const { deck, table } = deckWithTable();
+    const result = replaceTable(deck, table, edit);
+    expectLimits(result);
+    expect(JSON.stringify(result)).toContain(
+      'write a new row or column without ids'
+    );
+  });
+
+  it('refuses copying a header merged across columns by its ids', () => {
+    const { deck } = deckWithTable();
+    mergeHeader(deck);
+    expectLimits(
+      replaceTable(
+        deck,
+        tableIn(deck, 'turn-2'),
+        (node) => {
+          node.rows.unshift(JSON.parse(JSON.stringify(node.rows[0])));
+        },
+        'turn-2'
+      )
+    );
+  });
+
+  it('refuses copying a row of a table saved by PowerPoint by its ids', () => {
+    const deck = sampleWithSlide4((xml) => xml);
+    expectLimits(
+      replaceTable(deck, tableWithColumns(deck, 4), (node) => {
+        node.rows.push(JSON.parse(JSON.stringify(node.rows[1])));
+      })
+    );
+  });
+
+  it('refuses a slide copy whose table holds a row twice, saying to write a new one', () => {
+    const deck = openDeck('sample.pptx');
+    const table = tableWithColumns(deck, 4);
+    const hit = (
+      deck.call('find', { kind: 'table' }) as {
+        hits: Array<{ id: string; within: string[] }>;
+      }
+    ).hits.find((h) => h.id === table)!;
+    const slide = hit.within.find((id) => deck.read(id).kind === 'slide')!;
+    const copy = JSON.parse(JSON.stringify(deck.read(slide)));
+    const copied = copy.shapes.find((shape: Node) => shape.id === table);
+    copied.rows.push(JSON.parse(JSON.stringify(copied.rows[1])));
+    const result = deck.write({
+      intent: 'Copy the slide with one more row.',
+      scope: { ids: [slide] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: slide,
+          node: { ...copy, id: 'tmp:copy' }
+        }
+      ]
+    });
+    expectLimits(result);
+    expect(JSON.stringify(result)).toContain(
+      'write a new row or column without ids'
+    );
+  });
+
+  it('refuses a slide copy whose new row is made of copied cells, saying to write a new one', () => {
+    const deck = openDeck('sample.pptx');
+    const table = tableWithColumns(deck, 4);
+    const slide = (
+      deck.call('find', { kind: 'table' }) as {
+        hits: Array<{ id: string; within: string[] }>;
+      }
+    ).hits
+      .find((h) => h.id === table)!
+      .within.find((id) => deck.read(id).kind === 'slide')!;
+    const copy = JSON.parse(JSON.stringify(deck.read(slide)));
+    const copied = copy.shapes.find((shape: Node) => shape.id === table);
+    copied.rows.push({
+      kind: 'row',
+      cells: JSON.parse(JSON.stringify(copied.rows[0].cells))
+    });
+    const result = deck.write({
+      intent: 'Copy the slide with a new row.',
+      scope: { ids: [slide] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: slide,
+          node: { ...copy, id: 'tmp:copy' }
+        }
+      ]
+    });
+    expectLimits(result);
+    expect(JSON.stringify(result)).toContain(
+      'write a new row or column without ids'
+    );
+  });
+
+  const slideOf = (deck: Deck, table: string) =>
+    (
+      deck.call('find', { kind: 'table' }) as {
+        hits: Array<{ id: string; within: string[] }>;
+      }
+    ).hits
+      .find((h) => h.id === table)!
+      .within.find((id) => deck.read(id).kind === 'slide')!;
+  const copySlide = (deck: Deck, slide: string, edit = (node: Node) => node) =>
+    deck.write({
+      intent: 'Copy the slide.',
+      scope: { ids: [slide] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: slide,
+          node: {
+            ...edit(JSON.parse(JSON.stringify(deck.read(slide)))),
+            id: 'tmp:copy'
+          }
+        }
+      ]
+    });
+
+  it('copies a slide whose table has a cell the file leaves without a text body', () => {
+    const deck = sampleWithSlide4((xml) => {
+      const row = xml.indexOf('<a:tr', xml.indexOf('<a:tr') + 1);
+      const body = xml.indexOf('<a:txBody>', row);
+      return (
+        xml.slice(0, body) +
+        xml.slice(xml.indexOf('</a:txBody>', body) + '</a:txBody>'.length)
+      );
+    });
+    const table = tableWithColumns(deck, 4);
+    expect(copySlide(deck, slideOf(deck, table))).toEqual(
+      expect.objectContaining({ ok: true, committed: true })
+    );
+  });
+
+  it('refuses a slide copy whose table borrows a row from another table', () => {
+    const deck = openDeck('sample.pptx');
+    const table = tableWithColumns(deck, 4);
+    const other = (
+      deck.call('find', { kind: 'table' }) as { hits: Array<{ id: string }> }
+    ).hits.find((h) => h.id !== table)!.id;
+    const borrowed = JSON.parse(JSON.stringify(deck.read(other).rows[0]));
+    const result = copySlide(deck, slideOf(deck, table), (node) => {
+      node.shapes.find((shape: Node) => shape.id === table).rows.push(borrowed);
+      return node;
+    });
+    expectLimits(result as WriteResult);
+    expect(JSON.stringify(result)).toContain(
+      'write a new row or column without ids'
+    );
+  });
+
+  it('edits the text and rows of a table inside a group', () => {
+    const deck = sampleWithSlide4((xml) =>
+      xml
+        .replace(
+          '<p:graphicFrame>',
+          '<p:grpSp><p:nvGrpSpPr><p:cNvPr id="900" name="Group 1"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="3653366" y="4876800"/><a:ext cx="9537700" cy="4747260"/><a:chOff x="3653366" y="4876800"/><a:chExt cx="9537700" cy="4747260"/></a:xfrm></p:grpSpPr><p:graphicFrame>'
+        )
+        .replace('</p:graphicFrame>', '</p:graphicFrame></p:grpSp>')
+    );
+    const grouped = tableWithColumns(deck, 4);
+    expectCard(
+      replaceTable(deck, grouped, (node) => {
+        node.rows[0].cells[0].paragraphs = [
+          { kind: 'paragraph', runs: [{ kind: 'run', text: 'Grouped' }] }
+        ];
+        node.rows.push({
+          kind: 'row',
+          cells: node.rows[0].cells.map(() => newCell('New row'))
+        });
+      })
+    );
+    acceptAll(deck);
+    expect(deck.find('Grouped', 'turn-2')).toHaveLength(1);
+  });
+
+  it('refuses adding or removing a column across cells merged over columns', () => {
+    const { deck, table } = deckWithTable();
+    mergeHeader(deck);
+    expectLimits(
+      replaceTable(
+        deck,
+        tableIn(deck, 'turn-2'),
+        (node) => {
+          node.rows.forEach((row: Node) => row.cells.pop());
+        },
+        'turn-2'
+      )
+    );
+    expect(table).toBeDefined();
+  });
+
+  it.each([
+    ['reordering rows', (node: Node) => node.rows.reverse()],
+    [
+      'reordering columns',
+      (node: Node) => node.rows.forEach((row: Node) => row.cells.reverse())
+    ],
+    [
+      'adding a cell to one row only',
+      (node: Node) => node.rows[1].cells.push(newCell('$1'))
+    ],
+    [
+      'adding a row without a cell for each column',
+      (node: Node) =>
+        node.rows.splice(1, 0, { kind: 'row', cells: [newCell('Only')] })
+    ],
+    [
+      'removing a row merged with the row above',
+      (node: Node) => node.rows.pop()
+    ],
+    ['removing every row', (node: Node) => node.rows.splice(0)],
+    ['removing a cell', (node: Node) => node.rows[1].cells.pop()],
+    [
+      'a new row between rows merged together',
+      (node: Node) =>
+        node.rows.splice(4, 0, {
+          kind: 'row',
+          cells: [newCell('Mail'), newCell('$10')]
+        }),
+      'add the row before or after the merged rows'
+    ],
+    [
+      'text written into a cell hidden under the merged cell above it',
+      (node: Node) => {
+        node.rows[4].cells[0].paragraphs = [newCell('Hidden').paragraphs[0]];
+      },
+      'write the text into that merged cell'
+    ]
+  ])('refuses %s', (_, edit, ...says: string[]) => {
+    const { deck, table } = deckWithTable();
+    const result = replaceTable(deck, table, edit);
+    expectLimits(result);
+    for (const reason of says) expect(JSON.stringify(result)).toContain(reason);
+  });
+});
+
+describe("PowerPoint suggestions beside the person's own edits", () => {
+  const copyFirstSlide = (
+    deck: ReturnType<typeof openDeck>,
+    turnId: string
+  ) => {
     const [first] = slides(deck);
     return deck.write(
       {
         intent: 'Copy the title slide.',
         scope: { ids: [first] },
         changes: [
-          { kind: 'insert_after', anchor: first, node: deck.read(first, turnId) }
+          {
+            kind: 'insert_after',
+            anchor: first,
+            node: deck.read(first, turnId)
+          }
         ]
       },
       turnId
@@ -614,7 +1281,11 @@ describe('PowerPoint suggestions beside the person\'s own edits', () => {
     const [accepted, rejected] = deck.pending().map((record) => record.id);
     const kept = (id: string) => {
       const record = deck.engine.changes().find((each) => each.id === id)!;
-      return [record.beforeSlides, record.beforeSlideRels, record.changedSlides];
+      return [
+        record.beforeSlides,
+        record.beforeSlideRels,
+        record.changedSlides
+      ];
     };
     expect(deck.engine.acceptChange(accepted)).toBe(true);
     expect(kept(accepted)).toEqual([undefined, undefined, undefined]);

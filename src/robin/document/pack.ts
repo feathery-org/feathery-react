@@ -527,6 +527,7 @@ export interface Pack {
   residueKeys?: Readonly<Record<string, string>>;
   /** Own fields that are content rather than formatting (a binding): a change to one is an edit. */
   featureKeys?: readonly string[];
+  featureSpecs?: readonly PropertySpec[];
   /**
    * The editor's selection (`EditorHost.selection`) as node ids and character offsets into each
    * node's own text, with the selected text; null when it does not fall in addressable nodes.

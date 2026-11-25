@@ -165,6 +165,13 @@ export function fromNormalForm(nf: NormalForm, residue: Residue): string {
       ...(links ? { links } : {})
     };
   });
-  const { pending } = residue[DECK_ID] as { pending: PendingSuggestion[] };
-  return writeNative({ slides, pending });
+  const { pending, themeColors } = residue[DECK_ID] as {
+    pending: PendingSuggestion[];
+    themeColors?: Record<string, string>;
+  };
+  return writeNative({
+    slides,
+    pending,
+    ...(themeColors ? { themeColors } : {})
+  });
 }
