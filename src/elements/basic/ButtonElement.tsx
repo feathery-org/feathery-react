@@ -43,7 +43,17 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.applyBackgroundColorGradient('button');
   responsiveStyles.applyCorners('button');
   responsiveStyles.applyBoxShadow('button');
-  responsiveStyles.applyFlexDirection('button');
+  // 'center' is an image-only mode, not a valid CSS flex direction
+  responsiveStyles.apply('button', 'flex_direction', (a: any) => ({
+    flexDirection: a === 'center' ? 'row' : a
+  }));
+  // Always emit display so a mobile override can undo the desktop value
+  // (inline-block matches the label's base style in useTextEdit). Only hide
+  // the label when there's still an image to show.
+  responsiveStyles.apply('buttonLabel', 'flex_direction', (a: any) => ({
+    display:
+      a === 'center' && element.properties.image ? 'none' : 'inline-block'
+  }));
   responsiveStyles.applyContentAlign('button');
   responsiveStyles.apply('button', 'entry_transition', (a: any) => {
     if (a === 'fade_in') {
@@ -201,6 +211,16 @@ function ButtonElement({
           ...borderStyles.hover
         }
   );
+
+  // An image-only button hides its text, so fall back to that text for the
+  // accessible name when no explicit aria label is set
+  const imageOnly =
+    !!element.properties.image &&
+    (element.styles.flex_direction === 'center' ||
+      element.mobile_styles?.flex_direction === 'center');
+  const ariaLabel =
+    element.properties.aria_label ||
+    (imageOnly ? element.properties.text : undefined);
 
   const actions = element.properties.actions ?? [];
   // A button with no click actions stays enabled if a logic rule runs on click
@@ -364,7 +384,7 @@ function ButtonElement({
       // Use aria-disabled instead of disabled since disabled elements cannot display html errors
       aria-disabled={buttonDisabled}
       onClick={handleClick}
-      aria-label={element.properties.aria_label}
+      aria-label={ariaLabel}
       {...elementProps}
       {...errorAttributes}
     >
@@ -387,7 +407,7 @@ function ButtonElement({
         <ErrorInput
           id={`error_${element.id}`}
           name={`error_${element.id}`}
-          aria-label={element.properties.aria_label}
+          aria-label={ariaLabel}
         />
       )}
     </button>
