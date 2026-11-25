@@ -19,8 +19,12 @@ import {
   serializeTsv
 } from './model';
 import type { SeedAction } from './fieldEditors';
+import { matchChoice } from './fieldEditors';
 import { choiceRows } from './ChoiceMenu';
 import type { SpreadsheetTable } from './table';
+
+/** A pause this long starts a new type-ahead search, as a native select does. */
+const TYPEAHEAD_RESET_MS = 1000;
 
 /** Where the selection goes after a commit: an arrow direction, or along the Tab order. */
 type CommitMove = CellSelectionDirection | 'next' | 'prev';
@@ -635,6 +639,10 @@ export function useGridInteractions(options: GridInteractionOptions) {
     [getDisplayColumns, table]
   );
 
+  // Letters typed in quick succession on one cell, for choice menus. The key
+  // that opens the editor is the first, or "NY" typed onto a cell lands on NE.
+  const typeahead = React.useRef({ text: '', at: 0, cell: '' });
+
   /** Typing a printable character over a selected cell opens the editor. */
   const handleGridTextEntry = React.useCallback(
     (event: React.KeyboardEvent<HTMLElement>) => {
@@ -653,6 +661,12 @@ export function useGridInteractions(options: GridInteractionOptions) {
         return;
       }
       event.preventDefault();
+      typeahead.current = {
+        // Space only opens a menu; it isn't the start of a search.
+        text: action === 'seed' ? event.key : '',
+        at: Date.now(),
+        cell: `${active.anchorRowId}:${active.anchorColumnId}`
+      };
       startEditing(
         active.anchorRowId,
         active.anchorColumnId,
@@ -679,7 +693,8 @@ export function useGridInteractions(options: GridInteractionOptions) {
   /**
    * Keys while a choice menu is open. The grid holds focus, so they arrive
    * here: arrows move the highlight, Enter/Tab commit it (moving on like the
-   * text editor does), Escape closes, a letter jumps to the first match.
+   * text editor does), Escape closes, and letters typed in quick succession
+   * jump to the first match for all of them, as a native select does.
    * Everything else is swallowed so nothing reaches the grid underneath.
    */
   const handleChoiceMenuKeyDown = React.useCallback(
@@ -688,6 +703,10 @@ export function useGridInteractions(options: GridInteractionOptions) {
       const choices = choicesFor?.(editing.columnId);
       if (!choices) return false;
       const rows = choiceRows(choices);
+      // The next cell's search starts fresh, however fast the typing.
+      if (['Enter', 'Tab', 'Escape'].includes(event.key)) {
+        typeahead.current = { text: '', at: 0, cell: '' };
+      }
       const step = (delta: number) => {
         const at = rows.indexOf(editing.draft);
         const next =
@@ -719,10 +738,15 @@ export function useGridInteractions(options: GridInteractionOptions) {
         default: {
           if (event.metaKey || event.ctrlKey || event.altKey) return false;
           if (event.key.length !== 1) return false;
-          const prefix = event.key.toLowerCase();
-          const match = choices.find((choice) =>
-            choice.toLowerCase().startsWith(prefix)
-          );
+          // One key at a time landed "NY" on NE, a different valid code.
+          const now = Date.now();
+          const cell = `${editing.rowId}:${editing.columnId}`;
+          const recent =
+            typeahead.current.cell === cell &&
+            now - typeahead.current.at < TYPEAHEAD_RESET_MS;
+          const text = (recent ? typeahead.current.text : '') + event.key;
+          typeahead.current = { text, at: now, cell };
+          const match = matchChoice(choices, text);
           if (match) setEditingDraft(match);
         }
       }

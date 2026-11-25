@@ -10,6 +10,7 @@ import {
 import TableElement from '../index';
 import { fieldValues } from '../../../../utils/init';
 import { SpreadsheetTable } from '../spreadsheet/SpreadsheetTable';
+import { hubCellRules } from '../spreadsheet/validation';
 
 const COLUMNS = [
   { name: 'Name', field_id: 'f1', field_type: 'text', field_key: 'name_key' },
@@ -615,6 +616,54 @@ describe('row insertion and deletion', () => {
       }
     }
   );
+
+  const stateRules = () =>
+    hubCellRules(
+      [{ field_key: 'city_key', name: 'State', hub_field_key: 'state' }],
+      [{ key: 'state', type: 'us_state' }]
+    );
+
+  test('typing a code into a dropdown picks that code, not its first letter', () => {
+    // One key at a time used to land "NY" on NE, a different valid state.
+    const onCellsEdit = jest.fn();
+    render(
+      <SpreadsheetTable
+        {...dropdownProps({ onCellsEdit, cellRules: stateRules() })}
+      />
+    );
+    fireEvent.doubleClick(cell('Reno'));
+    fireEvent.keyDown(grid(), { key: 'N' });
+    fireEvent.keyDown(grid(), { key: 'Y' });
+    expect(option('NY')).toHaveAttribute('aria-selected', 'true');
+    fireEvent.keyDown(grid(), { key: 'Enter' });
+    expect(onCellsEdit).toHaveBeenCalledWith([
+      { rowIndex: 2, fieldKey: 'city_key', value: 'NY' }
+    ]);
+  });
+
+  test('typing a code onto a selected dropdown cell picks that code', () => {
+    // The opening key starts the search, so N, Y doesn't land on NE.
+    const onCellsEdit = jest.fn();
+    render(
+      <SpreadsheetTable
+        {...dropdownProps({ onCellsEdit, cellRules: stateRules() })}
+      />
+    );
+    fireEvent.mouseDown(cell('Reno'));
+    fireEvent.keyDown(grid(), { key: 'N' });
+    fireEvent.keyDown(grid(), { key: 'Y' });
+    fireEvent.keyDown(grid(), { key: 'Enter' });
+    expect(onCellsEdit).toHaveBeenCalledWith([
+      { rowIndex: 2, fieldKey: 'city_key', value: 'NY' }
+    ]);
+
+    // Space opens the menu without starting the search.
+    fireEvent.mouseDown(cell('Reno'));
+    fireEvent.keyDown(grid(), { key: ' ' });
+    fireEvent.keyDown(grid(), { key: 'T' });
+    fireEvent.keyDown(grid(), { key: 'X' });
+    expect(option('TX')).toHaveAttribute('aria-selected', 'true');
+  });
 
   test('only pinning in the row menu, and no add strip, when adding and deleting are off', () => {
     renderTable({ add_delete_rows: false });

@@ -8,6 +8,7 @@ import {
   seedActionFor,
   toEditorValue
 } from '../spreadsheet/fieldEditors';
+import { validateCellValue } from '../spreadsheet/validation';
 
 // What a `datetime-local` input shows for an instant: local wall-clock time.
 // Derived from Date rather than written out so the test holds in any zone.
@@ -130,9 +131,9 @@ describe('fromEditorValue', () => {
 
   test('round-trips through the picker without drifting', () => {
     const stored = '2024-03-05T11:30:00.000Z';
-    expect(
-      fromEditorValue(toEditorValue(stored, 'datetime'), 'datetime')
-    ).toBe(stored);
+    expect(fromEditorValue(toEditorValue(stored, 'datetime'), 'datetime')).toBe(
+      stored
+    );
   });
 
   test('dates and text are left exactly as entered', () => {
@@ -186,13 +187,15 @@ describe('parseCellInput', () => {
 
 describe('formatCellDisplay', () => {
   test('a tax ID shows only its last four digits', () => {
-    expect(formatCellDisplay('123456789', { label: 'SSN', type: 'tax_id' })).toBe(
-      '•••••6789'
-    );
+    expect(
+      formatCellDisplay('123456789', { label: 'SSN', type: 'tax_id' })
+    ).toBe('•••••6789');
   });
 
   test('a short tax ID is not padded into looking longer', () => {
-    expect(formatCellDisplay('789', { label: 'SSN', type: 'tax_id' })).toBe('789');
+    expect(formatCellDisplay('789', { label: 'SSN', type: 'tax_id' })).toBe(
+      '789'
+    );
   });
 
   test('file references show their names', () => {
@@ -219,21 +222,29 @@ describe('formatCellDisplay', () => {
     const date = { label: 'Born', type: 'date' as const };
     expect(formatCellDisplay('1982-07-19', date)).toBe('Jul 19, 1982');
     // Older rows hold a midnight instant; it is the same day.
-    expect(formatCellDisplay('1982-07-19T00:00:00Z', date)).toBe('Jul 19, 1982');
+    expect(formatCellDisplay('1982-07-19T00:00:00Z', date)).toBe(
+      'Jul 19, 1982'
+    );
   });
 
-  test('datetimes read in the viewer\'s zone, like the editor shows them', () => {
+  test("datetimes read in the viewer's zone, like the editor shows them", () => {
     const rule = { label: 'Sent', type: 'datetime' as const };
     const shown = formatCellDisplay('2026-09-02T14:05:00.000Z', rule);
     const expected = new Intl.DateTimeFormat(undefined, {
-      year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
     }).format(new Date('2026-09-02T14:05:00.000Z'));
     expect(shown).toBe(expected);
     expect(shown).toMatch(/Sep \d+, 2026/);
   });
 
   test('an unparseable date shows as typed so it can be fixed', () => {
-    expect(formatCellDisplay('soon', { label: 'Born', type: 'date' })).toBe('soon');
+    expect(formatCellDisplay('soon', { label: 'Born', type: 'date' })).toBe(
+      'soon'
+    );
   });
 });
 
@@ -267,5 +278,48 @@ describe('seedActionFor', () => {
       seedActionFor({ label: 'Tier', type: 'text', options: ['Gold'] }, 'G')
     ).toBe('seed');
     expect(seedActionFor(undefined, 'A')).toBe('seed');
+  });
+});
+
+describe('parseCellInput stores hub values the way the hub does', () => {
+  const rule = (type: string) =>
+    ({ label: 'Cell', type } as Parameters<typeof parseCellInput>[1]);
+
+  test.each([
+    ['us_state', 'California', 'CA'],
+    ['us_state', 'district of columbia', 'DC'],
+    ['us_state', 'CA', 'CA'],
+    ['country_code', 'usa', 'US'],
+    ['country_code', 'United Kingdom', 'GB'],
+    ['country_code', 'Czechia', 'CZ'],
+    ['country_code', 'The Netherlands', 'NL'],
+    ['zip_code', '021341234', '02134-1234'],
+    ['zip_code', '02134 1234', '02134-1234'],
+    ['zip_code', ' 02134 ', '02134'],
+    // A spreadsheet drops the leading zero.
+    ['zip_code', '2134', '02134']
+  ])('%s %p -> %p', (type, input, stored) => {
+    expect(parseCellInput(input, rule(type))).toBe(stored);
+  });
+
+  test.each([
+    // Lower-case codes are as often placeholders ("na", "no") as places.
+    ['us_state', 'ca'],
+    ['country_code', 'na'],
+    // An SSN's dashes aren't a zip's.
+    ['zip_code', '123-45-6789'],
+    ['us_state', 'Narnia']
+  ])('%s %p is left for validation to flag', (type, input) => {
+    const cellRule = rule(type);
+    const parsed = parseCellInput(input, cellRule);
+    expect(parsed).toBe(input);
+    expect(validateCellValue(parsed, cellRule)).not.toBeNull();
+  });
+
+  test('a pasted state name is valid, so it no longer blocks Save', () => {
+    const cellRule = rule('us_state');
+    expect(
+      validateCellValue(parseCellInput('California', cellRule), cellRule)
+    ).toBeNull();
   });
 });
