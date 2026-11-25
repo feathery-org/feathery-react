@@ -7,6 +7,9 @@ import replace from '@rollup/plugin-replace';
 import babel from '@rollup/plugin-babel';
 import { readFileSync } from 'fs';
 import path from 'path';
+import noNodeBuiltins from './scripts/no-node-builtins.cjs';
+import pptxWorkerBuild from './scripts/pptx-worker-bundle.cjs';
+import bundledPackages from './scripts/release-sbom/bundled-packages.cjs';
 
 // Read package.json
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
@@ -41,6 +44,7 @@ export default {
     'jszip'
   ],
   plugins: [
+    pptxWorkerBuild.pptxWorkerPlugin(),
     del({ targets: ['dist/*', 'cjs/*'] }),
     // Ship the vendored country-flag font beside the bundle. Unlike webpack,
     // rollup leaves `new URL('./TwemojiCountryFlags.woff2', import.meta.url)`
@@ -68,14 +72,15 @@ export default {
         )
       }
     }),
-    // @segment/analytics-next's `browser` field swaps its deprecated Node
-    // entry (which drags in node-fetch and breaks the build) for a browser
-    // stub. node-resolve only honors that field via the global `browser: true`
-    // option, which would also flip every other dependency to its browser
-    // variant (e.g. Stripe and react-datepicker to their UMD builds), so scope
-    // the swap to just this package.
+    // Some dependencies pick between a Node and a browser entry through their
+    // package.json `browser` field. node-resolve only honors that field via
+    // the global `browser: true` option, which would also flip every other
+    // dependency to its browser variant (e.g. Stripe and react-datepicker to
+    // their UMD builds), so swap just these:
+    // - @segment/analytics-next's deprecated Node entry drags in node-fetch.
+    // - inherits (via @segment/facade) requires Node's `util`.
     {
-      name: 'segment-browser-entry',
+      name: 'browser-entries',
       resolveId(source, importer) {
         if (
           source === './node' &&
@@ -85,9 +90,13 @@ export default {
             'node_modules/@segment/analytics-next/dist/pkg/node/node.browser.js'
           );
         }
+        if (source === 'inherits') {
+          return path.resolve('node_modules/inherits/inherits_browser.js');
+        }
         return null;
       }
     },
+    noNodeBuiltins.rollupPlugin(),
     resolve({
       extensions: ['.ts', '.tsx', '.js', '.jsx']
     }),
@@ -103,6 +112,7 @@ export default {
       babelrc: false,
       presets: [['@babel/preset-env', { targets: { ie: '11' } }]]
     }),
+    bundledPackages.rollupPlugin('rollup'),
     typescript({
       tsconfig: './tsconfig.json',
       tsconfigOverride: {

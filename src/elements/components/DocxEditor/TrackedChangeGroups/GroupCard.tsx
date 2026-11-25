@@ -1,5 +1,6 @@
 import React from 'react';
 import ChangeChip from './ChangeChip';
+import { SpinnerIcon } from '../icons';
 import { ChipView, GroupView } from './types';
 import {
   CARD_SHADOW,
@@ -33,6 +34,10 @@ const TITLE_INDENT = 20;
 
 interface Props {
   group: GroupView;
+  disabled?: boolean;
+  resolving?: 'accept' | 'reject' | null;
+  resolvingChip?: ChipView;
+  resolvingAction?: 'accept' | 'reject';
   /** Registers the card element so the rail can scroll its header into view. */
   cardRef: (el: HTMLDivElement | null) => void;
   isOpen: boolean;
@@ -53,6 +58,10 @@ interface Props {
 // under the title; group Accept/Reject sit at the top-right.
 export default function GroupCard({
   group,
+  disabled,
+  resolving,
+  resolvingChip,
+  resolvingAction,
   cardRef,
   isOpen,
   onToggle,
@@ -90,7 +99,12 @@ export default function GroupCard({
         <div css={{ minWidth: 0, flex: 1 }}>
           {/* Line 1: chevron (left of the title), aligned to the title row. */}
           <div
-            css={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}
+            css={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 6,
+              minWidth: 0
+            }}
           >
             <button
               type='button'
@@ -101,6 +115,8 @@ export default function GroupCard({
                 flex: 'none',
                 width: 14,
                 height: 14,
+                // on the first line of a title that wraps
+                marginTop: 2,
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -118,6 +134,7 @@ export default function GroupCard({
             <button
               type='button'
               aria-label={`Go to ${group.title}`}
+              title={group.title}
               onClick={onNavigateFirst}
               css={{
                 flex: 1,
@@ -132,9 +149,13 @@ export default function GroupCard({
                 fontWeight: 600,
                 lineHeight: 1.3,
                 cursor: 'pointer',
+                // engine titles are short phrases with a parenthetical: wrap to two lines rather
+                // than cut "Edited a paragraph" to "Edited a para..." beside the buttons
                 overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflowWrap: 'anywhere',
                 '&:hover': { textDecoration: 'underline' }
               }}
             >
@@ -169,15 +190,21 @@ export default function GroupCard({
           <button
             type='button'
             css={groupPrimaryBtn}
+            disabled={disabled}
+            aria-busy={resolving === 'accept'}
             onClick={() => onResolveGroup(true)}
           >
+            {resolving === 'accept' && <SpinnerIcon width={11} height={11} />}
             Accept
           </button>
           <button
             type='button'
             css={groupSecondaryBtn}
+            disabled={disabled}
+            aria-busy={resolving === 'reject'}
             onClick={() => onResolveGroup(false)}
           >
+            {resolving === 'reject' && <SpinnerIcon width={11} height={11} />}
             Reject
           </button>
         </div>
@@ -191,17 +218,41 @@ export default function GroupCard({
             padding: '0 12px 10px'
           }}
         >
+          {group.intent && (
+            <div
+              css={{
+                padding: '0 2px 8px',
+                paddingLeft: TITLE_INDENT,
+                fontSize: 12,
+                lineHeight: 1.45,
+                color: INK_2,
+                whiteSpace: 'pre-wrap'
+              }}
+            >
+              {group.intent}
+            </div>
+          )}
           {group.chips.map((chip, index) => (
             <ChangeChip
               key={index}
               chip={chip}
+              disabled={disabled}
+              resolving={
+                resolvingChip?.revision === chip.revision
+                  ? resolvingAction
+                  : undefined
+              }
               isActive={
                 activeRevisions.has(chip.revision) ||
                 activeRevisions.has(chip.partner)
               }
               rowRef={chipRef(chip)}
               onFocus={() => onFocusChip(chip)}
-              onResolve={(isAccept) => onResolveChips([chip], isAccept)}
+              onResolve={
+                group.engineOwned
+                  ? undefined
+                  : (isAccept) => onResolveChips([chip], isAccept)
+              }
             />
           ))}
           {calculated.length > 0 && (

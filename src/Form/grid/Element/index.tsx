@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import Elements from '../../../elements';
 import {
   clearFilePathMapEntry,
@@ -28,6 +28,7 @@ import {
   textFieldShouldSubmit
 } from './utils/utils';
 import { getVisibleElements } from '../../../utils/hideAndRepeats';
+import { getSliderSources } from '../../../utils/validation';
 import debounce from 'lodash.debounce';
 import { isMobile } from '../../../utils/browser';
 import {
@@ -39,8 +40,21 @@ import {
   getControllingCountryCode,
   stateFieldHasNoOptions
 } from '../../../utils/addressState';
+import { asciiElement, optionValue } from '../../../utils/asciiOptions';
 
-const Element = ({ node: el, form }: any) => {
+const Element = ({ node, form }: any) => {
+  const el = useMemo(
+    () => asciiElement(node, form.formSettings.asciiOnly),
+    [
+      node,
+      node.servar?.metadata,
+      node.servar?.metadata?.options,
+      node.servar?.metadata?.option_labels,
+      node.servar?.metadata?.repeat_options,
+      node.servar?.metadata?.repeat_options?.[node.repeat ?? 0],
+      form.formSettings.asciiOnly
+    ]
+  );
   const { type } = el;
 
   const {
@@ -68,8 +82,7 @@ const Element = ({ node: el, form }: any) => {
     focusRef,
     setCardElement,
     visiblePositions,
-    featheryContext,
-    assistantClient
+    featheryContext
   } = form;
 
   const readOnly =
@@ -115,7 +128,6 @@ const Element = ({ node: el, form }: any) => {
         updateFieldValues={updateFieldValues}
         submitCustom={submitCustom}
         buttonLoaders={buttonLoaders}
-        assistantClient={assistantClient}
         client={form.client}
       />
     );
@@ -201,7 +213,9 @@ const Element = ({ node: el, form }: any) => {
 
     const isOtherVal = (curVal: string) => {
       if (hasRepeatOptions) {
-        return !servar.metadata.repeat_options[index].includes(curVal);
+        return !servar.metadata.repeat_options[index].some(
+          (option: any) => optionValue(option) === curVal
+        );
       }
       return !servar.metadata.options.includes(curVal);
     };
@@ -353,7 +367,7 @@ const Element = ({ node: el, form }: any) => {
             {...fieldProps}
             rawValue={fieldVal}
             onChange={(value: any) => {
-              const change = changeValue(value, el, index, true, false);
+              const change = changeValue(value, el, index);
               if (change) debouncedOnChange();
             }}
             fieldStyles={el.properties.style}
@@ -571,6 +585,7 @@ const Element = ({ node: el, form }: any) => {
           <Elements.SliderField
             {...fieldProps}
             fieldVal={fieldVal}
+            linkedValues={getSliderSources(activeStep, visiblePositions)}
             onChange={(val: number) => {
               const change = changeValue(val, el, index);
               if (change) debouncedOnChange();
@@ -595,7 +610,7 @@ const Element = ({ node: el, form }: any) => {
             rawValue={stringifyWithNull(fieldVal)}
             onChange={(e: any) => {
               const val = e.target.value;
-              const change = changeValue(val, el, index, true, false);
+              const change = changeValue(val, el, index);
               if (change) debouncedOnChange();
             }}
             setRef={(ref: any) => {
@@ -611,7 +626,7 @@ const Element = ({ node: el, form }: any) => {
             rawValue={stringifyWithNull(fieldVal)}
             onChange={(e: any) => {
               const val = e.target.value;
-              const change = changeValue(val, el, index, true, false);
+              const change = changeValue(val, el, index);
               if (change) debouncedOnChange();
             }}
             setRef={(ref: any) => {
@@ -644,7 +659,7 @@ const Element = ({ node: el, form }: any) => {
             repeatIndex={index}
             onChange={(e: any) => {
               const val = e.target.value;
-              const change = changeValue(val, el, index, true, false);
+              const change = changeValue(val, el, index);
               if (change) debouncedOnChange();
             }}
             onSelect={(address: any, addressId: string) => {
@@ -723,7 +738,8 @@ const Element = ({ node: el, form }: any) => {
               const isOrWasEmpty = !newVal || !fieldVal;
               const rerender =
                 isOrWasEmpty || (servar.metadata.options ?? []).length > 0;
-              const change = changeValue(val, el, index, rerender, false);
+              // Revalidation updates feedback without reopening native popups.
+              const change = changeValue(val, el, index, rerender);
               if (change) {
                 const submitData =
                   autosubmit && textFieldShouldSubmit(servar, val);

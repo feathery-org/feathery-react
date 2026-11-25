@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckIcon, CloseIcon } from '../icons';
+import { CheckIcon, CloseIcon, SpinnerIcon } from '../icons';
 import { ChipView } from './types';
 import {
   ADD,
@@ -46,13 +46,16 @@ const diffRowsOf = (chip: ChipView) => {
 
 interface Props {
   chip: ChipView;
+  disabled?: boolean;
+  resolving?: 'accept' | 'reject';
   /** This chip is the document's active edit: subtly tinted (no border). */
   isActive: boolean;
   /** Registers the row element so the rail can scroll the active chip into
    *  view. */
   rowRef: (el: HTMLDivElement | null) => void;
   onFocus: () => void;
-  onResolve: (isAccept: boolean) => void;
+  /** Absent for an edit only its whole card can resolve. */
+  onResolve?: (isAccept: boolean) => void;
 }
 
 // One edit (A2 layout): a type badge and its −/+ diff on the left, its own
@@ -60,6 +63,8 @@ interface Props {
 // shown by a faint background tint instead.
 export default function ChangeChip({
   chip,
+  disabled,
+  resolving,
   isActive,
   rowRef,
   onFocus,
@@ -155,30 +160,44 @@ export default function ChangeChip({
           ))}
         </div>
       </div>
-      <div css={{ display: 'flex', gap: 2, flex: 'none' }}>
-        <button
-          type='button'
-          aria-label='Accept this edit'
-          css={rowAcceptBtn}
-          onClick={(event) => {
-            event.stopPropagation();
-            onResolve(true);
-          }}
-        >
-          <CheckIcon width={14} height={14} />
-        </button>
-        <button
-          type='button'
-          aria-label='Reject this edit'
-          css={rowRejectBtn}
-          onClick={(event) => {
-            event.stopPropagation();
-            onResolve(false);
-          }}
-        >
-          <CloseIcon width={14} height={14} />
-        </button>
-      </div>
+      {onResolve && (
+        <div css={{ display: 'flex', gap: 2, flex: 'none' }}>
+          <button
+            type='button'
+            aria-label='Accept this edit'
+            css={rowAcceptBtn}
+            disabled={disabled}
+            aria-busy={resolving === 'accept'}
+            onClick={(event) => {
+              event.stopPropagation();
+              onResolve(true);
+            }}
+          >
+            {resolving === 'accept' ? (
+              <SpinnerIcon width={14} height={14} />
+            ) : (
+              <CheckIcon width={14} height={14} />
+            )}
+          </button>
+          <button
+            type='button'
+            aria-label='Reject this edit'
+            css={rowRejectBtn}
+            disabled={disabled}
+            aria-busy={resolving === 'reject'}
+            onClick={(event) => {
+              event.stopPropagation();
+              onResolve(false);
+            }}
+          >
+            {resolving === 'reject' ? (
+              <SpinnerIcon width={14} height={14} />
+            ) : (
+              <CloseIcon width={14} height={14} />
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

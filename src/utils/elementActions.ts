@@ -55,10 +55,10 @@ export function hasFlowActions(actions: any[]) {
   return actions.find((action) => action.type in REQUIRED_FLOW_ACTIONS);
 }
 
-export const stepEvents = ['submit', 'load'];
-export const elementEvents = ['view', 'change', 'action'];
+const stepEvents = ['submit', 'load'];
+const elementEvents = ['view', 'change', 'action'];
 // Fired after a toolbar action on the Generate Documents review screen.
-export const DOCUMENT_REVIEW_EVENT = 'document_review';
+const DOCUMENT_REVIEW_EVENT = 'document_review';
 
 export function isRunnableStepEventRule(rule: any, curStepId: string) {
   return (

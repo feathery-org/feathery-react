@@ -52,7 +52,7 @@ interface ContentControlElement extends ContentControlLike {
 }
 
 /** A control's interior, in the caret coordinates of one paragraph. */
-export interface InnerRange {
+interface InnerRange {
   /** The hierarchical offset up to and including its final ';'. */
   prefix: string;
   /** First offset inside the control. */
@@ -74,7 +74,7 @@ export function splitOffset(
 }
 
 /** The bound definition a control carries, or null if it is not a binding. */
-export function boundDefinitionOf(
+function boundDefinitionOf(
   control: ContentControlLike | null | undefined
 ): BoundDefinition | null {
   const tag = control?.contentControlProperties?.tag;
@@ -153,7 +153,7 @@ function boundControlsAtCaret(
  * one field can have many occurrences - so the paragraph prefix is what makes
  * the answer unambiguous.
  */
-export function findControlByTagAndPrefix(
+function findControlByTagAndPrefix(
   editor: SyncfusionEditorLike,
   tag: string,
   prefix: string

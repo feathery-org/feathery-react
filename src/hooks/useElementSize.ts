@@ -1,7 +1,7 @@
 import { useLayoutEffect, useState } from 'react';
 import { featheryWindow } from '../utils/browser';
 
-export type ElementSize = {
+type ElementSize = {
   width?: number;
   height?: number;
 };

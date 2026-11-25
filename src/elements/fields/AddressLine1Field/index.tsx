@@ -20,6 +20,7 @@ function AddressLine1({
   responsiveStyles,
   fieldLabel,
   elementProps = {},
+  errorAttributes = {},
   disabled = false,
   autoComplete,
   editMode,
@@ -115,6 +116,7 @@ function AddressLine1({
           placeholder=''
           disabled={disabled}
           aria-label={element.properties.aria_label}
+          {...errorAttributes}
           autoComplete={autoComplete === 'on' ? autocomplete : 'new-password'}
           value={value}
           ref={(ref) => {

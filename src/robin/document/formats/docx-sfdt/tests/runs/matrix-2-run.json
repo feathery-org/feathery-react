@@ -1,0 +1,205 @@
+{
+ "source": "rig79 evidence/matrix-2 (2026-10-12): the model's committed write per task, product engine",
+ "writes": [
+  {
+   "task": "T11",
+   "fixture": "wp2-flagship-ayesha.sfdt.json",
+   "input": {
+    "intent": "Add a live \"Premium tax\" column as the last column of the Property premium detail table, computing each row's line total times the tax rate.",
+    "scope": {
+     "ids": [
+      "n120",
+      "n130",
+      "n133",
+      "n146",
+      "n150",
+      "n165",
+      "n169",
+      "n183",
+      "n187",
+      "n200",
+      "n204",
+      "n218",
+      "n222",
+      "n226"
+     ]
+    },
+    "formats": {},
+    "changes": [
+     {
+      "kind": "insert_after",
+      "anchor": "n130",
+      "container": "0e6c3a8e37ccc934",
+      "node": {
+       "kind": "cell",
+       "style": "f28",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": [
+          {
+           "kind": "run",
+           "text": "Premium tax"
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n146",
+      "container": "06e4e5c7a5e14b2c",
+      "node": {
+       "kind": "cell",
+       "style": "f32",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": [
+          {
+           "kind": "control",
+           "binding": {
+            "name": "premium_tax",
+            "type": "currency",
+            "expr": "mul(line_total,tax_rate)",
+            "row": "property-r1"
+           },
+           "inlines": []
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n165",
+      "container": "4a9b4476be0e7e51",
+      "node": {
+       "kind": "cell",
+       "style": "f32",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": [
+          {
+           "kind": "control",
+           "binding": {
+            "name": "premium_tax",
+            "type": "currency",
+            "expr": "mul(line_total,tax_rate)",
+            "row": "property-r2"
+           },
+           "inlines": []
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n183",
+      "container": "6b05b6010f90dfe4",
+      "node": {
+       "kind": "cell",
+       "style": "f32",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": [
+          {
+           "kind": "control",
+           "binding": {
+            "name": "premium_tax",
+            "type": "currency",
+            "expr": "mul(line_total,tax_rate)",
+            "row": "property-r3"
+           },
+           "inlines": []
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n200",
+      "container": "fc35b06454f32209",
+      "node": {
+       "kind": "cell",
+       "style": "f32",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": [
+          {
+           "kind": "control",
+           "binding": {
+            "name": "premium_tax",
+            "type": "currency",
+            "expr": "mul(line_total,tax_rate)",
+            "row": "property-r4"
+           },
+           "inlines": []
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n218",
+      "container": "85f11240550759d2",
+      "node": {
+       "kind": "cell",
+       "style": "f32",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": [
+          {
+           "kind": "control",
+           "binding": {
+            "name": "premium_tax",
+            "type": "currency",
+            "expr": "mul(line_total,tax_rate)",
+            "row": "property-r5"
+           },
+           "inlines": []
+          }
+         ]
+        }
+       ]
+      }
+     },
+     {
+      "kind": "insert_after",
+      "anchor": "n226",
+      "container": "0dd99febfdb75ffd",
+      "node": {
+       "kind": "cell",
+       "style": "f32",
+       "blocks": [
+        {
+         "kind": "paragraph",
+         "style": "f6",
+         "inlines": []
+        }
+       ]
+      }
+     }
+    ]
+   }
+  }
+ ]
+}

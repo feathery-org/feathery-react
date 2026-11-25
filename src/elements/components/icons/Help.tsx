@@ -1,5 +1,4 @@
 import React from 'react';
-
 export default function HelpIcon({ cssStyles = {}, onClick = () => {} }) {
   return (
     <svg

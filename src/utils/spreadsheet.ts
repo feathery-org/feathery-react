@@ -90,7 +90,7 @@ const readText = (file: Blob): Promise<string> =>
     reader.readAsText(file);
   });
 
-export interface SpreadsheetSheet {
+interface SpreadsheetSheet {
   name: string;
   rows: string[][];
 }
@@ -139,7 +139,7 @@ export async function parseWorkbook(file: File): Promise<SpreadsheetSheet[]> {
   return [{ name: 'Sheet1', rows: parseCSV(text) }];
 }
 
-export interface ParsedSpreadsheet {
+interface ParsedSpreadsheet {
   headers: string[];
   rows: string[][];
   // Original zero-based worksheet positions, before empty columns are removed.

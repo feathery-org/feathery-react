@@ -6,6 +6,7 @@ import ErrorInput from '../../components/ErrorInput';
 const CustomField = ({
   element,
   elementProps = {},
+  errorAttributes = {},
   responsiveStyles,
   onChange,
   rawValue,
@@ -73,6 +74,7 @@ const CustomField = ({
           {loading && <Status.Loading />}
 
           <iframe
+            {...errorAttributes}
             ref={iframeRef}
             sandbox='allow-scripts allow-same-origin'
             style={{

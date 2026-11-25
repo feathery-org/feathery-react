@@ -102,6 +102,11 @@ export function mergeCellErrors(
   return { ...Object.fromEntries(remaining), ...validated };
 }
 
+export const parseCellErrorKey = (key: string) => {
+  const at = key.indexOf(':');
+  return { rowIndex: Number(key.slice(0, at)), fieldKey: key.slice(at + 1) };
+};
+
 const TAX_ID_PATTERN = /^\d{9}$/;
 const UUID_PATTERN =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -352,10 +357,14 @@ const HUB_TYPES: Record<string, CellValueType> = {
   uuid: 'uuid'
 };
 
+export const HUB_RELATION_TYPE = 'relation';
+
 /**
  * Rules for Hub-backed columns, keyed by the synthetic storage key the grid
  * renders. `any` fields carry no client-checkable rule beyond required; `file`
  * fields carry none at all, since the hub exempts them from required too.
+ * Relation fields get no rule: their links live outside the cell value, and
+ * the hub checks a required one when the row is verified.
  */
 export function hubCellRules(
   columns: Array<{ field_key: string; name: string; hub_field_key?: string }>,
@@ -375,7 +384,7 @@ export function hubCellRules(
     const field = column.hub_field_key
       ? byKey.get(column.hub_field_key)
       : undefined;
-    if (!field) return;
+    if (!field || field.type === HUB_RELATION_TYPE) return;
     const metadata = field.metadata ?? {};
     rules[column.field_key] = {
       label: column.name,

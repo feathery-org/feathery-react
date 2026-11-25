@@ -46,6 +46,10 @@ export const rejectBtn = {
 // (Reject), sitting at the top-right of the card.
 export const groupPrimaryBtn = {
   height: 30,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 8,
   border: 'none',
   borderRadius: 8,
   background: INK,

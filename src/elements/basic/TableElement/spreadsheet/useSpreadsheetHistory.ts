@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { CellWrite } from '../types';
 import { CellPatch } from './model';
 
-export type SpreadsheetCommand = {
+type SpreadsheetCommand = {
   label: string;
   patches: CellPatch[];
 };
@@ -101,5 +101,3 @@ function toWrites(
     value: patch[value]
   }));
 }
-
-export type SpreadsheetHistory = ReturnType<typeof useSpreadsheetHistory>;

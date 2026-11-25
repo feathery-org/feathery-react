@@ -23,7 +23,7 @@ export const MIN_COLUMN_WIDTH = 64;
 export const CELL_HORIZONTAL_PADDING = 10;
 // Width of the grid lines between cells. The selection border is pulled out by
 // exactly this much to land on top of them.
-export const GRID_LINE_WIDTH = 1;
+const GRID_LINE_WIDTH = 1;
 
 // With no sized height there is nothing to scroll inside, so an unbounded grid
 // is capped here instead of growing down the page forever.
@@ -73,7 +73,7 @@ export function sampleRowCount(
   return SAMPLE_ROWS_MIN;
 }
 
-export type SpreadsheetChrome = {
+type SpreadsheetChrome = {
   /** The trailing "+ Add row" strip, one row tall. */
   addRow?: boolean;
   /** Height of the grid's horizontal scrollbar, when its columns overflow. */
@@ -355,15 +355,6 @@ export const columnResizerActiveStyle = {
   '&::after': { backgroundColor: colors.accent }
 } as const;
 
-export const dropIndicatorStyle = {
-  position: 'absolute',
-  top: 0,
-  zIndex: 6,
-  width: '2px',
-  height: '100%',
-  backgroundColor: colors.accent
-} as const;
-
 export const cellStyle = {
   position: 'absolute',
   top: 0,
@@ -538,10 +529,10 @@ export const choiceOptionStyle = (highlighted: boolean, empty: boolean) =>
 
 // A range's perimeter is deliberately lighter than the 2px ring on the focused
 // cell, so the active cell still reads as the active one inside a selection.
-export const RANGE_EDGE_WIDTH = '1px';
-export const FOCUSED_EDGE_WIDTH = '2px';
+const RANGE_EDGE_WIDTH = '1px';
+const FOCUSED_EDGE_WIDTH = '2px';
 
-export type CellEdges = {
+type CellEdges = {
   top: boolean;
   right: boolean;
   bottom: boolean;
@@ -903,7 +894,7 @@ export const filterIndicatorStyle = {
 
 // The column filter popover: a search box over a checklist of the column's
 // values, opened from the header menu at the pointer like the menus are.
-export const FILTER_MENU_WIDTH = 260;
+const FILTER_MENU_WIDTH = 260;
 
 export const filterMenuStyle = {
   ...rowMenuStyle,
@@ -991,10 +982,10 @@ export const filterButtonStyle = {
 
 // A dropdown cell's value as a chip spanning the cell, the way a sheet marks a
 // validation list: label left, chevron right, the same pill when empty.
-export const CHIP_HEIGHT = 22;
+const CHIP_HEIGHT = 22;
 // Room left between the pill and the cell's edges (on top of the cell's own
 // padding), so a click beside the chip still lands on the cell to select it.
-export const CHIP_INSET = 4;
+const CHIP_INSET = 4;
 
 export const cellChipStyle = {
   position: 'relative',

@@ -22,7 +22,7 @@ export type SignatureCanvasProps = {
   translation: SignatureTranslations;
 };
 
-export type SignatureCanvasRefType = {
+type SignatureCanvasRefType = {
   clear: () => void;
   isEmpty: () => boolean;
   getTrimmedCanvas: () => HTMLCanvasElement;

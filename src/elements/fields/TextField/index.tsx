@@ -1,3 +1,4 @@
+import { isAsciiTextField, toAscii } from '../../../utils/ascii';
 import React, { memo, useRef, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
@@ -140,9 +141,11 @@ function TextField({
   responsiveStyles,
   fieldLabel,
   elementProps = {},
+  errorAttributes = {},
   required = false,
   disabled = false,
   autoComplete,
+  formSettings,
   editMode,
   onAccept = () => {},
   onEnter = () => {},
@@ -151,6 +154,7 @@ function TextField({
   repeatIndex = null,
   children
 }: any) {
+  const asciiOnly = formSettings?.asciiOnly ?? false;
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   // Hide SSNs by default
   const [showPassword, setShowPassword] = useState(false);
@@ -298,6 +302,7 @@ function TextField({
             placeholder=''
             value={rawValue}
             aria-label={element.properties.aria_label}
+            {...errorAttributes}
             // Not on focus because if error is showing, it will
             // keep triggering dropdown after blur
             onKeyDown={(e: any) => {
@@ -352,6 +357,9 @@ function TextField({
               // — rounding "-0." would push "0" down and overwrite the sign.
               editingRef.current || Boolean(heldSign)
             )}
+            prepare={
+              asciiOnly && isAsciiTextField(servar.type) ? toAscii : undefined
+            }
             onAccept={handleAccept}
           />
         </TextAutocomplete>

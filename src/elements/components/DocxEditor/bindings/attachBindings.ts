@@ -11,6 +11,7 @@
 
 import { convertTemplateTokens } from './core/templateImport';
 import { hasBlockingErrors } from './core/engine';
+import { isNumericType } from './core/valueTypes';
 import { Diagnostic, SfdtDocument } from './core/sfdtTypes';
 import {
   ControllerEvent,
@@ -26,6 +27,7 @@ import {
   refreshContentControlCollection
 } from './editorAdapter';
 import { installKeystrokeGuard } from './keystrokeGuard';
+import { installPasteGuard } from './pasteGuard';
 import { createCommitTriggers } from './commitTriggers';
 import { watchRowCommands } from './rowCommandWatch';
 import {
@@ -51,7 +53,7 @@ export interface BindingsOptions {
    */
   convertTokensOnOpen?: boolean;
   /** Committed document-level field values, after every reconcile. */
-  onFieldValues?: (values: Record<string, string>) => void;
+  onFieldValues?: (values: Record<string, string | null>) => void;
   /** Diagnostics after every reconcile, including the ones that block saving. */
   onDiagnostics?: (diagnostics: Diagnostic[]) => void;
   /**
@@ -93,7 +95,7 @@ export interface AttachedBindings {
    */
   commitForSave(): boolean;
   diagnostics(): Diagnostic[];
-  fieldValues(): Record<string, string>;
+  fieldValues(): Record<string, string | null>;
   /** Diagnostics from the one-time token conversion, if it ran. */
   importDiagnostics: Diagnostic[];
   dispose(): void;
@@ -107,16 +109,19 @@ type EventfulEditor = SyncfusionEditorLike & {
   ) => void;
 };
 
-/** Document-level field values, one per binding name. */
+/** Document-level field values, one per binding name, a blank number as no value */
 function collectFieldValues(
   controller: ReconciliationController
-): Record<string, string> {
-  const out: Record<string, string> = {};
+): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
   const { index, values } = controller;
   if (!index || !values) return out;
   for (const [name, occurrences] of index.fields) {
     const known = occurrences.find((occurrence) => values.has(occurrence.key));
-    if (known) out[name] = values.get(known.key) as string;
+    if (!known) continue;
+    const value = values.get(known.key) as string;
+    out[name] =
+      value === '' && isNumericType(known.def.fieldType) ? null : value;
   }
   return out;
 }
@@ -184,6 +189,13 @@ export function attachBindings(
   // bindings; this is how its batches get reconciled.
   registerBindingReconciler(editor, {
     flush: () => controller.flush(),
+    // the document engine's splice replaced the document: re-read the content controls and
+    // adopt the new document, no dispose and re-attach
+    reopened: () => {
+      if ((editor as { isDestroyed?: boolean }).isDestroyed) return;
+      refreshContentControlCollection(editor);
+      controller.notifyReopened();
+    },
     runCommands: (commands, options) =>
       controller.runCommands(commands, options)
   });
@@ -193,6 +205,7 @@ export function attachBindings(
     ...(clearTimeoutFn ? { clearTimeoutFn } : {})
   });
   const uninstallGuard = installKeystrokeGuard(editor);
+  const uninstallPasteGuard = installPasteGuard(editor);
   // Explicit whole-table/row deletion: lift the content-control locks that
   // made deleteTable/deleteRow silent no-ops, and confirm/unwrap when the
   // deleted values feed formulas elsewhere (tableDeleteGuard has the full
@@ -289,10 +302,7 @@ export function attachBindings(
     runGuarded(() => {
       triggers.onEditorBlur();
       // Focus left the editor: drop the locked-edit hint so it can't linger.
-      if (lockHintActive) {
-        lockHintActive = false;
-        onLockedEditResolved?.();
-      }
+      resolveLockedHint();
     });
 
   // Syncfusion fires 'contentControl' whenever the caret sits in ANY control
@@ -325,6 +335,17 @@ export function attachBindings(
       lockedHintTimer = null;
     }, 600);
   };
+  // Ends the debounce too: a stale re-show for the cell being left can start
+  // or hit the timer, and the next show after a resolve must always fire.
+  const resolveLockedHint = (): void => {
+    if (!lockHintActive) return;
+    lockHintActive = false;
+    if (lockedHintTimer !== null) {
+      cancelTimeout(lockedHintTimer);
+      lockedHintTimer = null;
+    }
+    onLockedEditResolved?.();
+  };
   const onLockedControl = () =>
     runGuarded(() => {
       // The event means a lock was hit; the only false positive is the caret
@@ -342,10 +363,7 @@ export function attachBindings(
       // isAdapterWriting. A flush from here mid-write is re-entrant.
       if (isAdapterWriting() || isProgrammaticSelection()) return;
       triggers.onSelectionChange();
-      if (lockHintActive && !isLockedControl(caretControl())) {
-        lockHintActive = false;
-        onLockedEditResolved?.();
-      }
+      if (!isLockedControl(caretControl())) resolveLockedHint();
     });
 
   eventful.addEventListener?.('contentChange', onContentChange);
@@ -371,14 +389,15 @@ export function attachBindings(
       // Set first: removing a listener can itself fire an event, and any stray
       // timer that fires after this point must find the handlers inert.
       disposed = true;
-      // React runs the host's instance.destroy() cleanup BEFORE this one, so by
-      // the time dispose runs the editor is often already torn down. Calling
-      // removeEventListener (and the un-patch helpers) on a destroyed Syncfusion
-      // instance can dereference its null internals and throw "Cannot convert
-      // undefined or null to object". dispose runs inside React's unmount commit,
-      // where a throw is caught by the nearest error boundary and takes the form
-      // down - so every step is isolated and a failure is logged, never thrown.
-      const step = (label: string, fn: () => void): void => {
+      // The host's destroy() often ran first; touching a destroyed editor
+      // throws, so skip those steps. Steps log, never throw (unmount commit).
+      const editorGone = !!(editor as { isDestroyed?: boolean }).isDestroyed;
+      const step = (
+        label: string,
+        fn: () => void,
+        touchesEditor = false
+      ): void => {
+        if (touchesEditor && editorGone) return;
         try {
           fn();
         } catch (error) {
@@ -392,25 +411,35 @@ export function attachBindings(
       step('recomputeHook', () => {
         delete (editor as any).__robinRecomputeAfterResolve;
       });
-      step('contentChange', () =>
-        eventful.removeEventListener?.('contentChange', onContentChange)
+      step(
+        'contentChange',
+        () => eventful.removeEventListener?.('contentChange', onContentChange),
+        true
       );
-      step('selectionChange', () =>
-        eventful.removeEventListener?.('selectionChange', onSelectionChange)
+      step(
+        'selectionChange',
+        () =>
+          eventful.removeEventListener?.('selectionChange', onSelectionChange),
+        true
       );
-      step('keyDown', () =>
-        eventful.removeEventListener?.('keyDown', onKeyDown)
+      step(
+        'keyDown',
+        () => eventful.removeEventListener?.('keyDown', onKeyDown),
+        true
       );
-      step('contentControl', () =>
-        eventful.removeEventListener?.('contentControl', onLockedControl)
+      step(
+        'contentControl',
+        () => eventful.removeEventListener?.('contentControl', onLockedControl),
+        true
       );
       step('lockedHintTimer', () => {
         if (lockedHintTimer !== null) cancelTimeout(lockedHintTimer);
       });
       step('blur', () => editableDiv?.removeEventListener?.('blur', onBlur));
-      step('guard', () => uninstallGuard());
-      step('rowCommands', () => unwatchRowCommands());
-      step('tableDelete', () => uninstallTableDelete());
+      step('guard', () => uninstallGuard(), true);
+      step('paste guard', () => uninstallPasteGuard(), true);
+      step('rowCommands', () => unwatchRowCommands(), true);
+      step('tableDelete', () => uninstallTableDelete(), true);
       step('triggers', () => triggers.dispose());
       // Cancels the deferred view restore, which would otherwise read
       // editor.selection ~60ms after the editor was destroyed.

@@ -1,6 +1,6 @@
-export type WarnType = 'option' | 'value';
+type WarnType = 'option' | 'value';
 
-export type WarningArgs = {
+type WarningArgs = {
   state: Set<string>;
   type: WarnType;
   field: string;

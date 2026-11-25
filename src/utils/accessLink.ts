@@ -141,7 +141,7 @@ export function storeLinkSecret(token: string, secret: string) {
  * What this browser kept for a form after its token left the address bar. Read
  * as a pair so the secret is always looked up under the token it belongs to.
  */
-export type StoredLinkCredentials = {
+type StoredLinkCredentials = {
   token: string;
   secret: string;
 };

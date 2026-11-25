@@ -1,3 +1,4 @@
+import type { IconEmbedData } from '../elements/components/icons/iconGlyph';
 import { findCountryByID } from '../elements/components/data/countries';
 import { formatDateString } from '../elements/fields/DateSelectorField/utils';
 import { LINK_TOKEN_PARAM } from './accessLink';
@@ -9,6 +10,7 @@ import { toBase64 } from './image';
 import { fieldValues } from './init';
 import { isObjectEmpty } from './primitives';
 import { registerOptionLabels } from './optionLabels';
+import { isAsciiTextField, normalizeAsciiValue } from './ascii';
 
 export const ARRAY_FIELD_TYPES = [
   'button_group',
@@ -149,7 +151,14 @@ export function isValidFieldIdentifier(str: string) {
   );
 }
 
-export function getDefaultFieldValue(field: any) {
+export function getDefaultFieldValue(field: any, asciiOnly = false) {
+  const value = getRawDefaultFieldValue(field);
+  return asciiOnly && isAsciiTextField(field.servar.type)
+    ? normalizeAsciiValue(value)
+    : value;
+}
+
+function getRawDefaultFieldValue(field: any) {
   const servar = field.servar;
   const meta = servar.metadata;
   if (meta.default_value) {
@@ -252,18 +261,23 @@ export function stripEmptyRepeatEntries(value: any[], servar?: any) {
   return value.filter((v) => ![null, undefined].includes(v));
 }
 
-export function getDefaultFormFieldValue(field: any) {
+export function getDefaultFormFieldValue(field: any, asciiOnly = false) {
   // Default value is null for file_upload, but value should always be an
   // array regardless if repeated or not
   if (field.servar.type === 'file_upload') return [];
 
-  const val = getDefaultFieldValue(field);
+  const val = getDefaultFieldValue(field, asciiOnly);
   return field.servar.repeated ? [val] : val;
 }
 
 export type OptionType =
   | string
-  | { value: string; label?: string; image?: string };
+  | {
+      value: string;
+      label?: string;
+      image?: string;
+      icon?: IconEmbedData | null;
+    };
 // TODO: remove string[] for backcompat
 export type FieldOptions = Record<string, OptionType[] | null>;
 
@@ -287,6 +301,10 @@ export function updateStepFieldOptions(
         servar.metadata.option_images = options.map((option) =>
           typeof option === 'object' ? option.image ?? '' : ''
         );
+        if (servar.type === 'button_group')
+          servar.metadata.option_icons = options.map((option) =>
+            typeof option === 'object' ? option.icon ?? null : null
+          );
       } else {
         if (!servar.metadata.repeat_options)
           servar.metadata.repeat_options = [];
@@ -499,7 +517,7 @@ export function castHiddenVal(hfType: string, val: any) {
   return newVal;
 }
 
-export function getServarAttrMap(steps: any) {
+function getServarAttrMap(steps: any) {
   const servarKeyToTypeMap: Record<
     string,
     { type: string; repeated: boolean }

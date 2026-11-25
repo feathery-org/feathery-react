@@ -1,11 +1,4 @@
-import {
-  createTextFieldElement,
-  createTextFieldProps,
-  createStatefulAcceptHandler,
-  getMockFieldValue,
-  setMockFieldValue,
-  resetMockFieldValue
-} from './test-utils';
+import { createTextFieldElement, createTextFieldProps, getMockFieldValue, setMockFieldValue, resetMockFieldValue } from './test-utils';
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import TextField from '../index';

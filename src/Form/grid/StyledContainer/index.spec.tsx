@@ -1,5 +1,7 @@
 import { render } from '@testing-library/react';
 import { StyledContainer } from '.';
+import { fieldValues, setFieldValues } from '../../../utils/init';
+import { featheryWindow } from '../../../utils/browser';
 
 jest.mock('../../../elements/components/DocxEditor', () => {
   const React = jest.requireActual('react');
@@ -32,6 +34,131 @@ const baseNode = {
 };
 
 describe('StyledContainer iframe embeds', () => {
+  afterEach(() => {
+    delete fieldValues.extraction_review_url;
+  });
+
+  it.each([
+    '{{extraction_review_url}}',
+    '/review/{{submission_id}}',
+    `${featheryWindow().location.origin}/review/{{submission_id}}`,
+    ''
+  ])(
+    'skips an unresolved same-origin or empty editor embed URL: %s',
+    (source) => {
+      const { container } = render(
+        <StyledContainer
+          node={{ ...baseNode, properties: { iframe_url: source } }}
+          breakpoint={480}
+          editMode
+        >
+          <span>Container contents</span>
+        </StyledContainer>
+      );
+
+      expect(container.querySelector('iframe')).toBeNull();
+      expect(container).toHaveTextContent('Container contents');
+    }
+  );
+
+  it.each([
+    'https://calendly.com/team/demo?email={{email}}',
+    '//calendly.com/team/demo?email={{email}}'
+  ])(
+    'preserves an external editor embed with unresolved parameters: %s',
+    (source) => {
+      const { container } = render(
+        <StyledContainer
+          node={{ ...baseNode, properties: { iframe_url: source } }}
+          breakpoint={480}
+          editMode
+        />
+      );
+
+      expect(container.querySelector('iframe')).toHaveAttribute('src', source);
+    }
+  );
+
+  it.each([
+    'javascript:alert(1)',
+    ' java\tscript:alert(1)',
+    'data:text/html,<p>Embedded</p>'
+  ])('refuses an editor embed URL that is not a web page: %s', (source) => {
+    const { container } = render(
+      <StyledContainer
+        node={{ ...baseNode, properties: { iframe_url: source } }}
+        breakpoint={480}
+        editMode
+      >
+        <span>Container contents</span>
+      </StyledContainer>
+    );
+
+    expect(container.querySelector('iframe')).toBeNull();
+    expect(container).toHaveTextContent('Container contents');
+  });
+
+  it.each(['https://example.com/form', '/embeds/pricing-table'])(
+    'keeps a web or relative editor embed URL: %s',
+    (source) => {
+      const { container } = render(
+        <StyledContainer
+          node={{ ...baseNode, properties: { iframe_url: source } }}
+          breakpoint={480}
+          editMode
+        />
+      );
+
+      expect(container.querySelector('iframe')).toHaveAttribute('src', source);
+    }
+  );
+
+  it('leaves a non-web embed URL to live forms', () => {
+    const source = 'data:text/html,<p>Embedded</p>';
+    const { container } = render(
+      <StyledContainer
+        node={{ ...baseNode, properties: { iframe_url: source } }}
+        breakpoint={480}
+      />
+    );
+
+    expect(container.querySelector('iframe')).toHaveAttribute('src', source);
+  });
+
+  it('preserves unresolved live-form embeds', () => {
+    const source = '{{extraction_review_url}}';
+    const { container } = render(
+      <StyledContainer
+        node={{ ...baseNode, properties: { iframe_url: source } }}
+        breakpoint={480}
+      />
+    );
+
+    expect(container.querySelector('iframe')).toHaveAttribute('src', source);
+  });
+
+  it('renders an editor embed once its field resolves to a nonempty URL', () => {
+    const props = {
+      node: {
+        ...baseNode,
+        properties: { iframe_url: '{{extraction_review_url}}' }
+      },
+      breakpoint: 480,
+      editMode: true
+    };
+    const { container, rerender } = render(<StyledContainer {...props} />);
+    expect(container.querySelector('iframe')).toBeNull();
+
+    const url = 'https://example.com/review/submission-1';
+    setFieldValues({ extraction_review_url: url }, false, true);
+    rerender(<StyledContainer {...props} />);
+    expect(container.querySelector('iframe')).toHaveAttribute('src', url);
+
+    setFieldValues({ extraction_review_url: '' }, false, true);
+    rerender(<StyledContainer {...props} />);
+    expect(container.querySelector('iframe')).toBeNull();
+  });
+
   it('renders iframe URL containers with auto-scrolling iframe viewport styles', () => {
     const { container } = render(
       <StyledContainer
@@ -117,6 +244,202 @@ describe('StyledContainer alignment', () => {
 });
 
 describe('StyledContainer document editor', () => {
+  it.each([
+    ['no', []],
+    ['one', [{}]]
+  ])(
+    'bounds a fill-height document editor with %s builder children',
+    (_, builderChildren) => {
+      const { container } = render(
+        <StyledContainer
+          node={{
+            ...baseNode,
+            height: 'fill',
+            parent: { height: 'fill', axis: 'row', styles: {} },
+            children: builderChildren,
+            properties: { document_editor: true },
+            styles: { axis: 'column', width: 'fill', width_unit: 'fill' }
+          }}
+          editMode
+          breakpoint={480}
+        />
+      );
+
+      expect(container.querySelector('.styled-container')).toHaveStyle({
+        height: 'auto',
+        maxHeight: '100%',
+        minHeight: '0',
+        overflow: 'hidden',
+        flexGrow: '1',
+        flexShrink: '1',
+        flexBasis: '0'
+      });
+      expect(container.querySelector('.inner-container')).toHaveStyle({
+        minHeight: '0'
+      });
+    }
+  );
+
+  it('caps a fill-height document editor step root at the screen height', () => {
+    const { container } = render(
+      <StyledContainer
+        node={{
+          ...baseNode,
+          height: 'fill',
+          parent: undefined,
+          children: [{}],
+          properties: { document_editor: true },
+          styles: { axis: 'column', width: 'fill', width_unit: 'fill' }
+        }}
+        editMode
+        breakpoint={480}
+      />
+    );
+
+    expect(container.querySelector('.styled-container')).toHaveStyle({
+      height: 'auto',
+      maxHeight: '100vh',
+      minHeight: '0'
+    });
+  });
+
+  it('keeps a fit-height document editor content-sized', () => {
+    const { container } = render(
+      <StyledContainer
+        node={{
+          ...baseNode,
+          height: 'fit',
+          children: [{}],
+          properties: { document_editor: true },
+          styles: { axis: 'column', width: 'fill', width_unit: 'fill' }
+        }}
+        editMode
+        breakpoint={480}
+      />
+    );
+
+    expect(container.querySelector('.styled-container')).toHaveStyle({
+      height: 'auto',
+      maxHeight: 'fit-content',
+      minHeight: 'fit-content'
+    });
+  });
+
+  it('preserves content sizing for a regular fill-height container', () => {
+    const { container } = render(
+      <StyledContainer
+        node={{
+          ...baseNode,
+          height: 'fill',
+          children: [{}],
+          styles: { axis: 'column', width: 'fill', width_unit: 'fill' }
+        }}
+        breakpoint={480}
+      >
+        <span>Regular contents</span>
+      </StyledContainer>
+    );
+
+    expect(container.querySelector('.styled-container')).toHaveStyle({
+      height: 'auto',
+      maxHeight: '100%',
+      minHeight: 'fit-content'
+    });
+  });
+
+  it('keeps a document editor inside its configured pixel dimensions', () => {
+    const { container } = render(
+      <StyledContainer
+        node={{
+          ...baseNode,
+          width: '640px',
+          height: '360px',
+          children: [{}],
+          properties: { document_editor: true },
+          styles: {
+            ...baseNode.styles,
+            width: 640,
+            width_unit: 'px',
+            height: 360
+          }
+        }}
+        editMode
+        breakpoint={480}
+      />
+    );
+
+    expect(container.querySelector('.styled-container')).toHaveStyle({
+      minWidth: '0',
+      height: '360px',
+      maxHeight: '360px'
+    });
+    expect(container.querySelector('.inner-container')).toHaveStyle({
+      minHeight: '0'
+    });
+  });
+
+  it.each(['hidden', 'scroll'])(
+    'keeps a live-form document editor with Overflow %s at its pixel height',
+    (overflow) => {
+      const { container } = render(
+        <StyledContainer
+          node={{
+            ...baseNode,
+            height: '760px',
+            children: [{}],
+            properties: { document_editor: true },
+            styles: { ...baseNode.styles, height: 760, overflow }
+          }}
+          breakpoint={480}
+        />
+      );
+
+      expect(container.querySelector('.inner-container')).toHaveStyle({
+        height: '100%',
+        minHeight: '0'
+      });
+    }
+  );
+
+  it('uses the mobile fill behavior while preserving the desktop pixel height', () => {
+    const node = {
+      ...baseNode,
+      height: '360px',
+      mobile_height: 'fill',
+      properties: { document_editor: true },
+      styles: { ...baseNode.styles, height: 360 },
+      mobile_styles: { height: 'fill', height_unit: 'fill' }
+    };
+    const { container, rerender } = render(
+      <StyledContainer
+        node={node}
+        breakpoint={480}
+        viewportOnly
+        viewport='desktop'
+      />
+    );
+
+    expect(container.querySelector('.styled-container')).toHaveStyle({
+      height: '360px',
+      maxHeight: '360px'
+    });
+
+    rerender(
+      <StyledContainer
+        node={node}
+        breakpoint={480}
+        viewportOnly
+        viewport='mobile'
+      />
+    );
+    expect(container.querySelector('.styled-container')).toHaveStyle({
+      height: 'auto',
+      maxHeight: '100%',
+      minHeight: '0',
+      overflow: 'hidden'
+    });
+  });
+
   it('mounts the document editor preview when document_editor is set', () => {
     const { getByTestId } = render(
       <StyledContainer
@@ -181,4 +504,136 @@ describe('StyledContainer table elements', () => {
       expect(['0', '0px']).toContain(getComputedStyle(wrapper).minWidth);
     }
   );
+});
+
+describe('StyledContainer node type classes', () => {
+  const containerClasses = (
+    node: Record<string, unknown>,
+    viewport: 'desktop' | 'mobile' = 'desktop'
+  ) => {
+    const { container } = render(
+      <StyledContainer
+        node={{ ...baseNode, styles: { axis: 'column' }, ...node }}
+        viewport={viewport}
+        breakpoint={480}
+      />
+    );
+    return Array.from(
+      container.querySelector('.styled-container')?.classList ?? []
+    );
+  };
+
+  it('tags a fit-width container', () => {
+    expect(containerClasses({ width: 'fit', height: 'fill' })).toContain(
+      'fit-container'
+    );
+  });
+
+  it('tags a fill-width container', () => {
+    expect(containerClasses({ width: 'fill', height: 'fit' })).toContain(
+      'fill-container'
+    );
+  });
+
+  it('tags a pixel-width container', () => {
+    expect(containerClasses({ width: '184px', height: 'fit' })).toContain(
+      'px-container'
+    );
+  });
+
+  it('tags an older Robin mobile fill width stored only in mobile_styles', () => {
+    const node = {
+      width: '184px',
+      height: 'fit',
+      mobile_styles: { width_unit: 'fill' }
+    };
+    expect(containerClasses(node, 'mobile')).toContain('fill-container');
+  });
+});
+
+describe('StyledContainer custom HTML', () => {
+  const UNSAFE_HTML = '<img src="x" onerror="alert(1)"><p>Welcome</p>';
+  const SANITIZED_HTML = '<p>Welcome</p>';
+  const htmlNode = {
+    ...baseNode,
+    properties: { custom_html: UNSAFE_HTML }
+  };
+
+  // Editor mode writes custom HTML into a shadow root, which
+  // container.querySelector cannot see into.
+  const editorHtml = (container: HTMLElement) => {
+    const host = Array.from(container.querySelectorAll('div')).find(
+      (div) => div.shadowRoot
+    );
+    return host?.shadowRoot?.querySelector('div')?.innerHTML;
+  };
+
+  afterEach(() => {
+    delete fieldValues.visitor_note;
+  });
+
+  it("renders only the sanitizer's output in editor mode", () => {
+    const sanitizeHtml = jest.fn(() => SANITIZED_HTML);
+    const { container } = render(
+      <StyledContainer
+        node={htmlNode}
+        breakpoint={480}
+        editMode
+        sanitizeHtml={sanitizeHtml}
+      />
+    );
+
+    expect(sanitizeHtml).toHaveBeenCalledWith(UNSAFE_HTML);
+    expect(editorHtml(container)).toBe(SANITIZED_HTML);
+  });
+
+  it('sanitizes editor HTML after field values are substituted', () => {
+    fieldValues.visitor_note = '<img src="x" onerror="alert(1)">';
+    const sanitizeHtml = jest.fn(() => SANITIZED_HTML);
+    render(
+      <StyledContainer
+        node={{
+          ...baseNode,
+          properties: { custom_html: '<p>{{visitor_note}}</p>' }
+        }}
+        breakpoint={480}
+        editMode
+        sanitizeHtml={sanitizeHtml}
+      />
+    );
+
+    expect(sanitizeHtml).toHaveBeenCalledWith(
+      '<p><img src="x" onerror="alert(1)"></p>'
+    );
+  });
+
+  it('renders no custom HTML in editor mode without a sanitizer', () => {
+    const { container } = render(
+      <StyledContainer node={htmlNode} breakpoint={480} editMode>
+        <span>Container contents</span>
+      </StyledContainer>
+    );
+
+    expect(editorHtml(container)).toBeUndefined();
+    expect(container.querySelector('img')).toBeNull();
+    expect(container).toHaveTextContent('Container contents');
+  });
+
+  it('renders custom HTML as written on a live form and ignores the sanitizer', () => {
+    const sanitizeHtml = jest.fn(() => SANITIZED_HTML);
+    const { container } = render(
+      <StyledContainer
+        node={htmlNode}
+        breakpoint={480}
+        sanitizeHtml={sanitizeHtml}
+      />
+    );
+
+    expect(sanitizeHtml).not.toHaveBeenCalled();
+    expect(container.querySelector('img')).toHaveAttribute(
+      'onerror',
+      'alert(1)'
+    );
+    expect(container.querySelector('p')).toHaveTextContent('Welcome');
+  });
 });

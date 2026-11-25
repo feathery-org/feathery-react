@@ -8,6 +8,7 @@ import {
 
 const CIRCLE_SIZE = 28;
 const VERTICAL_CONNECTOR_GAP = 4;
+const PENDING_SPINNER_SIZE = 14;
 
 type StepConfig = {
   label: string;
@@ -22,6 +23,7 @@ function StepperBar({
   stepKey,
   textPlacement = 'bottom',
   onStepClick,
+  pendingStepKey,
   allowAllNavigation = false,
   resetCompletionOnBack = false,
   vertical = false,
@@ -32,6 +34,9 @@ function StepperBar({
   stepKey?: string;
   textPlacement?: string;
   onStepClick?: (config: StepConfig) => void;
+  // Step whose navigation is in progress. It shows a spinner and no step can
+  // be clicked until it finishes.
+  pendingStepKey?: string;
   allowAllNavigation?: boolean;
   resetCompletionOnBack?: boolean;
   vertical?: boolean;
@@ -71,8 +76,33 @@ function StepperBar({
     return { backgroundColor: '#e9ecef', color: '#888' };
   };
 
-  const circleContent = (isCompleted: boolean, index: number) =>
-    isCompleted ? (
+  const pendingSpinner = (
+    <div
+      aria-label='Loading'
+      role='status'
+      css={{
+        width: `${PENDING_SPINNER_SIZE}px`,
+        height: `${PENDING_SPINNER_SIZE}px`,
+        borderRadius: '50%',
+        border: '2px solid currentColor',
+        borderTopColor: 'transparent',
+        boxSizing: 'border-box',
+        animation: 'feathery-stepper-spin 0.8s linear infinite',
+        '@keyframes feathery-stepper-spin': {
+          to: { transform: 'rotate(360deg)' }
+        }
+      }}
+    />
+  );
+
+  const circleContent = (
+    isCompleted: boolean,
+    isPending: boolean,
+    index: number
+  ) =>
+    isPending ? (
+      pendingSpinner
+    ) : isCompleted ? (
       <svg
         width='14'
         height='14'
@@ -104,9 +134,11 @@ function StepperBar({
     );
     // With all-step navigation on, any step other than the current one is
     // clickable; otherwise only completed (already-visited) steps are.
+    const isPending = !!sKey && sKey === pendingStepKey;
     const isClickable =
       !!onStepClick &&
       !!sKey &&
+      !pendingStepKey &&
       isStepperStepReachable(isActive, allowAllNavigation, isCompleted);
 
     return (
@@ -130,7 +162,7 @@ function StepperBar({
           isClickable ? () => onStepClick(visibleStepConfigs[index]) : undefined
         }
       >
-        {circleContent(isCompleted && !isActive, index)}
+        {circleContent(isCompleted && !isActive, isPending, index)}
       </div>
     );
   };

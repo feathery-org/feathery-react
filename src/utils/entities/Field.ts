@@ -1,9 +1,15 @@
-import { defaultClient, FeatheryFieldTypes, fieldValues } from '../init';
+import {
+  defaultClient,
+  FeatheryFieldTypes,
+  fieldValues,
+  normalizeKnownAsciiValues
+} from '../init';
 import debounce from 'lodash.debounce';
-import { rerenderAllForms } from '../formHelperFunctions';
+import { realignFilePathMap, rerenderAllForms } from '../formHelperFunctions';
 import {
   FieldStyles,
   getDefaultFormFieldValue,
+  isRepeatedFileField,
   OptionType
 } from '../fieldHelperFunctions';
 import {
@@ -52,9 +58,22 @@ export default class Field {
 
   _runFieldUpdate() {
     debouncedFormRerender();
-    return defaultClient.submitCustom({
-      [this._fieldKey]: fieldValues[this._fieldKey]
-    });
+    const source = internalState[this._formUuid]?.steps
+      ? this._getSourceField()
+      : null;
+    const formClient: any = internalState[this._formUuid]?.client;
+    const client =
+      typeof formClient?.submitCustom === 'function'
+        ? formClient
+        : defaultClient;
+    return client.submitCustom(
+      { [this._fieldKey]: fieldValues[this._fieldKey] },
+      {
+        repeatedFileKeys: isRepeatedFileField(source?.servar)
+          ? [this._fieldKey]
+          : []
+      }
+    );
   }
 
   clear() {
@@ -63,7 +82,11 @@ export default class Field {
       const field = this._getSourceField();
       newVal = getDefaultFormFieldValue(field);
     }
-    fieldValues[this._fieldKey] = newVal;
+    fieldValues[this._fieldKey] = parseUserVal(
+      newVal,
+      this._fieldKey,
+      internalState[this._formUuid]?.client.formKey
+    );
     this._runFieldUpdate();
   }
 
@@ -78,7 +101,17 @@ export default class Field {
     )
       return new Proxy(fieldVal as object, {
         set: (target: any, property: any, value) => {
-          target[property] = parseUserVal(value, this._fieldKey);
+          const parsed = parseUserVal(
+            value,
+            this._fieldKey,
+            internalState[this._formUuid]?.client.formKey
+          );
+          if (Array.isArray(target) && isArrayIndex(property)) {
+            const next = [...target];
+            next[Number(property)] = parsed;
+            realignFilePathMap(this._fieldKey, target, next);
+          }
+          target[property] = parsed;
           this._runFieldUpdate();
           return true;
         }
@@ -88,11 +121,12 @@ export default class Field {
 
   // set raw field value
   set value(val: FeatheryFieldTypes) {
-    if (Array.isArray(val))
-      fieldValues[this._fieldKey] = val.map((entry) =>
-        parseUserVal(entry, this._fieldKey)
-      );
-    else fieldValues[this._fieldKey] = parseUserVal(val, this._fieldKey);
+    const formKey = internalState[this._formUuid]?.client.formKey;
+    const next = Array.isArray(val)
+      ? val.map((entry) => parseUserVal(entry, this._fieldKey, formKey))
+      : parseUserVal(val, this._fieldKey, formKey);
+    realignFilePathMap(this._fieldKey, fieldValues[this._fieldKey], next);
+    fieldValues[this._fieldKey] = next;
     this._runFieldUpdate();
   }
 
@@ -200,7 +234,10 @@ export default class Field {
       (option: string, index: number) => ({
         value: option,
         label: (meta.option_labels ?? [])[index],
-        image: (meta.option_images ?? [])[index]
+        image: (meta.option_images ?? [])[index],
+        ...(field.servar.type === 'button_group' && {
+          icon: meta.option_icons?.[index] ?? null
+        })
       })
     );
     if (!field.servar.repeated) return defaultOptions;
@@ -431,8 +468,22 @@ export default class Field {
   }
 }
 
-export function parseUserVal(userVal: FeatheryFieldTypes, key: string) {
-  let val: FeatheryFieldTypes | File = userVal;
+// Proxy set traps see every property name; only numeric keys are repeat rows.
+function isArrayIndex(property: unknown): boolean {
+  return typeof property === 'string' && /^\d+$/.test(property);
+}
+
+export function parseUserVal(
+  userVal: FeatheryFieldTypes,
+  key: string,
+  formKey?: string
+) {
+  let val: FeatheryFieldTypes | File = normalizeKnownAsciiValues(
+    {
+      [key]: userVal
+    },
+    formKey
+  )[key];
   if (isBase64Image(val)) val = dataURLToFile(val, `${key}.png`);
   // If the value is a file type, convert the file or files (if repeated) to Promises
   return val instanceof File ? Promise.resolve(val) : val;
@@ -443,3 +494,6 @@ export function parseUserVal(userVal: FeatheryFieldTypes, key: string) {
 // debounce is still needed for long running async logic rules that could
 // complete after the event handling is done.
 const debouncedFormRerender = debounce(() => rerenderAllForms(), 100);
+
+// Runs a pending rule-triggered rerender now
+export const flushFormRerender = () => debouncedFormRerender.flush();

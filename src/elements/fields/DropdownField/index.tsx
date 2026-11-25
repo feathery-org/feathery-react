@@ -12,6 +12,8 @@ import { getStateOptions, hasState } from '../../components/data/states';
 import { css, Global } from '@emotion/react';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { fieldValues } from '../../../utils/init';
+import { toAscii } from '../../../utils/ascii';
+import { isTakenByOtherRow } from '../../../utils/repeat';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
 
 export default function DropdownField({
@@ -24,13 +26,16 @@ export default function DropdownField({
   fieldVal = '',
   repeatIndex = null,
   countryCode = '',
+  formSettings,
   editMode,
   rightToLeft,
   onChange = () => {},
   setRef = () => {},
   elementProps = {},
+  errorAttributes = {},
   children
 }: any) {
+  const asciiOnly = formSettings?.asciiOnly ?? false;
   const { borderStyles, customBorder } = useBorder({
     element,
     error: inlineError,
@@ -42,18 +47,22 @@ export default function DropdownField({
   const servar = element.servar;
   const short = servar.metadata.store_abbreviation;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar, editMode);
+    useSalesforceSync(servar, editMode, asciiOnly, formSettings?.formKey);
 
   useEffect(() => {
     if (servar.type === 'gmap_state') {
       const code = countryCode.toLowerCase() || servar.metadata.default_country;
-      if (code && fieldVal && !hasState(code, fieldVal, short, true)) {
+      if (
+        code &&
+        fieldVal &&
+        !hasState(code, fieldVal, short, true, asciiOnly)
+      ) {
         fieldVal = '';
         onChange({ target: { value: fieldVal } });
       }
       setCurCountry(code || 'us');
     }
-  }, [countryCode, setCurCountry]);
+  }, [countryCode, setCurCountry, asciiOnly]);
 
   let options;
   if (shouldSalesforceSync) {
@@ -64,7 +73,10 @@ export default function DropdownField({
     ));
   } else if (servar.type === 'gmap_state') {
     if (curCountry === null) options = [];
-    else if (fieldVal && !hasState(curCountry, fieldVal, short)) {
+    else if (
+      fieldVal &&
+      !hasState(curCountry, fieldVal, short, false, asciiOnly)
+    ) {
       // If user selected a country without states defined
       options = [
         <option key={fieldVal} value={fieldVal}>
@@ -75,7 +87,8 @@ export default function DropdownField({
       options = getStateOptions(
         curCountry,
         short,
-        servar.metadata.include_territories
+        servar.metadata.include_territories,
+        asciiOnly
       );
   } else if (servar.type === 'gmap_country') {
     const translation = element.properties.translate || {};
@@ -85,7 +98,7 @@ export default function DropdownField({
         : countryName;
       const label = translation[countryCode] || countryName;
       return (
-        <option key={countryCode} value={val}>
+        <option key={countryCode} value={asciiOnly ? toAscii(val) : val}>
           {label}
         </option>
       );
@@ -110,12 +123,8 @@ export default function DropdownField({
       options = servar.metadata.options.map((option: any, index: number) => {
         const label = labels && labels[index] ? labels[index] : option;
         const tooltip = tooltips?.[index] ?? '';
-        const allVals = (fieldValues[servar.key] ?? []) as string[];
         if (
-          servar.repeated &&
-          servar.metadata.unique_repeat_options &&
-          option !== fieldVal &&
-          allVals.includes(option)
+          isTakenByOtherRow(servar, option, fieldValues[servar.key], fieldVal)
         )
           return null;
         return (
@@ -211,6 +220,7 @@ export default function DropdownField({
           required={required}
           disabled={disabled || loadingDynamicOptions}
           aria-label={element.properties.aria_label}
+          {...errorAttributes}
           onChange={onChange}
           onFocus={(event) => {
             setFocused(true);
@@ -229,12 +239,15 @@ export default function DropdownField({
             insetInlineStart: '0.75rem',
             transition: '0.2s ease all',
             top: '50%',
-            ...responsiveStyles.getTarget('placeholder'),
-            ...(fieldVal ? responsiveStyles.getTarget('placeholderFocus') : {}),
-            [`input:focus + &`]: {
-              ...responsiveStyles.getTarget('placeholderFocus'),
-              ...responsiveStyles.getTarget('placeholderActive')
-            }
+            // getTargets merges @media blocks; a spread would drop the resting one.
+            ...responsiveStyles.getTargets(
+              'placeholder',
+              fieldVal ? 'placeholderFocus' : ''
+            ),
+            [`input:focus + &`]: responsiveStyles.getTargets(
+              'placeholderFocus',
+              'placeholderActive'
+            )
           }}
         >
           {element.properties.placeholder || ''}

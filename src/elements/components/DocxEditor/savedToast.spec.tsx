@@ -6,12 +6,17 @@ import {
   screen,
   waitFor
 } from '@testing-library/react';
-import DocxEditor from './index';
+import DocxEditor, { restoredSuggestionsMessage } from './index';
 
 // Drive the real DocxEditor (toolbar + save flow) against a stubbed engine so
 // the Save-confirmation toast can be exercised without SyncFusion. The `mock`
 // prefix lets jest.mock's hoisted factory reference it.
 const mockExportDoc = jest.fn(async () => new Blob(['docx'], { type: 'docx' }));
+// The bindings layer's locked-edit callbacks, as DocxEditor hands them over.
+const mockBindings: {
+  onLockedEdit?: () => void;
+  onLockedEditResolved?: () => void;
+} = {};
 
 // Stub the toolbar to a bare Save button wired to onSave — the toast under
 // test lives in index.tsx, not in the toolbar's editor-formatting internals.
@@ -26,14 +31,18 @@ jest.mock('./DocxToolbar', () => ({
 }));
 
 jest.mock('./useDocxEditor', () => ({
-  useDocxEditor: () => ({
-    containerRef: { current: null },
-    editor: { stub: true },
-    loading: false,
-    error: null,
-    exportDoc: mockExportDoc,
-    bindings: { ready: false, commitForSave: () => true, diagnostics: [] }
-  })
+  useDocxEditor: ({ bindings }: any) => {
+    mockBindings.onLockedEdit = bindings?.onLockedEdit;
+    mockBindings.onLockedEditResolved = bindings?.onLockedEditResolved;
+    return {
+      containerRef: { current: null },
+      editor: { stub: true },
+      loading: false,
+      error: null,
+      exportDoc: mockExportDoc,
+      bindings: { ready: false, commitForSave: () => true, diagnostics: [] }
+    };
+  }
 }));
 
 describe('DocxEditor save confirmation toast', () => {
@@ -64,6 +73,31 @@ describe('DocxEditor save confirmation toast', () => {
     );
   });
 
+  // A restore can bring back unreviewed tracked changes; handleChangesCount
+  // toasts them with this message.
+  describe('restoredSuggestionsMessage', () => {
+    const now = 1_000_000;
+
+    it('announces the count reported right after a restore', () => {
+      expect(restoredSuggestionsMessage(18, now - 3000, now)).toBe(
+        '18 pending Robin edits restored'
+      );
+      // Singular form.
+      expect(restoredSuggestionsMessage(1, now - 3000, now)).toBe(
+        '1 pending Robin edit restored'
+      );
+    });
+
+    it('stays quiet with no restore, no suggestions, or a stale window', () => {
+      // No restore recorded.
+      expect(restoredSuggestionsMessage(5, 0, now)).toBeNull();
+      // Restored version had no pending suggestions.
+      expect(restoredSuggestionsMessage(0, now - 3000, now)).toBeNull();
+      // A count arriving well after the restore is a new edit, not the restore.
+      expect(restoredSuggestionsMessage(5, now - 60_000, now)).toBeNull();
+    });
+  });
+
   it('shows an error toast (not the success one) when the save fails', async () => {
     const onSave = jest.fn(async () => {
       throw new Error('network down');
@@ -78,5 +112,40 @@ describe('DocxEditor save confirmation toast', () => {
       await screen.findByText('Could not save document')
     ).toBeInTheDocument();
     expect(screen.queryByText('Document saved')).not.toBeInTheDocument();
+  });
+});
+
+describe('DocxEditor locked-content notice', () => {
+  const NOTICE = "This content is locked and can't be edited here.";
+  const fire = (name: keyof typeof mockBindings) => {
+    const callback = mockBindings[name];
+    if (!callback) throw new Error(`DocxEditor did not pass ${name}`);
+    callback();
+  };
+
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => {
+    act(() => jest.runOnlyPendingTimers());
+    jest.useRealTimers();
+  });
+
+  it('hides when the caret leaves, even if the show lands in the same batch', () => {
+    render(<DocxEditor bindings={{ enabled: true }} />);
+
+    // Caret on the locked Total cell.
+    act(() => fire('onLockedEdit'));
+    expect(screen.getByText(NOTICE)).toBeInTheDocument();
+
+    // Focus leaves the editor.
+    act(() => fire('onLockedEditResolved'));
+    expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
+
+    // Clicking back in on another cell: a stale show for the Total, then the
+    // resolve, in one batch. The notice must not survive it.
+    act(() => {
+      fire('onLockedEdit');
+      fire('onLockedEditResolved');
+    });
+    expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
   });
 });

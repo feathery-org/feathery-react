@@ -61,7 +61,7 @@ const TYPE_KEY_GUARD: Record<string, RegExp> = {
  * whether it moved. Safe to call on every keystroke: it does nothing unless the
  * caret is collapsed and sitting exactly one offset outside a binding.
  */
-export function snapCaretIntoControl(editor: SyncfusionEditorLike): boolean {
+function snapCaretIntoControl(editor: SyncfusionEditorLike): boolean {
   try {
     const target = snapOffsetForCaret(editor);
     if (!target || !editor.selection?.select) return false;

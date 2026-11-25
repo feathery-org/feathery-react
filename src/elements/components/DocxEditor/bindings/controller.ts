@@ -96,6 +96,7 @@ export type ControllerEventName =
   | 'restore'
   | 'saved'
   | 'save-conflict'
+  | 'reopen'
   | 'error';
 
 export interface ControllerEvent {
@@ -108,7 +109,7 @@ export interface ControllerEvent {
 
 export type TimerId = unknown;
 
-export interface ControllerOptions {
+interface ControllerOptions {
   editor: EditorPort;
   persistence?: DocumentPersistence | null;
   /**
@@ -122,13 +123,9 @@ export interface ControllerOptions {
   clearTimeoutFn?: (id: TimerId) => void;
 }
 
-export type ControllerPhase =
-  | 'idle'
-  | 'serializing'
-  | 'reconciling'
-  | 'loading';
+type ControllerPhase = 'idle' | 'serializing' | 'reconciling' | 'loading';
 
-export type ControllerSaveResult =
+type ControllerSaveResult =
   | SaveResult
   | { ok: false; reason: 'blocked-by-diagnostics' | 'no-persistence' };
 
@@ -241,6 +238,37 @@ export class ReconciliationController {
    */
   noteInsertedRows(hint: InsertedRowsHint | null): void {
     this.insertedRowsHint = hint;
+  }
+
+  /**
+   * The editor's document was replaced from outside (the document engine's splice opens a
+   * composed document): adopt it as the baseline, computing values and the index from it, without
+   * writing to the editor and without marking the document dirty. What used to take a dispose and
+   * a re-attach of the bindings.
+   */
+  notifyReopened(): void {
+    this.clearTimeoutFn(this.debounceTimer);
+    this.pendingFlush = false;
+    let parsed: SfdtDocument;
+    try {
+      parsed = JSON.parse(this.editor.serialize());
+    } catch (thrown) {
+      this.failPhase('serialize-failed', thrown);
+      return;
+    }
+    const result = applyRules(parsed, {
+      prevValues: this.values,
+      mode: 'self-heal',
+      rowTemplates: this.rowTemplates,
+      adoptRows: false
+    });
+    this.workingSfdt = parsed;
+    this.values = result.values;
+    this.index = result.index;
+    this.rowTemplates = result.rowTemplates;
+    this.diagnostics = result.diagnostics;
+    this.phase = 'idle';
+    this.onChange({ controller: this, event: 'reopen', changed: [] });
   }
 
   /** Wire this to the editor's contentChange event. */

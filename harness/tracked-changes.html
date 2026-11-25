@@ -65,8 +65,7 @@
       })
     );
 
-    // Same tag shape applyDocumentEdits stamps via revisionSettings.customData
-    // (see revisionGroupTag in syncfusionDocumentOps.ts).
+    // Same tag shape revisionGroupTag stamps via revisionSettings.customData
     const tag = (group) =>
       JSON.stringify({ v: 1, source: 'robin', changeSetId: 'demo-change-set', group });
 

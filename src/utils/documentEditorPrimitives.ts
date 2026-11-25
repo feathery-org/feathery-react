@@ -313,16 +313,6 @@ const liveRevisionsRaw = (editor: LiveEditor): LiveRevision[] => {
   return snapshotRevisions(editor);
 };
 
-export function createdRevisions(
-  editor: LiveEditor,
-  before: LiveRevision[]
-): LiveRevision[] {
-  const existing = new Set(before);
-  return snapshotRevisions(editor).filter(
-    (revision) => !existing.has(revision)
-  );
-}
-
 const REVISION_GROUP_TAG_VERSION = 1;
 const PERSISTED_BORDER_TYPES = new Set([
   'AllBorders',
@@ -343,6 +333,9 @@ interface PersistedBookmarkClamp {
 interface RevisionGroupTag {
   changeSetId: string;
   group: string;
+  /** The card title the document engine composed, and the write's intent. */
+  title?: string;
+  intent?: string;
   appearanceRestores?: AppearanceRestore[];
   paragraphStyles?: ParagraphStyleRestore[];
   bookmarkClamps?: PersistedBookmarkClamp[];
@@ -754,6 +747,12 @@ export function parseRevisionGroupTag(
       return {
         changeSetId: parsed.changeSetId,
         group: parsed.group,
+        ...(typeof parsed.title === 'string' && parsed.title
+          ? { title: parsed.title }
+          : {}),
+        ...(typeof parsed.intent === 'string' && parsed.intent
+          ? { intent: parsed.intent }
+          : {}),
         ...(appearanceRestores ? { appearanceRestores } : {}),
         ...(paragraphStyles ? { paragraphStyles } : {}),
         ...(bookmarkClamps ? { bookmarkClamps } : {}),
@@ -768,10 +767,9 @@ export function parseRevisionGroupTag(
 }
 
 /**
- * User typing is never tracked. Assist turns SyncFusion's global
- * `enableTrackChanges` on only inside a synchronous `applyDocumentEdits`
- * batch; this is the steady state the host starts from and the batch must
- * leave behind. Pass the wrapping DocumentEditorContainer when you have it:
+ * User typing is never tracked. Robin turns SyncFusion's global
+ * `enableTrackChanges` on only inside its authored-revision batch, this is the
+ * steady state the host starts from and the batch must leave behind. Pass the wrapping DocumentEditorContainer when you have it:
  * its flag can drift from the inner editor on `documentChange` and would
  * otherwise push tracking back on.
  */
@@ -784,26 +782,6 @@ export function disableUserTrackChanges(
 ): void {
   editor.enableTrackChanges = false;
   if (container && container !== editor) container.enableTrackChanges = false;
-}
-
-const wrappingDocumentEditorContainers = new WeakMap<
-  object,
-  { enableTrackChanges?: boolean }
->();
-
-/** Remember the outer SyncFusion container that owns one live editor. */
-export function registerWrappingDocumentEditorContainer(
-  editor: object,
-  container: { enableTrackChanges?: boolean }
-): void {
-  wrappingDocumentEditorContainers.set(editor, container);
-}
-
-/** The outer container whose track-changes flag mirrors this editor's flag. */
-export function wrappingDocumentEditorContainer(
-  editor: object
-): { enableTrackChanges?: boolean } | undefined {
-  return wrappingDocumentEditorContainers.get(editor);
 }
 
 const REVISION_ISOLATION_INSTALLED = '__robinRevisionGroupIsolation';
@@ -873,43 +851,103 @@ export function installRevisionGroupIsolation(editor: LiveEditor): void {
     module.compareTwoRevisions = (left: any, right: any): boolean =>
       originalCompare(left, right) &&
       revisionTagKey(left?.customData) === revisionTagKey(right?.customData);
+
+    // Vendored override, 34.1.31: clearAndUpdateRevisions gives a split-off revision its source's tag, or the moved runs keep a revision that later disappears
+    if (typeof module.clearAndUpdateRevisions === 'function') {
+      const originalClear = module.clearAndUpdateRevisions.bind(module);
+      module.clearAndUpdateRevisions = (
+        range: any[],
+        revision: any,
+        index: number
+      ): any => {
+        const source = range
+          .flatMap((element) => element?.getAllRevision?.() ?? [])
+          .find(
+            (candidate: any) =>
+              candidate !== revision && originalCompare(candidate, revision)
+          );
+        if (source) revision.customData = source.customData;
+        return originalClear(range, revision, index);
+      };
+    }
   }
-  // The complementary invariant: a split must not fall OUT of its group. When
-  // untracked user typing lands inside a pending revision, SyncFusion splits
-  // it — but stock insertRevision stamps the new (split-off) revision with the
-  // CURRENT global revisionSettings.customData, which outside an assistant
-  // batch is the host's (usually none). The split half then surfaced in the
-  // rail as a brand-new untagged author card, reading as "the user's edit
-  // became a tracked change". Copy the source revision's tag onto any split
-  // product that lacks one; revisions that were never tagged stay untouched.
-  if (typeof module.updateRevisionForSpittedTextElement === 'function') {
-    const originalSplit =
-      module.updateRevisionForSpittedTextElement.bind(module);
-    module.updateRevisionForSpittedTextElement = (
-      inline: any,
-      splittedSpan: any,
-      currentItem: any
-    ): any => {
-      let sourceTag: unknown;
-      for (let index = 0; index < (inline?.revisionLength ?? 0); index++) {
-        const revision = inline.getRevision?.(index);
-        if (revision?.customData != null) {
-          sourceTag = revision.customData;
-          break;
-        }
-      }
-      const result = originalSplit(inline, splittedSpan, currentItem);
-      if (sourceTag != null) {
-        for (const half of [inline, splittedSpan]) {
-          const revisions: any[] = half?.getAllRevision?.() ?? [];
-          for (const revision of revisions)
-            if (revision && revision.customData == null)
-              revision.customData = sourceTag;
-        }
-      }
-      return result;
-    };
+}
+
+const EXPORT_CONTENT_CONTROL_RECOVERY_INSTALLED =
+  '__featheryExportContentControlRecovery';
+
+// Vendored override, 34.1.31: the exporter never clears open inline content
+// controls, so one unmatched start empties every later save
+export function installExportContentControlRecovery(editor: LiveEditor): void {
+  const module: any = (editor as any).sfdtExportModule;
+  if (!module) return;
+  if (
+    typeof module.write !== 'function' ||
+    typeof module.writeParagraph !== 'function' ||
+    typeof module.AddInlineToBlock !== 'function' ||
+    typeof module.contentControlProperty !== 'function' ||
+    !Array.isArray(module.inlineContentControls)
+  ) {
+    console.warn('Skipped docx export content control recovery');
+    return;
   }
+  if (module[EXPORT_CONTENT_CONTROL_RECOVERY_INSTALLED]) return;
+  module[EXPORT_CONTENT_CONTROL_RECOVERY_INSTALLED] = true;
+  const write = module.write.bind(module);
+  module.write = (...args: any[]): any => {
+    module.inlineContentControls = [];
+    return write(...args);
+  };
+  const writeParagraph = module.writeParagraph.bind(module);
+  module.writeParagraph = (
+    widget: any,
+    paragraph: any,
+    ...rest: any[]
+  ): any => {
+    const depth = module.inlineContentControls.length;
+    const next = writeParagraph(widget, paragraph, ...rest);
+    // Close what this paragraph opened, as the SDK does for a selection export
+    while (module.inlineContentControls.length > depth) {
+      const optimized = module.keywordIndex === 1;
+      const inlines = paragraph[optimized ? 'i' : 'inlines'];
+      const open = module.inlineContentControls.pop();
+      // Keep a table's own wrapper off its cells
+      if (
+        open.props ===
+        widget?.containerWidget?.ownerTable?.contentControlProperties
+      ) {
+        for (const inline of open.inlines)
+          module.AddInlineToBlock(inlines, inline);
+        continue;
+      }
+      module.AddInlineToBlock(inlines, {
+        [optimized ? 'i' : 'inlines']: open.inlines,
+        [optimized ? 'ccp' : 'contentControlProperties']:
+          module.contentControlProperty(open.props)
+      });
+    }
+    return next;
+  };
+}
+
+const PASTE_ICON_RESET_INSTALLED = '__robinPasteIconReset';
+
+// Vendored override, 34.1.31: open keeps lastElementForPasteIcon, and the next contents rebuild reads its destroyed line
+export function installPasteIconReset(editor: LiveEditor): void {
+  const ed: any = editor;
+  if (ed[PASTE_ICON_RESET_INSTALLED]) return;
+  ed[PASTE_ICON_RESET_INSTALLED] = true;
+  const forget = () => {
+    if (ed.editorModule) ed.editorModule.lastElementForPasteIcon = undefined;
+  };
+  for (const method of ['open', 'openAsync'])
+    if (typeof ed[method] === 'function') {
+      const original = ed[method].bind(ed);
+      ed[method] = (...args: any[]): any => {
+        forget();
+        return original(...args);
+      };
+    }
 }
 
 const CONTENT_CONTROL_DELETION_INSTALLED =
@@ -1244,7 +1282,7 @@ export const invalidateDocumentLayout = (editor: LiveEditor): void => {
  * A widget the document no longer holds restores nothing - the cell went away
  * with the change the restore was part of, so there is nothing to put back.
  */
-export interface AppearanceTarget {
+interface AppearanceTarget {
   restore: AppearanceRestore;
   /** The first paragraph of the cell the restore names, captured live. */
   paragraph?: unknown;
@@ -2155,6 +2193,17 @@ export function resolveLiveRevisionGroupsAsOneUndo(
   );
 }
 
+// Untagged revisions (including DOCX round trips that drop customData) are
+// grouped by their visible author. Resolution must use that same identity:
+// Robin's invisible change-set suffix is not part of the review card's name.
+function untaggedRevisionAuthor(author: unknown): string {
+  return (
+    String(author ?? '')
+      .replace(/[\u2060\u2061]/g, '')
+      .trim() || 'Unknown author'
+  );
+}
+
 function resolveLiveRevisionGroupsAsOneUndoInner(
   editor: LiveEditor,
   groups: RevisionGroupIdentity[],
@@ -2174,7 +2223,7 @@ function resolveLiveRevisionGroupsAsOneUndoInner(
     const tag = revisionTagIdentity(revision.customData);
     return tag
       ? tagged.has(`${tag.changeSetId}\u0000${tag.group}`)
-      : authors.has(String(revision.author ?? '').trim() || 'Unknown author');
+      : authors.has(untaggedRevisionAuthor(revision.author));
   };
   const initial = liveRevisionsRaw(editor).filter(matchesGroup);
   const stylePayloadsByGroup = new Map<
@@ -2343,6 +2392,8 @@ const revisionParagraph = (revision: LiveRevision): unknown => {
 interface RevisionGroupView {
   changeSetId: string;
   group: string;
+  title?: string;
+  intent?: string;
   untagged?: boolean;
   derivedChanges?: DerivedValueChange[];
   items: RevisionGroupItem[];
@@ -2439,10 +2490,7 @@ export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
   for (const revision of snapshotRevisions(editor)) {
     const tag = parseRevisionGroupTag(revision.customData);
     // The invisible per-change-set identity suffix is not for readers.
-    const author =
-      String(revision.author ?? '')
-        .replace(/[\u2060\u2061]/g, '')
-        .trim() || 'Unknown author';
+    const author = untaggedRevisionAuthor(revision.author);
     const key = tag ? `${tag.changeSetId} ${tag.group}` : `author ${author}`;
     let view = views.get(key);
     if (!view) {
@@ -2450,6 +2498,8 @@ export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
         ? {
             changeSetId: tag.changeSetId,
             group: tag.group,
+            ...(tag.title ? { title: tag.title } : {}),
+            ...(tag.intent ? { intent: tag.intent } : {}),
             items: []
           }
         : { changeSetId: '', group: author, untagged: true, items: [] };
@@ -2605,6 +2655,9 @@ export function writeTableLayout(
     layout.allowAutoFit ? 'FitToContents' : 'FixedColumnWidth'
   );
   const columnWidths = layout.columnWidths ?? [];
+  if (columnWidths.length && editor.selection?.cellFormat)
+    editor.selection.cellFormat.preferredWidthType =
+      layout.columnWidthType ?? 'Auto';
   const table = liveTableWidgetAt(editor, tableAnchor);
   (table?.childWidgets ?? []).forEach((row: any, rowIndex: number) => {
     let logicalColumn = Math.max(0, Number(row?.rowFormat?.gridBefore) || 0);
@@ -2659,7 +2712,7 @@ export const clearCellShading = (
  * Called before the first member of a group resolves, which is the last moment
  * at which that is true.
  */
-export const resolveAppearanceTargets = (
+const resolveAppearanceTargets = (
   editor: LiveEditor,
   restores: AppearanceRestore[]
 ): AppearanceTarget[] =>
@@ -2769,7 +2822,7 @@ const replayAppearanceRestores = (
  * overwrites a style someone set deliberately. A collapsed caret is enough:
  * SyncFusion applies a paragraph style to the paragraph containing the selection.
  */
-export const replayParagraphStyles = (
+const replayParagraphStyles = (
   editor: LiveEditor,
   restores: ParagraphStyleRestore[]
 ) => {

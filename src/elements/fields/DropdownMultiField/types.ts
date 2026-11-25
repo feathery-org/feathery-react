@@ -45,6 +45,7 @@ export type BuildDropdownOptionsParams = {
 };
 
 export type DropdownSelectExtraProps = {
+  errorAttributes?: React.AriaAttributes;
   collapsedCount: number;
   containerRef: React.RefObject<HTMLElement | null>;
   collapseSelected: boolean;

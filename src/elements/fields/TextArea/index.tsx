@@ -11,6 +11,7 @@ function TextArea({
   responsiveStyles,
   fieldLabel,
   elementProps = {},
+  errorAttributes = {},
   required = false,
   disabled = false,
   editMode,
@@ -90,6 +91,7 @@ function TextArea({
               : { color: 'transparent !important' })
           }}
           aria-label={element.properties.aria_label}
+          {...errorAttributes}
           maxLength={servar.max_length || 4096}
           minLength={servar.min_length}
           required={required}

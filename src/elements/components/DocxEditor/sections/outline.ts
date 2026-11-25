@@ -35,7 +35,7 @@ export interface SectionNode {
   movable: boolean;
 }
 
-export interface ReadSectionsResult {
+interface ReadSectionsResult {
   nodes: SectionNode[];
   diagnostics: Diagnostic[];
 }

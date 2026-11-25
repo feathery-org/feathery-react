@@ -66,12 +66,14 @@ export interface ContextOnAction extends FormContext {
 }
 
 // Toolbar buttons on the Generate Documents review screen. `draft` is
-// DocuSign's Create Draft (a sign that is saved, not sent); `fill` is the lone
-// Continue an unconfigured toolbar shows.
+// DocuSign's Create Draft (a sign that is saved, not sent); `print` is a
+// download sent to the print dialog; `fill` is the lone Continue an
+// unconfigured toolbar shows.
 export type DocumentReviewAction =
   | 'sign'
   | 'draft'
   | 'download'
+  | 'print'
   | 'save'
   | 'fill';
 
@@ -87,7 +89,8 @@ export type DocumentReviewTrigger = {
   // The action's document sources: template ids, or source objects such as
   // the Quik item.
   documentIds: (string | Record<string, any>)[];
-  // Generated file URLs when the action produced files (download / save).
+  // Generated file URLs when the action produced files (download / print /
+  // save).
   files?: string[];
   // DocuSign envelope id when the action sent (or drafted) through DocuSign.
   docusignEnvelopeId?: string;
@@ -123,6 +126,13 @@ export interface Subgrid extends PositionedElement {
   repeated: boolean;
 }
 
+export interface ToolRuleParameter {
+  name: string;
+  type: 'string' | 'number' | 'boolean' | 'file';
+  description?: string;
+  required?: boolean;
+}
+
 interface LogicRuleBase {
   id: string;
   name: string;
@@ -131,6 +141,10 @@ interface LogicRuleBase {
   elements: string[];
   enabled: boolean;
   valid: boolean;
+  metadata?: {
+    tool?: { parameters?: ToolRuleParameter[] };
+    after_click?: boolean;
+  };
 }
 // the server_side code is not exposed to the form
 export type ServerSideLogicRule = LogicRuleBase & {

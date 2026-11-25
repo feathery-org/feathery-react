@@ -129,10 +129,11 @@ describe('Data Hub batched writes', () => {
   // `client` and `element` must keep their identity across re-renders: the
   // hook's loader is memoized on them, and a fresh object each render would
   // re-fetch forever. TableElement passes stable props for the same reason.
-  const setup = (dataHubAction: jest.Mock) => {
-    const client = { dataHubAction } as any;
-    return renderHook(() =>
-      useHubTableSource({ element, client, enabled: true })
+  const setup = (dataHubAction: jest.Mock, getHubSchemas?: jest.Mock) => {
+    const client = { dataHubAction, getHubSchemas } as any;
+    return renderHook(
+      ({ element }) => useHubTableSource({ element, client, enabled: true }),
+      { initialProps: { element } }
     );
   };
 
@@ -362,15 +363,55 @@ describe('Data Hub batched writes', () => {
   });
 
   test('the first edit of an added row creates it once for the whole batch', async () => {
-    const dataHubAction = jest.fn(({ operation }) => {
-      if (operation === 'get') return Promise.resolve(twoEntries);
+    // A required relation column rides along: its links are read through
+    // `fields`, shown as labels, and never written or flagged by the grid.
+    // A hidden target hub sends a null label, shown as the linked entry's id.
+    const relations = {
+      house: {
+        items: [
+          { id: 'h1', label: 'Smith' },
+          { id: 'h2', label: null }
+        ],
+        count: 3
+      }
+    };
+    const dataHubAction = jest.fn(({ operation, fields }) => {
+      if (operation === 'get') {
+        return Promise.resolve(
+          twoEntries.map((entry) => (fields ? { ...entry, relations } : entry))
+        );
+      }
       if (operation === 'create') {
         return Promise.resolve({ id: 'entry3', data: {} });
       }
       return Promise.resolve({ updated: 1 });
     });
-    const { result } = setup(dataHubAction);
-    await waitFor(() => expect(result.current.entryIds).toHaveLength(2));
+    const getHubSchemas = jest.fn(() =>
+      Promise.resolve({
+        hubs: [
+          {
+            id: 'hub1',
+            fields: [
+              { id: 'hf1', key: 'name', type: 'text' },
+              { id: 'hf2', key: 'email', type: 'email' },
+              { id: 'hf3', key: 'house', type: 'relation', required: true }
+            ]
+          }
+        ]
+      })
+    );
+    const { result, rerender } = setup(dataHubAction, getHubSchemas);
+    await waitFor(() =>
+      expect(result.current.hubFieldValues[key('house')]).toEqual([
+        'Smith, h2, +1 more',
+        'Smith, h2, +1 more'
+      ])
+    );
+    expect(dataHubAction).toHaveBeenLastCalledWith(
+      expect.objectContaining({ fields: ['name', 'email', 'house'] })
+    );
+    expect(result.current.readOnlyKeys.has(key('house'))).toBe(true);
+    expect(result.current.cellRules[key('house')]).toBeUndefined();
     act(() => result.current.handleAddRow());
     dataHubAction.mockClear();
 
@@ -378,7 +419,8 @@ describe('Data Hub batched writes', () => {
     act(() =>
       result.current.handleCellsEdit([
         { fieldKey: key('name'), rowIndex: 0, value: 'Cara' },
-        { fieldKey: key('email'), rowIndex: 0, value: 'cara@test.com' }
+        { fieldKey: key('email'), rowIndex: 0, value: 'cara@test.com' },
+        { fieldKey: key('house'), rowIndex: 0, value: 'Smith' }
       ])
     );
 
@@ -388,6 +430,34 @@ describe('Data Hub batched writes', () => {
       operation: 'create',
       data: { name: 'Cara', email: 'cara@test.com' }
     });
+    await waitFor(() => expect(result.current.entryIds[0]).toBe('entry3'));
+
+    // With the schema unconfirmed, the cached field names may be stale, so the
+    // rows are read again without them rather than filtered to old keys.
+    getHubSchemas.mockImplementation(() => Promise.reject(new Error('down')));
+    dataHubAction.mockClear();
+    act(() => result.current.refetch());
+    await waitFor(() =>
+      expect(dataHubAction).toHaveBeenLastCalledWith({
+        hubId: 'hub1',
+        operation: 'get',
+        verification: 'verified'
+      })
+    );
+
+    // Another hub never reads with the previous hub's field names.
+    dataHubAction.mockClear();
+    rerender({
+      element: {
+        ...element,
+        properties: { ...element.properties, hub_id: 'hub2' }
+      }
+    });
+    await waitFor(() => expect(dataHubAction).toHaveBeenCalled());
+    expect(dataHubAction.mock.calls).toEqual([
+      [{ hubId: 'hub2', operation: 'get', verification: 'verified' }]
+    ]);
+    expect(result.current.readOnlyKeys.has(key('house'))).toBe(false);
   });
 });
 
@@ -412,7 +482,9 @@ describe('useSpreadsheetHistory', () => {
 
     act(() => view.result.current.execute('Edit', [patch(0, 'Alice', 'X')]));
 
-    expect(applied).toEqual([[{ fieldKey: 'name_key', rowIndex: 0, value: 'X' }]]);
+    expect(applied).toEqual([
+      [{ fieldKey: 'name_key', rowIndex: 0, value: 'X' }]
+    ]);
     expect(view.result.current.canUndo).toBe(true);
     expect(view.result.current.canRedo).toBe(false);
   });
@@ -516,7 +588,7 @@ describe('Data Hub verification filter', () => {
 
   test('defaults to verified, matching the Hub API default', async () => {
     const dataHubAction = jest.fn(() => Promise.resolve([]));
-    const { result } = setup(dataHubAction);
+    setup(dataHubAction);
     await waitFor(() => expect(dataHubAction).toHaveBeenCalled());
 
     expect(dataHubAction).toHaveBeenCalledWith({
@@ -547,7 +619,12 @@ describe('Data Hub verification filter', () => {
       const dataHubAction = jest.fn(({ operation }) =>
         operation === 'get'
           ? Promise.resolve(mixedEntries)
-          : Promise.resolve({ id: 'entry3', data: { name: 'Cara' }, verified: false, error: 'Field `name` is required' })
+          : Promise.resolve({
+              id: 'entry3',
+              data: { name: 'Cara' },
+              verified: false,
+              error: 'Field `name` is required'
+            })
       );
       const { result } = setup(dataHubAction, verification);
       await waitFor(() => expect(result.current.entryIds).toHaveLength(2));
@@ -571,7 +648,9 @@ describe('Data Hub verification filter', () => {
       });
       await waitFor(() => expect(result.current.entryIds[2]).toBe('entry3'));
       // The Hub stored it but reported the rule it breaks, as a warning.
-      expect(result.current.cellErrors[`2:${key('name')}`]).toBe('Field `name` is required');
+      expect(result.current.cellErrors[`2:${key('name')}`]).toBe(
+        'Field `name` is required'
+      );
     }
   );
 
@@ -668,12 +747,12 @@ describe('Data Hub verification filter', () => {
 
     await waitFor(() => expect(dataHubAction).toHaveBeenCalledTimes(2));
     const calls = dataHubAction.mock.calls.map(([options]: any[]) => options);
-    expect(calls.find((c) => c.where[0].entryId === 'entry1').verification).toBe(
-      undefined
-    );
-    expect(calls.find((c) => c.where[0].entryId === 'entry2').verification).toBe(
-      'unverified'
-    );
+    expect(
+      calls.find((c) => c.where[0].entryId === 'entry1').verification
+    ).toBe(undefined);
+    expect(
+      calls.find((c) => c.where[0].entryId === 'entry2').verification
+    ).toBe('unverified');
   });
 
   test('deleting an unverified row targets that set too', async () => {
@@ -697,13 +776,16 @@ describe('Data Hub verification filter', () => {
   });
 });
 
-
 describe('usePendingEdits', () => {
   test('holds one entry per cell, not per keystroke', () => {
     const { result } = renderHook(() => usePendingEdits());
 
-    act(() => result.current.record([{ fieldKey: 'a', rowIndex: 0, value: '1' }]));
-    act(() => result.current.record([{ fieldKey: 'a', rowIndex: 0, value: '2' }]));
+    act(() =>
+      result.current.record([{ fieldKey: 'a', rowIndex: 0, value: '1' }])
+    );
+    act(() =>
+      result.current.record([{ fieldKey: 'a', rowIndex: 0, value: '2' }])
+    );
 
     expect(result.current.count).toBe(1);
     expect(result.current.writes).toEqual([
@@ -773,7 +855,9 @@ describe('usePendingEdits', () => {
 
   test('discard empties the buffer', () => {
     const { result } = renderHook(() => usePendingEdits());
-    act(() => result.current.record([{ fieldKey: 'a', rowIndex: 0, value: '1' }]));
+    act(() =>
+      result.current.record([{ fieldKey: 'a', rowIndex: 0, value: '1' }])
+    );
     act(() => result.current.discard());
     expect(result.current.count).toBe(0);
   });

@@ -1,5 +1,6 @@
 import { ACTION_NEXT, ACTION_URL } from './elementActions';
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
+import { STEP_EVENT_SUBMIT } from './stepEvents';
 
 export function changeStep(
   newKey: string,
@@ -16,7 +17,7 @@ export function changeStep(
       client.registerEvent({
         step_key: oldKey,
         next_step_key: newKey,
-        event: 'complete'
+        event: STEP_EVENT_SUBMIT
       });
       if (trackHashes)
         navigate(location.pathname + location.search + `#${newKey}`, {
@@ -107,8 +108,10 @@ export function getInitialStep({
   collaboratorStartStep?: string;
   formId?: string;
 }) {
-  // Only use a configured collaborator start step if the step still exists;
-  // sessionCurrentStep (the saved/resume step) wins over it.
+  // Only resume on a saved/configured step if it still exists in the form; a
+  // step removed by a form promotion must fall back, not route nowhere.
+  const validSessionStep =
+    sessionCurrentStep && steps[sessionCurrentStep] ? sessionCurrentStep : '';
   const validStartStep =
     collaboratorStartStep && steps[collaboratorStartStep]
       ? collaboratorStartStep
@@ -116,7 +119,7 @@ export function getInitialStep({
   return (
     (formId && getSavedStepKey(formId)) || // saved step from remounting
     initialStepId ||
-    sessionCurrentStep ||
+    validSessionStep ||
     validStartStep ||
     (getOrigin as any)(steps).key
   );
@@ -125,7 +128,7 @@ export function getInitialStep({
 // Store current step keys for each form during remount
 const savedStepKeys: Record<string, string> = {};
 
-export function getSavedStepKey(formId: string): string | undefined {
+function getSavedStepKey(formId: string): string | undefined {
   const savedKey = savedStepKeys[formId];
   if (savedKey) {
     delete savedStepKeys[formId];

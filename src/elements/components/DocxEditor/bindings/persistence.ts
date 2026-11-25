@@ -35,7 +35,7 @@ export interface DocumentPersistence {
 }
 
 /** The subset of Storage this needs, so tests can pass a Map-backed fake. */
-export interface KeyValueStorage {
+interface KeyValueStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
 }

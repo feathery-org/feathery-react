@@ -13,7 +13,7 @@ import {
   saveButtonStyle
 } from './styles';
 
-export type PendingChangesBarProps = {
+type PendingChangesBarProps = {
   /** Buffered cell edits plus row deletions. */
   pendingCount: number;
   /** Hub rule errors on validated rows: fixed before the table can save. */
@@ -32,11 +32,10 @@ export type PendingChangesBarProps = {
 const plural = (count: number, noun: string) =>
   `${count} ${noun}${count === 1 ? '' : 's'}`;
 
-export const BLOCKING_TITLE =
-  'Errors on validated rows must be fixed before saving';
-export const UNVERIFIED_ERROR_TITLE =
+const BLOCKING_TITLE = 'Errors on validated rows must be fixed before saving';
+const UNVERIFIED_ERROR_TITLE =
   'Unvalidated rows save with errors so they can be corrected; fix them before the rows are validated';
-export const WARNING_TITLE = 'Flagged by the assistant. Saving is not blocked';
+const WARNING_TITLE = 'Flagged by the assistant. Saving is not blocked';
 
 /**
  * The status strip above a spreadsheet: what is waiting to be saved, what is

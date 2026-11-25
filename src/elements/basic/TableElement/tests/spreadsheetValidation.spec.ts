@@ -227,13 +227,22 @@ describe('rule derivation', () => {
     const rules = hubCellRules(
       [
         { field_key: '__hub_t_email', name: 'Email', hub_field_key: 'email' },
-        { field_key: '__hub_t_notes', name: 'Notes', hub_field_key: 'notes' }
+        { field_key: '__hub_t_notes', name: 'Notes', hub_field_key: 'notes' },
+        {
+          field_key: '__hub_t_house',
+          name: 'Household',
+          hub_field_key: 'house'
+        }
       ],
       [
         { key: 'email', type: 'email', required: true, unique: true },
-        { key: 'notes', type: 'file' }
+        { key: 'notes', type: 'file' },
+        { key: 'house', type: 'relation', required: true }
       ]
     );
+    // A required relation is the hub's to check on verify; its links never
+    // reach the cell value.
+    expect(rules.__hub_t_house).toBeUndefined();
     expect(rules.__hub_t_email).toMatchObject({
       label: 'Email',
       type: 'email',

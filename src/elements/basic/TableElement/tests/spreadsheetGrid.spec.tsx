@@ -446,9 +446,12 @@ describe('row insertion and deletion', () => {
     fireEvent.keyDown(newInput, { key: 'Tab' });
     save();
 
+    // The appended row is saved for the first time, so every column goes up.
     await waitFor(() =>
       expect(updateFieldValues).toHaveBeenLastCalledWith({
-        name_key: ['Alice', 'Bob', 'Caroline', 'Dana']
+        name_key: ['Alice', 'Bob', 'Caroline', 'Dana'],
+        age_key: [30, 40, 50, ''],
+        city_key: ['Denver', 'Austin', 'Reno', '']
       })
     );
   });

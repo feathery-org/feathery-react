@@ -1,8 +1,44 @@
 import {
   containerToolbarOutcomes,
+  documentSourceUploadFields,
   editorContainerId,
   isDocusignSignAction
 } from '../document';
+
+describe('documentSourceUploadFields', () => {
+  const upload = { id: 'f-up', key: 'IdUpload', type: 'file_upload' };
+  const steps = {
+    s1: {
+      key: 'Step 1',
+      servar_fields: [
+        { servar: { id: 'f-name', key: 'Name', type: 'text_field' } },
+        { servar: upload }
+      ]
+    },
+    // The same field linked onto a second step is submitted once.
+    s2: { key: 'Step 2', servar_fields: [{ servar: upload }] }
+  };
+
+  it('finds each referenced upload field once, with its step', () => {
+    const fields = documentSourceUploadFields(
+      [
+        'tpl-1',
+        { kind: 'quik' },
+        { kind: 'file_upload', field_id: 'f-up' },
+        // Not upload fields, so never submitted as files.
+        { kind: 'file_upload', field_id: 'f-name' },
+        { kind: 'file_upload', field_id: 'missing' }
+      ],
+      steps
+    );
+    expect(fields).toEqual([{ servar: upload, step: steps.s1 }]);
+  });
+
+  it('ignores actions without upload sources', () => {
+    expect(documentSourceUploadFields(['tpl-1'], steps)).toEqual([]);
+    expect(documentSourceUploadFields(undefined, steps)).toEqual([]);
+  });
+});
 
 describe('editorContainerId', () => {
   // `editor_mode` is the single source of truth for how the editor is

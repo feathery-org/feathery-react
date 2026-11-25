@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { featheryWindow } from '../../../utils/browser';
 
-export const COLLAPSE_BREAKPOINT = 1024;
+const COLLAPSE_BREAKPOINT = 1024;
 
 export function useIsNarrowViewport() {
   const [isNarrow, setIsNarrow] = useState(

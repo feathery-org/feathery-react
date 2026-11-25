@@ -13,6 +13,7 @@ function PasswordField({
   responsiveStyles,
   fieldLabel,
   elementProps = {},
+  errorAttributes = {},
   required = false,
   disabled = false,
   repeatIndex = null,
@@ -91,6 +92,7 @@ function PasswordField({
             }
           }}
           aria-label={element.properties.aria_label}
+          {...errorAttributes}
           maxLength={servar.max_length}
           minLength={servar.min_length}
           required={required}

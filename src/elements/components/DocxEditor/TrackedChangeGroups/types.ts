@@ -26,5 +26,9 @@ export interface GroupView extends RevisionGroupIdentity {
    *  groups, where the title already IS the author name. */
   author?: string;
   derivedChanges?: DerivedValueChange[];
+  /** The write's intent, shown when the card is expanded (engine cards). */
+  intent?: string;
+  /** Resolved as a whole by the document engine: no per-edit accept or reject. */
+  engineOwned?: boolean;
   chips: ChipView[];
 }

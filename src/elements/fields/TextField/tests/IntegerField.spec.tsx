@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   createTextFieldElement,
   createTextFieldProps,
@@ -6,7 +7,6 @@ import {
   setMockFieldValue,
   resetMockFieldValue
 } from './test-utils';
-import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import TextField from '../index';
 
@@ -410,7 +410,7 @@ describe('TextField - Integer Type', () => {
         // leave -5 in form state while the input looks empty, so commit the
         // clear instead.
         setMockFieldValue('-5');
-        const onAccept = renderNumberField(
+        renderNumberField(
           { allow_negative: true },
           { format: 'currency' }
         );

@@ -12,10 +12,11 @@ export interface ToolbarAction {
   key: string;
   label: string;
   variant?: 'primary' | 'secondary';
+  disabled?: boolean;
   onClick: () => void;
 }
 
-export interface ToolbarProps {
+interface ToolbarProps {
   title: string;
   onBack: () => void;
   // Right-aligned actions, rendered in order (primary last / rightmost). The
@@ -95,7 +96,7 @@ export default function Toolbar({
           <button
             key={action.key}
             type='button'
-            disabled={busy}
+            disabled={busy || action.disabled}
             onClick={action.onClick}
             css={
               action.variant === 'primary'

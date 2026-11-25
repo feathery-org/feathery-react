@@ -27,7 +27,7 @@ export type SpreadsheetRow = {
   cells: Record<string, unknown>;
 };
 
-export type SpreadsheetColumnMeta = {
+type SpreadsheetColumnMeta = {
   fieldKey: string;
   name: string;
   index: number;

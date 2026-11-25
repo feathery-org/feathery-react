@@ -12,10 +12,27 @@ export type Column = {
   hub_field_key?: string;
 };
 
-export type CellCoord = { rowIndex: number; colIndex: number };
+/**
+ * A builder-configured value for one column of each row the form user adds
+ * (Add/Delete Rows): a fixed value, or a form field's value at the moment the
+ * row is added. The target is `column_field_id` on a field-backed table, or
+ * `hub_field_id` (+ its stored key) on a Data Hub table, where hidden hub
+ * columns may be targeted too. `field_id`/`field_type` name the SOURCE form
+ * field; `field_key` is hydrated server-side for field entries, absent once
+ * that field is deleted.
+ */
+export type TableRowDefault = {
+  column_field_id?: string;
+  hub_field_id?: string;
+  hub_field_key?: string;
+  source: 'static' | 'field';
+  value?: string;
+  field_id?: string;
+  field_type?: string;
+  field_key?: string;
+};
 
-// Table row storage lives in a Data Hub instead of form field values.
-export type TableDataSource = 'fields' | 'hub';
+export type CellCoord = { rowIndex: number; colIndex: number };
 
 // One cell to write. Batched so a range edit (paste, drag-fill, clear, undo)
 // reaches the backend as a single submission per row/column rather than one
@@ -25,8 +42,6 @@ export type CellWrite = {
   rowIndex: number;
   value: any;
 };
-
-export type TableDisplayMode = 'classic' | 'spreadsheet';
 
 /**
  * Appends a column to the table. Only a data source that owns its own schema

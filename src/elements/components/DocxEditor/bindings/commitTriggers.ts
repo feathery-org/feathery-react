@@ -36,7 +36,7 @@ import { ReconciliationController } from './controller';
 import { isRunningRowCommand } from './rowCommandWatch';
 import { ContentControlLike, SyncfusionEditorLike } from './editorAdapter';
 
-export interface CommitTriggerOptions {
+interface CommitTriggerOptions {
   /**
    * Delay before the post-undo formulas-only reconcile. One undo can emit
    * several contentChange events; this collapses them.
@@ -56,7 +56,7 @@ export interface CommitTriggerOptions {
   clearTimeoutFn?: (id: unknown) => void;
 }
 
-export interface CommitTriggers {
+interface CommitTriggers {
   /** Call from the editor's contentChange event. */
   onContentChange(): void;
   /** Call from the editor's selectionChange event. */

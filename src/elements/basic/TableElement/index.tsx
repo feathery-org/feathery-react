@@ -7,10 +7,22 @@ import React, {
 } from 'react';
 import { nameProps } from '../../../utils/domName';
 import { stringifyWithNull } from '../../../utils/primitives';
+import internalState from '../../../utils/internalState';
+import type {
+  TableCellIssue,
+  TableCellOutcome,
+  TableCellWrite,
+  TableFinding,
+  TableFindingOutcome,
+  TableFocusOutcome,
+  TableHandlers,
+  TableLiveState,
+  TableRowRead
+} from '../../../utils/formActions/tables';
 import { Search } from './Search';
 import { SortHeader, SortIcon } from './Sort';
 import { Pagination } from './Pagination';
-import { ActionButtons } from './Actions';
+import { ActionButtons, UnverifyIcon } from './Actions';
 import { EmptyState } from './EmptyState';
 import { EditableCell } from './EditableCell';
 import { getNextEditableCell } from './utils';
@@ -18,24 +30,31 @@ import { DeleteConfirm } from './DeleteConfirm';
 import { useTableData } from './useTableData';
 import { useTableMutations } from './useTableMutations';
 import { entryIdsShifted, useHubTableSource } from './useHubTableSource';
-import { SpreadsheetTable } from './spreadsheet/SpreadsheetTable';
+import {
+  SpreadsheetTable,
+  SpreadsheetTableHandle
+} from './spreadsheet/SpreadsheetTable';
 import { usePendingEdits } from './spreadsheet/usePendingEdits';
+import { editorKindFor, parseCellInput } from './spreadsheet/fieldEditors';
 import {
   buildCellIssues,
   CellIssues,
+  ResolveIssuesContext,
   resolveTableIssues,
-  TableIssue
+  TableIssue,
+  TableRowRef
 } from './spreadsheet/issues';
 import {
   CellErrors,
   cellErrorKey,
   fieldCellRules,
   mergeCellErrors,
+  parseCellErrorKey,
   validateGrid
 } from './spreadsheet/validation';
 import { sampleRowCount, validationColors } from './spreadsheet/styles';
 import { AddColumnHandler, CellWrite, GetCellShading } from './types';
-import { STATUS_HUB_FIELD_ID } from './hubStatus';
+import { STATUS_HUB_FIELD_ID, UNVERIFY_ACTION_LABEL } from './hubStatus';
 import { TrashIcon } from '../../components/icons';
 import { clearUnsavedWork, setUnsavedWork } from '../../../utils/unsavedWork';
 import {
@@ -53,9 +72,13 @@ import {
   addRowButtonStyle,
   errorBannerStyle,
   deleteColumnStyle,
-  deleteIconStyle
+  deleteIconStyle,
+  unverifyIconStyle
 } from './styles';
 import { TABLE_CLASS } from './classNames';
+
+const rowHiddenMessage = (rowIndex: number) =>
+  `Row ${rowIndex} is hidden by a column filter right now.`;
 
 function applyTableStyles(responsiveStyles: any) {
   responsiveStyles.addTargets('table', 'thead', 'tbody', 'th', 'td', 'tr');
@@ -103,7 +126,6 @@ function TableElement({
   submitCustom = () => {},
   editMode = false,
   buttonLoaders = {},
-  assistantClient,
   client
 }: any) {
   const styles = useMemo(
@@ -182,6 +204,8 @@ function TableElement({
     enablePagination,
     currentPage,
     setCurrentPage,
+    sortedRowIndices,
+    sortedBaseRowIndices,
     paginatedRowIndices,
     rowsPerPage,
 
@@ -200,7 +224,8 @@ function TableElement({
     hasSearchResults,
     activeFieldValues,
     baseColumns,
-    baseFieldValues
+    baseFieldValues,
+    baseNumRows
   } = useTableData({
     element: elementForData,
     editMode,
@@ -215,6 +240,7 @@ function TableElement({
 
   const fieldMutations = useTableMutations({
     columns: baseColumns,
+    rowDefaults: element.properties?.row_defaults,
     updateFieldValues,
     submitCustom,
     editMode,
@@ -263,25 +289,48 @@ function TableElement({
   const canDeleteRows = canEdit && enableAddDeleteRows;
   const hasOverflowMenu = actions.length > 1;
   const showStandaloneDeleteColumn = canDeleteRows && !hasOverflowMenu;
+  // Sending a Hub row back for review lives where delete does: in the
+  // overflow menu, or in its own icon column when there is no menu. Only a
+  // validated row with an entry qualifies, so the check is per row. Like
+  // delete it waits out a load (a landing refetch would overwrite the flip)
+  // and a flipped table, whose rows are fields rather than entries.
+  const canUnverifyRows =
+    isHub && hub.canUnverify && !isTransposed && !hub.loading;
+  const canUnverifyRow = useCallback(
+    (rowIndex: number) =>
+      canUnverifyRows &&
+      hub.rowVerified[rowIndex] === true &&
+      hub.entryIds[rowIndex] != null,
+    [canUnverifyRows, hub.rowVerified, hub.entryIds]
+  );
+  const showStandaloneUnverifyColumn = canUnverifyRows && !hasOverflowMenu;
 
   const [pendingAddRows, setPendingAddRows] = useState<Set<number>>(new Set());
-  // Findings the assistant has placed on this table (see `setIssues` below).
+  // Findings Robin has placed on this table (see `setFindings` below)
   const [assistantIssues, setAssistantIssues] = useState<TableIssue[]>([]);
+  // The grid keeps an older copy of the edit handler, so it reads the current columns through a ref
+  const issuesContextRef = useRef<ResolveIssuesContext | undefined>(undefined);
+  const spreadsheetRef = useRef<SpreadsheetTableHandle>(null);
   const pendingAddRowsRef = useRef(pendingAddRows);
   pendingAddRowsRef.current = pendingAddRows;
 
   const wrappedHandleCellEdit = useCallback(
     (fieldKey: string, rowIndex: number, newValue: any) => {
-      if (pendingAddRowsRef.current.has(rowIndex)) {
-        setPendingAddRows((prev) => {
-          const next = new Set(prev);
-          next.delete(rowIndex);
-          return next;
-        });
+      if (!pendingAddRowsRef.current.has(rowIndex)) {
+        handleCellEdit(fieldKey, rowIndex, newValue);
+        return;
       }
-      handleCellEdit(fieldKey, rowIndex, newValue);
+      setPendingAddRows((prev) => {
+        const next = new Set(prev);
+        next.delete(rowIndex);
+        return next;
+      });
+      // The first edit commits the provisional row, default cells included.
+      handleCellsEdit([{ fieldKey, rowIndex, value: newValue }], {
+        submitAllColumns: true
+      });
     },
-    [handleCellEdit]
+    [handleCellEdit, handleCellsEdit]
   );
 
   const [deleteRowIndex, setDeleteRowIndex] = useState<number | null>(null);
@@ -324,10 +373,18 @@ function TableElement({
   // The spreadsheet's undo history is keyed by row index, so it is dropped
   // when this changes rather than replayed onto the wrong rows.
   const [rowIdentityVersion, setRowIdentityVersion] = useState(0);
-  const bumpRowIdentity = useCallback(
-    () => setRowIdentityVersion((version) => version + 1),
-    []
-  );
+  const bumpRowIdentity = useCallback(() => {
+    setRowIdentityVersion((version) => version + 1);
+    // A finding named by row position would now mark a different row
+    setAssistantIssues((issues) =>
+      issues.filter(({ target }) =>
+        (target.kind === 'range'
+          ? [target.from.row, target.to.row]
+          : [target.row]
+        ).every((row) => 'entryId' in row)
+      )
+    );
+  }, []);
   // A Hub resync renumbers rows too: entries the grid has not seen (another
   // user's new rows) land at the top, and one deleted elsewhere closes its gap.
   // Bumped in the same render the rows move in, not in an effect after it, so
@@ -426,6 +483,20 @@ function TableElement({
 
   const spreadsheetCellsEdit = useCallback(
     (writes: CellWrite[]) => {
+      // A finding described the old values, so editing any cell it covers clears it
+      const edited = new Set(
+        writes.map(({ rowIndex, fieldKey }) => cellErrorKey(rowIndex, fieldKey))
+      );
+      setAssistantIssues((issues) =>
+        issues.filter((issue) => {
+          const context = issuesContextRef.current;
+          if (!context) return true;
+          const covered = Object.keys(
+            resolveTableIssues([issue], context).cells
+          );
+          return !covered.some((cellKey) => edited.has(cellKey));
+        })
+      );
       // A pending "provisional" row stops being provisional as soon as any of
       // its cells is written, the same rule single-cell editing follows.
       if (buffersEdits) {
@@ -435,16 +506,17 @@ function TableElement({
         return;
       }
       const touched = new Set(writes.map((write) => write.rowIndex));
-      if (
-        [...touched].some((rowIndex) => pendingAddRowsRef.current.has(rowIndex))
-      ) {
+      const commitsProvisional = [...touched].some((rowIndex) =>
+        pendingAddRowsRef.current.has(rowIndex)
+      );
+      if (commitsProvisional) {
         setPendingAddRows((prev) => {
           const next = new Set(prev);
           touched.forEach((rowIndex) => next.delete(rowIndex));
           return next;
         });
       }
-      handleCellsEdit(writes);
+      handleCellsEdit(writes, { submitAllColumns: commitsProvisional });
     },
     [handleCellsEdit, buffersEdits, pendingEdits]
   );
@@ -542,51 +614,64 @@ function TableElement({
     cellRules
   ]);
 
-  /**
-   * The assistant names rows and fields the way the form's author does (a hub
-   * entry id or row number, a hub field key or column name); the grid stores
-   * cells under its own keys. Expanded here, against the rows and columns
-   * actually rendered, so a finding on a hidden column or a deleted row simply
-   * does not show.
-   */
-  const assistantMessages = useMemo(() => {
-    if (!isSpreadsheet || !assistantIssues.length) return {};
-    // Keys first, display names second, so a hub field whose key is "Status"
-    // is never shadowed by a column merely named that (the status column,
-    // say — which is not the assistant's to flag at all).
-    const byName = new Map<string, string>();
-    const targetable = columns.filter(
-      (column: any) => column.hub_field_id !== STATUS_HUB_FIELD_ID
+  // The form's host names a hub column by its hub field key, the grid stores it under a synthetic key
+  const publishedFieldKey = useCallback(
+    (column: any): string =>
+      (isHub && column.hub_field_key) || column.field_key || '',
+    [isHub]
+  );
+  const storageKeyFor = useMemo(() => {
+    const byPublishedKey = new Map<string, string>(
+      baseColumns.map((column) => [publishedFieldKey(column), column.field_key])
     );
-    targetable.forEach((column: any) => {
-      [column.hub_field_key, column.field_key].forEach((key?: string) => {
-        if (key && !byName.has(key)) byName.set(key, column.field_key);
-      });
+    return (fieldKey: string) => byPublishedKey.get(fieldKey);
+  }, [baseColumns, publishedFieldKey]);
+  const isColumnReadOnly = useCallback(
+    (storageKey: string) =>
+      (isHub && hub.readOnlyKeys.has(storageKey)) ||
+      editorKindFor(cellRules[storageKey]) === 'readonly',
+    [isHub, hub.readOnlyKeys, cellRules]
+  );
+
+  // The rows and columns a finding can land on, a hub row also by entry id
+  const issuesContext = useMemo<ResolveIssuesContext>(() => {
+    // The status column is the hub's to flag, so a hub field keyed like it wins
+    const byPublishedKey = new Map<string, string>();
+    baseColumns.forEach((column: any) => {
+      if (column.hub_field_id === STATUS_HUB_FIELD_ID) return;
+      const key = publishedFieldKey(column);
+      if (!byPublishedKey.has(key)) byPublishedKey.set(key, column.field_key);
     });
-    targetable.forEach((column: any) => {
-      if (column.name && !byName.has(column.name)) {
-        byName.set(column.name, column.field_key);
-      }
-    });
-    return resolveTableIssues(assistantIssues, {
+    return {
       rowIndices: spreadsheetRowIndices,
       fieldKeys: columns.map((column: any) => column.field_key),
-      resolveField: (name) => byName.get(name),
+      resolveField: (fieldKey) => byPublishedKey.get(fieldKey),
       resolveRow: (ref) => {
         if ('rowIndex' in ref) return ref.rowIndex;
         if (!isHub) return undefined;
         const rowIndex = hub.entryIds.indexOf(ref.entryId);
         return rowIndex === -1 ? undefined : rowIndex;
       }
-    }).cells;
+    };
   }, [
-    isSpreadsheet,
-    assistantIssues,
+    baseColumns,
+    publishedFieldKey,
     columns,
     spreadsheetRowIndices,
     isHub,
     hub.entryIds
   ]);
+  issuesContextRef.current = issuesContext;
+
+  // Resolved against the rendered rows and columns, so a hidden column or deleted row shows no finding
+  const resolvedFindings = useMemo(
+    () =>
+      isSpreadsheet
+        ? resolveTableIssues(assistantIssues, issuesContext)
+        : { cells: {}, unresolved: [] },
+    [isSpreadsheet, assistantIssues, issuesContext]
+  );
+  const assistantMessages = resolvedFindings.cells;
 
   /**
    * Every cell with something wrong, each with its severity and whether it
@@ -640,14 +725,19 @@ function TableElement({
     const { writes, deletedRows } = pendingEdits;
     if (!writes.length && !deletedRows.length) return;
     pendingEdits.clear();
-    if (writes.length) handleCellsEdit(writes);
+    // With rows added since the last save, the edits go up with every column
+    // in full so those rows' default and blank cells are saved too. A row
+    // deletion already submits every column.
+    if (writes.length)
+      handleCellsEdit(writes, {
+        submitAllColumns: pendingAddRowsRef.current.size > 0
+      });
     if (deletedRows.length) {
       bumpRowIdentity();
       deletedRows.forEach((rowIndex) => handleDeleteRow(rowIndex));
     }
-    // Saving submits every column in full, blank rows included, so nothing
-    // is provisional any more (a Hub row still without an entry is tracked by
-    // the Hub source itself).
+    // Nothing is provisional any more (a Hub row still without an entry is
+    // tracked by the Hub source itself).
     setPendingAddRows(new Set());
   }, [pendingEdits, handleCellsEdit, handleDeleteRow, bumpRowIdentity]);
 
@@ -696,25 +786,395 @@ function TableElement({
     [formId, unsavedWorkId]
   );
 
-  // Lets the assistant invoke this table's mutations through the same handlers the user UI calls
-  useEffect(() => {
-    if (!assistantClient || !tableId) return;
-    assistantClient.registerTable(tableId, {
-      columns: elementForData.properties.columns,
-      handleCellEdit: wrappedHandleCellEdit,
-      handleAddRow: wrappedHandleAddRow,
-      handleDeleteRow: wrappedHandleDeleteRow,
-      setIssues: setAssistantIssues,
-      clearIssues: () => setAssistantIssues([])
-    });
-    return () => assistantClient.unregisterTable(tableId);
+  // A transposed table shows records as columns, the host still reads them as rows
+  const cellValue = useCallback(
+    (rowIndex: number, storageKey: string) => {
+      const value = (isTransposed ? baseFieldValues : spreadsheetFieldValues)[
+        storageKey
+      ];
+      return Array.isArray(value) ? value[rowIndex] ?? null : value ?? null;
+    },
+    [isTransposed, baseFieldValues, spreadsheetFieldValues]
+  );
+  const isRowDeleted = useCallback(
+    (rowIndex: number) => buffersEdits && pendingEdits.isRowDeleted(rowIndex),
+    [buffersEdits, pendingEdits]
+  );
+  const getRow = useCallback(
+    (rowIndex: number) =>
+      rowIndex < 0 || rowIndex >= baseNumRows || isRowDeleted(rowIndex)
+        ? null
+        : Object.fromEntries(
+            baseColumns.map((column) => [
+              publishedFieldKey(column),
+              cellValue(rowIndex, column.field_key)
+            ])
+          ),
+    [baseColumns, baseNumRows, isRowDeleted, publishedFieldKey, cellValue]
+  );
+  const getRows = useCallback(
+    ({
+      offset,
+      limit,
+      search
+    }: {
+      offset: number;
+      limit: number;
+      search?: string;
+    }) => {
+      const needle = search?.toLowerCase();
+      const shown: TableRowRead[] = [];
+      const shownOrder = isTransposed ? sortedBaseRowIndices : sortedRowIndices;
+      for (const rowIndex of shownOrder) {
+        const values = getRow(rowIndex);
+        if (!values) continue;
+        if (
+          needle &&
+          !Object.values(values).some((value) =>
+            (stringifyWithNull(value) ?? '').toLowerCase().includes(needle)
+          )
+        )
+          continue;
+        const hasPendingEdit =
+          buffersEdits &&
+          pendingEdits.writes.some((write) => write.rowIndex === rowIndex);
+        shown.push({
+          rowIndex,
+          ...(isHub ? { entryId: hub.entryIds[rowIndex] ?? null } : {}),
+          values,
+          ...(hasPendingEdit ? { pending: true } : {})
+        });
+      }
+      return {
+        rowCount: shown.length,
+        rows: shown.slice(offset, offset + limit)
+      };
+    },
+    [
+      isTransposed,
+      sortedBaseRowIndices,
+      sortedRowIndices,
+      getRow,
+      isHub,
+      hub.entryIds,
+      buffersEdits,
+      pendingEdits.writes
+    ]
+  );
+
+  const getLiveState = useCallback((): TableLiveState => {
+    const grid = spreadsheetRef.current;
+    const selected = grid?.getSelection();
+    const selectedColumn =
+      selected &&
+      baseColumns.find((column) => column.field_key === selected.fieldKey);
+    const selectedEntryId = selected && hub.entryIds[selected.rowIndex];
+    const selectionError =
+      selected &&
+      cellErrors[cellErrorKey(selected.rowIndex, selected.fieldKey)];
+    const ruleErrorTotal = Object.keys(cellErrors).length;
+    const shownFindings =
+      assistantIssues.length - resolvedFindings.unresolved.length;
+    return {
+      ...(isHub && hub.hubId ? { hubId: hub.hubId } : {}),
+      columns: baseColumns.map((column) => ({
+        name: column.name,
+        fieldKey: publishedFieldKey(column),
+        ...(isColumnReadOnly(column.field_key) ? { readOnly: true } : {})
+      })),
+      rowCount: baseNumRows,
+      canEditCells: canEdit,
+      canAddRows,
+      canDeleteRows,
+      showsActions: !isSpreadsheet && actions.length > 0,
+      allowsRowClick: !isSpreadsheet && !isTransposed && !canEdit,
+      buffersEdits,
+      ...(isHub ? { entryIds: hub.entryIds } : {}),
+      ...(buffersEdits
+        ? {
+            pending: {
+              edits: pendingEdits.writes.length,
+              deletions: pendingEdits.deletedRows.length
+            }
+          }
+        : {}),
+      showsGrid: grid !== null,
+      ...(selected && selectedColumn
+        ? {
+            selection: {
+              rowIndex: selected.rowIndex,
+              ...(selectedEntryId ? { entryId: selectedEntryId } : {}),
+              fieldKey: publishedFieldKey(selectedColumn),
+              columnName: selectedColumn.name,
+              value: cellValue(selected.rowIndex, selected.fieldKey),
+              ...(selectionError ? { error: selectionError } : {}),
+              row: getRow(selected.rowIndex) ?? {},
+              ...(selected.extended ? { extended: true } : {})
+            }
+          }
+        : {}),
+      ...(grid
+        ? { viewport: { visibleRowIndexes: grid.getVisibleRowIndexes() } }
+        : {}),
+      ...(ruleErrorTotal > 0 ? { ruleErrors: { total: ruleErrorTotal } } : {}),
+      ...(shownFindings > 0 ? { findings: shownFindings } : {})
+    };
   }, [
-    assistantClient,
+    isHub,
+    hub.hubId,
+    hub.entryIds,
+    baseColumns,
+    publishedFieldKey,
+    isColumnReadOnly,
+    baseNumRows,
+    canEdit,
+    canAddRows,
+    canDeleteRows,
+    isSpreadsheet,
+    actions.length,
+    isTransposed,
+    buffersEdits,
+    pendingEdits.writes,
+    pendingEdits.deletedRows,
+    cellErrors,
+    cellValue,
+    getRow,
+    assistantIssues,
+    resolvedFindings
+  ]);
+
+  // A host write takes the same column, read-only and typing rules as the person's own
+  const editCells = useCallback(
+    (writes: TableCellWrite[]): TableCellOutcome[] => {
+      const accepted: CellWrite[] = [];
+      const outcomes = writes.map(
+        ({ rowIndex, fieldKey, value }): TableCellOutcome => {
+          if (isRowDeleted(rowIndex)) {
+            return {
+              ok: false,
+              reason: 'row_deleted',
+              message: `Row ${rowIndex} was removed and is waiting on the table's save.`
+            };
+          }
+          const storageKey = storageKeyFor(fieldKey);
+          if (!storageKey) {
+            return {
+              ok: false,
+              reason: 'unknown_column',
+              message: `This table has no column with fieldKey '${fieldKey}'.`
+            };
+          }
+          if (isColumnReadOnly(storageKey)) {
+            return {
+              ok: false,
+              reason: 'read_only',
+              message: `Column '${fieldKey}' cannot be edited.`
+            };
+          }
+          const parsed = parseCellInput(
+            value == null ? '' : String(value),
+            cellRules[storageKey],
+            cellValue(rowIndex, storageKey)
+          );
+          accepted.push({ fieldKey: storageKey, rowIndex, value: parsed });
+          return { ok: true, value: parsed };
+        }
+      );
+      if (accepted.length) spreadsheetCellsEdit(accepted);
+      return outcomes;
+    },
+    [
+      isRowDeleted,
+      storageKeyFor,
+      isColumnReadOnly,
+      cellRules,
+      cellValue,
+      spreadsheetCellsEdit
+    ]
+  );
+  // The row lands where the person's own add-row control puts one
+  const addRow = useCallback(() => {
+    if (isSpreadsheet) {
+      spreadsheetInsertRow(baseNumRows);
+      return baseNumRows;
+    }
+    wrappedHandleAddRow();
+    return 0;
+  }, [isSpreadsheet, spreadsheetInsertRow, baseNumRows, wrappedHandleAddRow]);
+  // The same payload a click on the row's action button sends
+  const runAction = useCallback(
+    async (rowIndex: number, actionLabel?: string) => {
+      const rowData: Record<string, any> = {};
+      baseColumns.forEach((column) => {
+        const fieldValue = baseFieldValues[column.field_key];
+        rowData[column.name] = Array.isArray(fieldValue)
+          ? fieldValue[rowIndex]
+          : fieldValue;
+      });
+      await onClick(
+        actionLabel
+          ? { action: actionLabel, rowIndex, rowData }
+          : { rowIndex, rowData }
+      );
+    },
+    [baseColumns, baseFieldValues, onClick]
+  );
+
+  // Only the findings that landed are kept, a saved hub row's by entry id so it follows the row
+  const setFindings = useCallback(
+    (findings: TableFinding[]): TableFindingOutcome[] => {
+      const issueFor = (
+        row: TableRowRef,
+        fieldKey: string | undefined,
+        message: string
+      ): TableIssue => ({
+        message,
+        target:
+          fieldKey === undefined
+            ? { kind: 'row', row }
+            : { kind: 'cell', row, field: fieldKey }
+      });
+      const { unresolved } = resolveTableIssues(
+        findings.map(({ rowIndex, fieldKey, message }) =>
+          issueFor({ rowIndex }, fieldKey, message)
+        ),
+        issuesContext
+      );
+      const rejected = new Set(unresolved.map(({ index }) => index));
+      setAssistantIssues(
+        findings.flatMap(({ rowIndex, fieldKey, message }, index) => {
+          if (rejected.has(index)) return [];
+          const entryId = hub.entryIds[rowIndex];
+          return [
+            issueFor(entryId ? { entryId } : { rowIndex }, fieldKey, message)
+          ];
+        })
+      );
+      return unresolved.map(({ index, reason }) =>
+        reason === 'unknown_field'
+          ? {
+              index,
+              reason: 'unknown_column',
+              message: `This table has no column with fieldKey '${findings[index].fieldKey}'.`
+            }
+          : {
+              index,
+              reason: 'row_hidden',
+              message: rowHiddenMessage(findings[index].rowIndex)
+            }
+      );
+    },
+    [issuesContext, hub.entryIds]
+  );
+  const focusCell = useCallback(
+    (rowIndex: number, fieldKey?: string): TableFocusOutcome => {
+      const storageKey =
+        fieldKey === undefined ? undefined : storageKeyFor(fieldKey);
+      if (fieldKey !== undefined && !storageKey) {
+        return {
+          ok: false,
+          reason: 'unknown_column',
+          message: `This table has no column with fieldKey '${fieldKey}'.`
+        };
+      }
+      if (!spreadsheetRef.current?.focusCell(rowIndex, storageKey)) {
+        return {
+          ok: false,
+          reason: 'row_hidden',
+          message: rowHiddenMessage(rowIndex)
+        };
+      }
+      return { ok: true };
+    },
+    [storageKeyFor]
+  );
+  const getIssues = useCallback(
+    (rowIndex?: number): TableCellIssue[] => {
+      const columnsByKey = new Map<string, any>(
+        baseColumns.map((column) => [column.field_key, column])
+      );
+      // A row-level finding answers once, even where a rule error took one of its cells
+      const rowLevel = new Set<string>();
+      assistantIssues.forEach(({ target, message }) => {
+        if (target.kind !== 'row') return;
+        rowLevel.add(`${issuesContext.resolveRow(target.row)}:${message}`);
+      });
+      const answered = new Set<string>();
+      const issues: TableCellIssue[] = [];
+      Object.entries(cellIssues).forEach(([key, issue]) => {
+        const cell = parseCellErrorKey(key);
+        if (rowIndex !== undefined && cell.rowIndex !== rowIndex) return;
+        const entryId = isHub ? hub.entryIds[cell.rowIndex] : undefined;
+        const read: TableCellIssue = {
+          rowIndex: cell.rowIndex,
+          ...(entryId ? { entryId } : {}),
+          message: issue.message,
+          severity: issue.severity,
+          source: issue.source === 'assistant' ? 'assistant' : 'rule'
+        };
+        const rowKey = `${cell.rowIndex}:${issue.message}`;
+        if (issue.source === 'assistant' && rowLevel.has(rowKey)) {
+          if (!answered.has(rowKey)) {
+            answered.add(rowKey);
+            issues.push(read);
+          }
+          return;
+        }
+        const column = columnsByKey.get(cell.fieldKey);
+        issues.push({
+          ...read,
+          fieldKey: column ? publishedFieldKey(column) : cell.fieldKey,
+          columnName: column?.name ?? cell.fieldKey
+        });
+      });
+      return issues;
+    },
+    [
+      baseColumns,
+      assistantIssues,
+      issuesContext,
+      cellIssues,
+      isHub,
+      hub.entryIds,
+      publishedFieldKey
+    ]
+  );
+
+  // Lets the form's host act on this table through the handlers the person's own edits use
+  useEffect(() => {
+    const state = editMode ? undefined : internalState[formId];
+    if (!state || !tableId) return;
+    const tables = (state.tables ??= new Map<string, TableHandlers>());
+    const handlers: TableHandlers = {
+      getLiveState,
+      getRow,
+      getRows,
+      editCells,
+      addRow,
+      deleteRow: spreadsheetDeleteRow,
+      runAction,
+      setFindings,
+      focusCell,
+      getIssues
+    };
+    tables.set(tableId, handlers);
+    return () => {
+      if (tables.get(tableId) === handlers) tables.delete(tableId);
+    };
+  }, [
+    editMode,
+    formId,
     tableId,
-    elementForData.properties.columns,
-    wrappedHandleCellEdit,
-    wrappedHandleAddRow,
-    wrappedHandleDeleteRow
+    getLiveState,
+    getRow,
+    getRows,
+    editCells,
+    addRow,
+    spreadsheetDeleteRow,
+    runAction,
+    setFindings,
+    focusCell,
+    getIssues
   ]);
 
   const showEmptyState =
@@ -809,6 +1269,7 @@ function TableElement({
         <EmptyState hasSearchQuery={searchQuery.trim().length > 0} />
       ) : isSpreadsheet ? (
         <SpreadsheetTable
+          ref={spreadsheetRef}
           columns={columns}
           rowIndices={spreadsheetRowIndices}
           fieldValues={spreadsheetFieldValues}
@@ -818,6 +1279,8 @@ function TableElement({
           onAddColumn={handleAddColumn}
           onInsertRow={canAddRows ? spreadsheetInsertRow : undefined}
           onDeleteRow={canDeleteRows ? spreadsheetDeleteRow : undefined}
+          onUnverifyRows={canUnverifyRows ? hub.handleUnverifyRows : undefined}
+          canUnverifyRow={canUnverifyRow}
           getCellShading={getCellShading}
           cellRules={cellRules}
           rowIdentityVersion={rowIdentityVersion}
@@ -854,6 +1317,9 @@ function TableElement({
                   <col key={col.field_key} />
                 ))}
                 {actions.length > 0 && <col css={utilityColStyle('80px')} />}
+                {showStandaloneUnverifyColumn && (
+                  <col css={utilityColStyle('40px')} />
+                )}
                 {showStandaloneDeleteColumn && (
                   <col css={utilityColStyle('40px')} />
                 )}
@@ -882,6 +1348,17 @@ function TableElement({
                     >
                       {/* Empty header for actions column */}
                     </th>
+                  )}
+                  {showStandaloneUnverifyColumn && (
+                    <th
+                      scope='col'
+                      className={TABLE_CLASS.headerCell}
+                      css={{
+                        ...thStyle,
+                        ...deleteColumnStyle,
+                        ...styles.getTarget('th')
+                      }}
+                    />
                   )}
                   {showStandaloneDeleteColumn && (
                     <th
@@ -1094,6 +1571,10 @@ function TableElement({
                           buttonLoaders={buttonLoaders}
                           canDeleteRows={canDeleteRows && hasOverflowMenu}
                           onDeleteRow={(ri) => setDeleteRowIndex(ri)}
+                          canUnverifyRow={
+                            hasOverflowMenu && canUnverifyRow(rowIndex)
+                          }
+                          onUnverifyRow={(ri) => hub.handleUnverifyRows([ri])}
                         />
                         {hasOverflowMenu &&
                           canDeleteRows &&
@@ -1106,6 +1587,31 @@ function TableElement({
                               onCancel={handleCancelDelete}
                             />
                           )}
+                      </td>
+                    )}
+                    {showStandaloneUnverifyColumn && (
+                      <td
+                        className={TABLE_CLASS.cell}
+                        css={{
+                          ...deleteColumnStyle,
+                          ...styles.getTarget('td')
+                        }}
+                      >
+                        {canUnverifyRow(rowIndex) && (
+                          <button
+                            type='button'
+                            className={TABLE_CLASS.unverifyButton}
+                            css={unverifyIconStyle}
+                            title={UNVERIFY_ACTION_LABEL}
+                            aria-label={UNVERIFY_ACTION_LABEL}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              hub.handleUnverifyRows([rowIndex]);
+                            }}
+                          >
+                            <UnverifyIcon />
+                          </button>
+                        )}
                       </td>
                     )}
                     {showStandaloneDeleteColumn && (

@@ -4,7 +4,6 @@
 import {
   BindingIndex,
   getAt,
-  hasOnlyRevisionIds,
   hasRevisionId,
   revisionIdsOfType,
   inlineText,
@@ -15,7 +14,7 @@ import { CellRef, FormulaError, isFormulaError, RangeRef } from './formula';
 import { isNumericType } from './valueTypes';
 import { SfdtDocument, SfdtPath } from './sfdtTypes';
 
-export interface GridCell {
+interface GridCell {
   text: string;
   occ: Occurrence | null;
 }
@@ -29,7 +28,7 @@ interface Pos {
   col: number;
 }
 
-export function cellLabel(col: number, row: number | 'end'): string {
+function cellLabel(col: number, row: number | 'end'): string {
   let letters = '';
   let c = col + 1;
   while (c > 0) {
@@ -39,16 +38,16 @@ export function cellLabel(col: number, row: number | 'end'): string {
   return row === 'end' ? 'end' : `${letters}${row}`;
 }
 
-export const cellRefLabel = (cell: CellRef): string =>
+const cellRefLabel = (cell: CellRef): string =>
   `${cell.table ? `${cell.table}!` : ''}${cellLabel(cell.col, cell.row)}`;
-export const rangeRefLabel = (range: RangeRef): string =>
+const rangeRefLabel = (range: RangeRef): string =>
   `${range.table ? `${range.table}!` : ''}${cellLabel(
     range.startCol,
     range.startRow
   )}:${cellLabel(range.endCol, range.endRow)}`;
 
 /** Lenient numeric read of a plain cell: "$1,200.50" -> "1200.50". */
-export function parseLooseNumber(text: string): string | null {
+function parseLooseNumber(text: string): string | null {
   const trimmed = text.trim();
   if (trimmed === '') return '0';
   let cleaned = trimmed.replace(/[$€£\s,]/g, '');
@@ -57,7 +56,7 @@ export function parseLooseNumber(text: string): string | null {
   return /^-?\d+(\.\d+)?$/.test(cleaned) ? cleaned : null;
 }
 
-export interface PositionalGridOptions {
+interface PositionalGridOptions {
   sfdt: SfdtDocument;
   index: BindingIndex;
   nodeId: (occurrence: Occurrence) => string;
@@ -67,7 +66,7 @@ export interface PositionalGridOptions {
   getFieldValue: (key: string) => string | undefined;
 }
 
-export interface PositionalGridReader {
+interface PositionalGridReader {
   positionalCellValue(cell: CellRef, occ: Occurrence): string;
   positionalRangeValues(range: RangeRef, occ: Occurrence): string[];
   /** Formula node ids a set of positional refs depends on (errors deferred). */
@@ -86,7 +85,7 @@ export function createPositionalGrid(
 
   const deletionRevisionIds = revisionIdsOfType(sfdt, 'Deletion');
   const isDeletedInline = (inline: any): boolean =>
-    hasOnlyRevisionIds(inline, deletionRevisionIds);
+    hasRevisionId(inline, deletionRevisionIds);
 
   /** Physical position of an occurrence in a table (span-aware column). */
   function positionIn(

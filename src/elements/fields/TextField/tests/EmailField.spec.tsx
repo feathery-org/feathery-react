@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   createStatefulAcceptHandler,
   createTextFieldElement,
@@ -5,7 +6,6 @@ import {
   getMockFieldValue,
   resetMockFieldValue
 } from './test-utils';
-import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import TextField from '../index';
 

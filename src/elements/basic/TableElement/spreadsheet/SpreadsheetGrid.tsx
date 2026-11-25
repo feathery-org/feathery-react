@@ -6,7 +6,7 @@ import type {
   CellSelectionRangeOperation,
   CellSelectionState
 } from '@tanstack/react-table';
-import type { VirtualItem } from '@tanstack/react-virtual';
+import type { ScrollToOptions, VirtualItem } from '@tanstack/react-virtual';
 import { featheryDoc } from '../../../../utils/browser';
 import { TABLE_CLASS } from '../classNames';
 import { AddColumnHandler, CellShading, GetCellShading } from '../types';
@@ -82,7 +82,11 @@ import type { GridInteractions } from './useGridInteractions';
 import { useMeasured } from './useMeasured';
 
 export type SpreadsheetGridHandle = {
-  scrollToCell: (rowId: string, columnId: string) => void;
+  scrollToCell: (
+    rowId: string,
+    columnId?: string,
+    scroll?: ScrollToOptions
+  ) => void;
   /** Returns keyboard focus to the grid, e.g. after a control above it acts. */
   focus: () => void;
   /**
@@ -94,6 +98,7 @@ export type SpreadsheetGridHandle = {
    * straight back off the button the user just pressed.
    */
   restoreFocus: () => void;
+  getVisibleRowIndexes: () => number[];
 };
 
 /** Rows pinned to the top: the leading `count` rows of the table's data. */
@@ -122,6 +127,13 @@ type SpreadsheetGridProps = {
   onInsertRow?: (atIndex: number) => void;
   /** Enables the row context menu's delete item. */
   onDeleteRow?: (rowIndex: number) => void;
+  /**
+   * Enables the row context menu's "mark as unvalidated" item, which acts on
+   * every selected row when opened on a selected row.
+   */
+  onUnverifyRows?: (rowIndexes: number[]) => void;
+  /** Whether a given table row can be marked unvalidated right now. */
+  canUnverifyRow?: (rowIndex: number) => boolean;
   /** Opens the find bar; bound to Mod+F while the grid has focus. */
   onOpenSearch?: () => void;
   /** Enables the column header's right-click sort menu. */
@@ -160,6 +172,8 @@ export const SpreadsheetGrid = React.forwardRef<
     onAddColumn,
     onInsertRow,
     onDeleteRow,
+    onUnverifyRows,
+    canUnverifyRow,
     onOpenSearch,
     sort,
     filters,
@@ -355,18 +369,38 @@ export const SpreadsheetGrid = React.forwardRef<
           }
         }, 0);
       },
-      scrollToCell(rowId, columnId) {
+      scrollToCell(rowId, columnId, scroll) {
         // Pinned rows and columns are always on screen already.
         const rowIndex = centerRows.findIndex((row) => row.id === rowId);
-        if (rowIndex >= 0) rowVirtualizer.scrollToIndex(rowIndex);
-
         const columnIndex = centerColumns.findIndex(
           (column) => column.id === columnId
         );
-        if (columnIndex >= 0) columnVirtualizer.scrollToIndex(columnIndex);
+        const [top] =
+          (rowIndex >= 0 &&
+            rowVirtualizer.getOffsetForIndex(rowIndex, scroll?.align)) ||
+          [];
+        const [left] =
+          (columnIndex >= 0 &&
+            columnVirtualizer.getOffsetForIndex(columnIndex)) ||
+          [];
+        // Both axes in one scrollTo, a second call cancels a smooth one
+        scrollRef.current?.scrollTo?.({
+          top,
+          left,
+          behavior: scroll?.behavior
+        });
+      },
+      getVisibleRowIndexes() {
+        const range = rowVirtualizer.range;
+        const visibleCenterRows = range
+          ? centerRows.slice(range.startIndex, range.endIndex + 1)
+          : [];
+        return [...topRows, ...visibleCenterRows].map(
+          (row) => row.original.rowIndex
+        );
       }
     }),
-    [centerColumns, columnVirtualizer, centerRows, rowVirtualizer]
+    [centerColumns, columnVirtualizer, centerRows, rowVirtualizer, topRows]
   );
 
   const measureScrollbar = React.useCallback(
@@ -381,10 +415,58 @@ export const SpreadsheetGrid = React.forwardRef<
   );
   const [rowMenu, setRowMenu] = React.useState<RowMenuTarget | null>(null);
   const closeRowMenu = React.useCallback(() => setRowMenu(null), []);
+  /**
+   * Opens the row menu. A menu opened on a row inside the current selection
+   * takes the whole selection as its bulk target, the way a spreadsheet's
+   * row actions apply to every selected row; elsewhere it is just that row.
+   */
+  const openRowMenu = React.useCallback(
+    (target: Omit<RowMenuTarget, 'rowIndexes'>) => {
+      const displayRows = table.getRowsInDisplayOrder();
+      const bounds = table.getCellSelectionBounds();
+      const clickedDisplayIndex = displayRows.findIndex(
+        (row) => rowIndexById.get(row.id) === target.rowIndex
+      );
+      const inSelection = bounds.some(
+        (bound) =>
+          clickedDisplayIndex >= bound.minRowIndex &&
+          clickedDisplayIndex <= bound.maxRowIndex
+      );
+      const rowIndexes = new Set<number>([target.rowIndex]);
+      if (inSelection) {
+        bounds.forEach((bound) => {
+          for (let i = bound.minRowIndex; i <= bound.maxRowIndex; i++) {
+            const row = displayRows[i];
+            const rowIndex = row ? rowIndexById.get(row.id) : undefined;
+            if (rowIndex != null) rowIndexes.add(rowIndex);
+          }
+        });
+      }
+      setRowMenu({ ...target, rowIndexes: [...rowIndexes] });
+    },
+    [table, rowIndexById]
+  );
   const [headerMenu, setHeaderMenu] = React.useState<HeaderMenuTarget | null>(
     null
   );
   const closeHeaderMenu = React.useCallback(() => setHeaderMenu(null), []);
+  const unverifyTargets =
+    rowMenu && onUnverifyRows && canUnverifyRow
+      ? rowMenu.rowIndexes.filter(canUnverifyRow)
+      : [];
+  // The menu names the rows it will act on, which are not always the one it
+  // was opened on (that one may already be unvalidated).
+  const unverifyNumbers: number[] = [];
+  if (unverifyTargets.length) {
+    const displayNumbers = new Map<number, number>();
+    table.getRowsInDisplayOrder().forEach((row, index) => {
+      const rowIndex = rowIndexById.get(row.id);
+      if (rowIndex != null) displayNumbers.set(rowIndex, index + 1);
+    });
+    unverifyTargets.forEach((rowIndex) =>
+      unverifyNumbers.push(displayNumbers.get(rowIndex) ?? rowIndex + 1)
+    );
+  }
   const [filterMenu, setFilterMenu] = React.useState<HeaderMenuTarget | null>(
     null
   );
@@ -674,7 +756,7 @@ export const SpreadsheetGrid = React.forwardRef<
     fillPreview,
     onStartHeaderSelection: startHeaderSelection,
     onExtendHeaderSelection: extendHeaderSelection,
-    onOpenRowMenu: setRowMenu,
+    onOpenRowMenu: openRowMenu,
     onStartFill: startFillDrag
   };
 
@@ -825,11 +907,13 @@ export const SpreadsheetGrid = React.forwardRef<
           target={rowMenu}
           canInsert={Boolean(onInsertRow)}
           canDelete={Boolean(onDeleteRow)}
+          unverifyNumbers={unverifyNumbers}
           pinned={rowPinning.isPinned(rowMenu.rowId)}
           onTogglePin={() => rowPinning.toggle(rowMenu.rowId)}
           onInsertAbove={() => onInsertRow?.(rowMenu.rowIndex)}
           onInsertBelow={() => onInsertRow?.(rowMenu.rowIndex + 1)}
           onDelete={() => onDeleteRow?.(rowMenu.rowIndex)}
+          onUnverify={() => onUnverifyRows?.(unverifyTargets)}
           onClose={closeRowMenu}
         />
       ) : null}
@@ -1145,7 +1229,7 @@ type SubscribedRowProps = {
     fullySelected: boolean
   ) => void;
   onExtendHeaderSelection: (axis: 'row', id: string) => void;
-  onOpenRowMenu?: (target: RowMenuTarget) => void;
+  onOpenRowMenu?: (target: Omit<RowMenuTarget, 'rowIndexes'>) => void;
   onStartFill: (event: React.MouseEvent, source: GridBounds) => void;
 };
 

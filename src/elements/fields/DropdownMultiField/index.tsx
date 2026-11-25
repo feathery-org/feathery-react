@@ -10,6 +10,7 @@ import { inputBoxAttrs } from '../../styles';
 
 import {
   Control as DropdownControl,
+  Input,
   CollapsibleMultiValue,
   CollapsibleMultiValueContainer,
   TooltipOption,
@@ -20,7 +21,7 @@ import {
   DropdownSelect
 } from './createDropdownSelect';
 import { createSelectStyles } from './selectStyles';
-import useMobileViewport from './useMobileViewport';
+import useMobileViewport from '../../../hooks/useMobileViewport';
 import useCollapsedSelectionManager from './useCollapsedSelectionManager';
 import useDropdownOptions from './useDropdownOptions';
 import useWindowedOptions from './useWindowedOptions';
@@ -38,11 +39,14 @@ export default function DropdownMultiField({
   fieldVal = [],
   repeatIndex = null,
   editMode,
+  formSettings,
   onChange = () => {},
   elementProps = {},
+  errorAttributes = {},
   rightToLeft,
   children
 }: any) {
+  const asciiOnly = formSettings?.asciiOnly ?? false;
   const { borderStyles, customBorder } = useBorder({
     element,
     error: inlineError,
@@ -54,7 +58,7 @@ export default function DropdownMultiField({
   const servar = element.servar;
   const fieldKey = servar.key;
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar, editMode);
+    useSalesforceSync(servar, editMode, asciiOnly, formSettings?.formKey);
 
   const properties = element.properties || {};
   const translation = properties.translate || {};
@@ -144,6 +148,7 @@ export default function DropdownMultiField({
   const selectComponentsOverride = useMemo(
     () => ({
       Control: DropdownControl,
+      Input,
       Option: TooltipOption,
       MultiValue: CollapsibleMultiValue,
       MultiValueContainer: CollapsibleMultiValueContainer,
@@ -332,7 +337,12 @@ export default function DropdownMultiField({
         {...inputBoxAttrs(servar.type)}
       >
         {customBorder}
-        <SelectComponent {...selectProps} inputValue={inputValue} />
+        <SelectComponent
+          {...selectProps}
+          errorAttributes={errorAttributes}
+          {...errorAttributes}
+          inputValue={inputValue}
+        />
         <HiddenValueInput
           name={fieldKey}
           value={selectVal.map((opt: any) => opt.value).join(', ')}

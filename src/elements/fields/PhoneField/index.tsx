@@ -32,6 +32,7 @@ function PhoneField({
   fieldLabel,
   fullNumber,
   elementProps = {},
+  errorAttributes = {},
   required = false,
   disabled = false,
   repeatIndex = null,
@@ -259,7 +260,14 @@ function PhoneField({
             if (countriesEnabled && !disabled) setShow(!show);
           }}
         >
-          {countryMap[curCountryCode].flag}
+          <span
+            css={{
+              display: 'inline-block',
+              ...responsiveStyles.getTarget('fieldFlag')
+            }}
+          >
+            {countryMap[curCountryCode].flag}
+          </span>
         </div>
         <Overlay
           key={`overlay-${curCountryCode}`}
@@ -316,6 +324,7 @@ function PhoneField({
             disabled={disabled}
             placeholder=''
             aria-label={element.properties.aria_label}
+            {...errorAttributes}
             value={formattedNumber}
             ref={(ref) => {
               inputRef.current = ref;

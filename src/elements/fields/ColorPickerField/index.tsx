@@ -17,6 +17,7 @@ function ColorPickerField({
   editMode,
   onChange = () => {},
   elementProps = {},
+  errorAttributes = {},
   disabled = false,
   children
 }: any) {
@@ -37,6 +38,16 @@ function ColorPickerField({
       {fieldLabel}
       <div
         id={`${servar.key}-swatch`}
+        role='button'
+        {...errorAttributes}
+        aria-label={element.properties.aria_label || servar.name}
+        tabIndex={disabled || editMode ? -1 : 0}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            event.currentTarget.click();
+          }
+        }}
         css={{
           width: '100%',
           background: `#${fieldVal}`,

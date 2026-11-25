@@ -34,6 +34,7 @@ jest.mock('../../init', () => ({
   filePathMap: {},
   registerKnownFieldKeys: jest.fn(),
   registerTextVariableFields: jest.fn(),
+  normalizeKnownAsciiValues: jest.fn((values) => values),
   setFieldValues: jest.fn(),
   markStepCompleted: jest.fn(),
   fileDeduplicationCount: {},

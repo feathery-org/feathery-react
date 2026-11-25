@@ -130,6 +130,8 @@ type UseTableDataReturn = {
   enableAddDeleteRows: boolean;
 
   // Computed data
+  sortedRowIndices: number[];
+  sortedBaseRowIndices: number[];
   paginatedRowIndices: number[];
   transposedRowIndices: number[];
   totalRows: number;
@@ -140,6 +142,7 @@ type UseTableDataReturn = {
   activeFieldValues: Record<string, any>;
   baseColumns: Column[];
   baseFieldValues: Record<string, any>;
+  baseNumRows: number;
 
   // Handlers
   handleSort: (columnName: string) => void;
@@ -229,12 +232,45 @@ export function useTableData({
     [baseNumRows]
   );
 
-  const filteredBaseRowIndices = useMemo(() => {
-    if (!enableTranspose || !enableSearch || !searchQuery.trim()) {
+  const [sortedColumnIndex, setSortedColumnIndex] = useState<number | null>(
+    null
+  );
+
+  const sortedBaseRowIndices = useMemo(() => {
+    if (!enableTranspose || !enableSort || sortedColumnIndex === null) {
       return allBaseRowIndices;
     }
 
-    return allBaseRowIndices.filter((baseRowIdx) => {
+    const column = baseColumns[sortedColumnIndex];
+    if (!column) return allBaseRowIndices;
+
+    return [...allBaseRowIndices].sort((aIdx, bIdx) => {
+      const fieldValue = baseFieldValues[column.field_key];
+      const aValue = Array.isArray(fieldValue) ? fieldValue[aIdx] : fieldValue;
+      const bValue = Array.isArray(fieldValue) ? fieldValue[bIdx] : fieldValue;
+
+      const aParsed = parseSortableValue(aValue);
+      const bParsed = parseSortableValue(bValue);
+
+      const comparison = compareSortableValues(aParsed, bParsed);
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [
+    enableTranspose,
+    allBaseRowIndices,
+    sortedColumnIndex,
+    sortDirection,
+    baseColumns,
+    baseFieldValues,
+    enableSort
+  ]);
+
+  const filteredBaseRowIndices = useMemo(() => {
+    if (!enableTranspose || !enableSearch || !searchQuery.trim()) {
+      return sortedBaseRowIndices;
+    }
+
+    return sortedBaseRowIndices.filter((baseRowIdx) => {
       return baseColumns.some((column) => {
         const fieldValue = baseFieldValues[column.field_key];
         const cellValue = Array.isArray(fieldValue)
@@ -248,57 +284,24 @@ export function useTableData({
     });
   }, [
     enableTranspose,
-    allBaseRowIndices,
+    sortedBaseRowIndices,
     baseColumns,
     searchQuery,
     enableSearch,
     baseFieldValues
   ]);
 
-  const [sortedColumnIndex, setSortedColumnIndex] = useState<number | null>(
-    null
-  );
-
-  const sortedBaseRowIndices = useMemo(() => {
-    if (!enableTranspose || !enableSort || sortedColumnIndex === null) {
-      return filteredBaseRowIndices;
-    }
-
-    const column = baseColumns[sortedColumnIndex];
-    if (!column) return filteredBaseRowIndices;
-
-    return [...filteredBaseRowIndices].sort((aIdx, bIdx) => {
-      const fieldValue = baseFieldValues[column.field_key];
-      const aValue = Array.isArray(fieldValue) ? fieldValue[aIdx] : fieldValue;
-      const bValue = Array.isArray(fieldValue) ? fieldValue[bIdx] : fieldValue;
-
-      const aParsed = parseSortableValue(aValue);
-      const bParsed = parseSortableValue(bValue);
-
-      const comparison = compareSortableValues(aParsed, bParsed);
-      return sortDirection === 'asc' ? comparison : -comparison;
-    });
-  }, [
-    enableTranspose,
-    filteredBaseRowIndices,
-    sortedColumnIndex,
-    sortDirection,
-    baseColumns,
-    baseFieldValues,
-    enableSort
-  ]);
-
   const paginatedBaseRowIndices = useMemo(() => {
     if (!enableTranspose || !enablePagination) {
-      return sortedBaseRowIndices;
+      return filteredBaseRowIndices;
     }
 
     const startIdx = currentPage * rowsPerPage;
     const endIdx = startIdx + rowsPerPage;
-    return sortedBaseRowIndices.slice(startIdx, endIdx);
+    return filteredBaseRowIndices.slice(startIdx, endIdx);
   }, [
     enableTranspose,
-    sortedBaseRowIndices,
+    filteredBaseRowIndices,
     currentPage,
     rowsPerPage,
     enablePagination
@@ -349,12 +352,44 @@ export function useTableData({
     [numRows]
   );
 
+  const sortedRowIndices = useMemo(() => {
+    if (enableTranspose) return allRowIndices; // Already sorted during transpose
+
+    if (!enableSort || !sortColumn) return allRowIndices;
+
+    const column = columns.find(
+      (col, index) => columnSortKey(col.field_key, index) === sortColumn
+    );
+
+    if (!column) return allRowIndices;
+
+    return [...allRowIndices].sort((aIdx, bIdx) => {
+      const fieldValue = activeFieldValues[column.field_key];
+      const aValue = Array.isArray(fieldValue) ? fieldValue[aIdx] : fieldValue;
+      const bValue = Array.isArray(fieldValue) ? fieldValue[bIdx] : fieldValue;
+
+      const aParsed = parseSortableValue(aValue);
+      const bParsed = parseSortableValue(bValue);
+
+      const comparison = compareSortableValues(aParsed, bParsed);
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [
+    enableTranspose,
+    allRowIndices,
+    sortColumn,
+    sortDirection,
+    columns,
+    enableSort,
+    activeFieldValues
+  ]);
+
   const filteredRowIndices = useMemo(() => {
-    if (enableTranspose) return allRowIndices; // Already filtered during transpose
+    if (enableTranspose) return sortedRowIndices; // Already filtered during transpose
 
-    if (!enableSearch || !searchQuery.trim()) return allRowIndices;
+    if (!enableSearch || !searchQuery.trim()) return sortedRowIndices;
 
-    return allRowIndices.filter((rowIndex) => {
+    return sortedRowIndices.filter((rowIndex) => {
       return columns.some((column) => {
         const fieldValue = activeFieldValues[column.field_key];
         const cellValue = Array.isArray(fieldValue)
@@ -368,57 +403,25 @@ export function useTableData({
     });
   }, [
     enableTranspose,
-    allRowIndices,
+    sortedRowIndices,
     columns,
     searchQuery,
     enableSearch,
     activeFieldValues
   ]);
 
-  const sortedRowIndices = useMemo(() => {
-    if (enableTranspose) return filteredRowIndices; // Already sorted during transpose
-
-    if (!enableSort || !sortColumn) return filteredRowIndices;
-
-    const column = columns.find(
-      (col, index) => columnSortKey(col.field_key, index) === sortColumn
-    );
-
-    if (!column) return filteredRowIndices;
-
-    return [...filteredRowIndices].sort((aIdx, bIdx) => {
-      const fieldValue = activeFieldValues[column.field_key];
-      const aValue = Array.isArray(fieldValue) ? fieldValue[aIdx] : fieldValue;
-      const bValue = Array.isArray(fieldValue) ? fieldValue[bIdx] : fieldValue;
-
-      const aParsed = parseSortableValue(aValue);
-      const bParsed = parseSortableValue(bValue);
-
-      const comparison = compareSortableValues(aParsed, bParsed);
-      return sortDirection === 'asc' ? comparison : -comparison;
-    });
-  }, [
-    enableTranspose,
-    filteredRowIndices,
-    sortColumn,
-    sortDirection,
-    columns,
-    enableSort,
-    activeFieldValues
-  ]);
-
   const paginatedRowIndices = useMemo(() => {
     if (enableTranspose) return allRowIndices; // Already paginated during transpose
 
-    if (!enablePagination) return sortedRowIndices;
+    if (!enablePagination) return filteredRowIndices;
 
     const startIdx = currentPage * rowsPerPage;
     const endIdx = startIdx + rowsPerPage;
-    return sortedRowIndices.slice(startIdx, endIdx);
+    return filteredRowIndices.slice(startIdx, endIdx);
   }, [
     enableTranspose,
     allRowIndices,
-    sortedRowIndices,
+    filteredRowIndices,
     currentPage,
     rowsPerPage,
     enablePagination
@@ -454,8 +457,8 @@ export function useTableData({
 
   // For transposed tables, totalRows and totalPages are based on original rows (now columns)
   const totalRows = enableTranspose
-    ? sortedBaseRowIndices.length
-    : sortedRowIndices.length;
+    ? filteredBaseRowIndices.length
+    : filteredRowIndices.length;
   const totalPages = enablePagination ? Math.ceil(totalRows / rowsPerPage) : 1;
 
   // Persist page to window cache when user navigates (keyed by element.id)
@@ -535,6 +538,8 @@ export function useTableData({
 
     enablePagination,
     currentPage,
+    sortedRowIndices,
+    sortedBaseRowIndices,
     paginatedRowIndices,
     rowsPerPage,
     setCurrentPage,
@@ -551,6 +556,7 @@ export function useTableData({
     hasData,
     activeFieldValues,
     baseColumns,
-    baseFieldValues
+    baseFieldValues,
+    baseNumRows
   };
 }

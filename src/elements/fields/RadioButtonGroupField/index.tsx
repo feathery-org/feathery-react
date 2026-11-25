@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useId, useMemo, useRef, useState } from 'react';
 import { FormControl } from '../../components/FormControl';
 import { resetStyles } from '../../styles';
 import {
@@ -26,16 +26,20 @@ function RadioButtonGroupField({
   otherVal = '',
   repeatIndex = null,
   editMode,
+  formSettings,
   onChange = () => {},
   onOtherChange = () => {},
   onEnter = () => {},
   elementProps = {},
+  errorAttributes = {},
   children
 }: any) {
+  const asciiOnly = formSettings?.asciiOnly ?? false;
   const servar = element.servar;
   const containerRef = useRef(null);
+  const optionLabelIdPrefix = useId();
   const { dynamicOptions, loadingDynamicOptions, shouldSalesforceSync } =
-    useSalesforceSync(servar, editMode);
+    useSalesforceSync(servar, editMode, asciiOnly, formSettings?.formKey);
 
   const [otherSelect, setOtherSelect] = useState({});
   const otherChecked =
@@ -93,6 +97,9 @@ function RadioButtonGroupField({
       {children}
       {fieldLabel}
       <div
+        role='radiogroup'
+        aria-label={element.properties.aria_label || servar.name}
+        {...errorAttributes}
         css={{
           display: 'flex',
           flexWrap: 'wrap',
@@ -104,6 +111,7 @@ function RadioButtonGroupField({
           const value = option.value ?? option;
           const label = option.label ?? option;
           const tooltip = option.tooltip ?? '';
+          const labelId = `${optionLabelIdPrefix}-${i}`;
 
           return (
             <div
@@ -126,7 +134,9 @@ function RadioButtonGroupField({
                   disabled={disabled || loadingDynamicOptions}
                   onChange={onChange}
                   onFocus={iosScrollOnFocus}
+                  // Preserve custom CSS selectors while naming each option by its text.
                   aria-label={element.properties.aria_label}
+                  aria-labelledby={labelId}
                   value={value}
                   style={{
                     padding: 0,
@@ -140,6 +150,7 @@ function RadioButtonGroupField({
                   }}
                 />
                 <span
+                  id={labelId}
                   css={{
                     whiteSpace: 'pre-wrap',
                     overflowWrap: 'anywhere',

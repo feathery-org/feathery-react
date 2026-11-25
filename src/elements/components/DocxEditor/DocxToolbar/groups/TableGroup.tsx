@@ -27,8 +27,7 @@ const TRACK_CHANGES_HINT = 'Not available while track changes is on';
 // Track-changes gating: structural column ops have no tracked route in this
 // Syncfusion version — deleteColumn/mergeCells pop a blocking "won't be
 // marked as change" dialog and insertColumn applies silently with ZERO
-// revisions, surviving reject-all (probed on a real DocumentEditor; see the
-// op-vocabulary comment in assistant/tools/docx/syncfusionDocumentOps.ts).
+// revisions, surviving reject-all (probed on a real DocumentEditor).
 // insertRow is properly tracked. deleteRow/deleteTable are unprobed — gated
 // too until verified. Shading and borders are format changes and stay open.
 export default function TableGroup({

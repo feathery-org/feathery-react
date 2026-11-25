@@ -267,7 +267,8 @@ describe('attaching bindings to a tokenized template', () => {
     setCaretControl(true);
     expect(() => (editor as any).trigger('contentControl')).not.toThrow();
 
-    if (restore) Object.defineProperty(module, 'canEditContentControl', restore);
+    if (restore)
+      Object.defineProperty(module, 'canEditContentControl', restore);
     else delete module.canEditContentControl;
     setCaretControl(null);
   });
@@ -311,12 +312,119 @@ describe('attaching bindings to a tokenized template', () => {
     expect(onLockedEdit).toHaveBeenCalledTimes(1);
 
     // Blurring the editable div drops the hint even while still on the cell.
-    (editor as any).documentHelper.editableDiv.dispatchEvent(
-      new Event('blur')
-    );
+    (editor as any).documentHelper.editableDiv.dispatchEvent(new Event('blur'));
     expect(onLockedEditResolved).toHaveBeenCalledTimes(1);
 
     setCaretControl(null);
+  });
+});
+
+// Each click away from a locked cell re-fires 'contentControl' for it first,
+// so show and resolve land in one turn (the host side: savedToast.spec.tsx).
+describe('locked-edit hint when clicking away from a locked Total', () => {
+  let editor: DocumentEditor;
+  let attached: AttachedBindings;
+  let showing: boolean;
+  let calls: string[];
+
+  // Costs table (block 2): row 5 is "Total | <Grand total formula>".
+  const TOTAL = '0;2;5;1;0;1';
+  const QTY = '0;2;1;1;0;1';
+  const HINT_DEBOUNCE_MS = 600;
+
+  // Only the hint's debounce timer is held here, so a test decides whether a
+  // click comes inside it; every other bindings timer runs for real.
+  const hintTimers = new Map<number, () => void>();
+  let nextHintTimer = 0;
+  const elapseHintDebounce = () => {
+    const due = [...hintTimers.values()];
+    hintTimers.clear();
+    for (const run of due) run();
+  };
+
+  beforeEach(() => {
+    showing = false;
+    calls = [];
+    editor = makeEditor(buildCostsFixture());
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      convertTokensOnOpen: false,
+      onLockedEdit: () => {
+        showing = true;
+        calls.push('show');
+      },
+      onLockedEditResolved: () => {
+        showing = false;
+        calls.push('resolve');
+      },
+      setTimeoutFn: (fn, ms) => {
+        if (ms !== HINT_DEBOUNCE_MS) return setTimeout(fn, ms);
+        const id = --nextHintTimer;
+        hintTimers.set(id, fn);
+        return id;
+      },
+      clearTimeoutFn: (id) => {
+        if (hintTimers.delete(id as number)) return;
+        clearTimeout(id as ReturnType<typeof setTimeout>);
+      }
+    });
+  });
+
+  afterEach(() => {
+    attached.dispose();
+    destroy(editor);
+    hintTimers.clear();
+  });
+
+  /** A mouse click in Syncfusion's mouse-up order (viewer.js): lock check on
+   *  the old selection, move the caret, lock check on the new selection. By
+   *  default the click comes after the hint debounce has run out. */
+  const click = (offset: string, { quick = false } = {}) => {
+    if (!quick) elapseHintDebounce();
+    calls = [];
+    const selection = (editor as any).selection;
+    selection.checkContentControlLocked();
+    selection.select(offset, offset);
+    selection.checkContentControlLocked();
+  };
+
+  const caretTitle = () =>
+    (editor as any).selection.currentContentControl?.contentControlProperties
+      ?.title;
+
+  it('shows the hint on the Total itself', () => {
+    click(TOTAL);
+    expect(caretTitle()).toBe('Grand total');
+    expect(showing).toBe(true);
+  });
+
+  it('shows the hint again on a quick click back onto the Total', () => {
+    // All inside the 600ms debounce: the stale re-show while leaving must not
+    // swallow the next real show.
+    click(TOTAL);
+    click(QTY, { quick: true });
+    expect(showing).toBe(false);
+
+    click(TOTAL, { quick: true });
+    expect(caretTitle()).toBe('Grand total');
+    expect(showing).toBe(true);
+    expect(calls).toEqual(['show']);
+  });
+
+  it.each([
+    ['an editable field (Qty)', QTY],
+    ['a plain header cell (Item)', '0;2;0;0;0;1'],
+    ['the "Total" label beside it', '0;2;5;0;0;1'],
+    ['a paragraph outside the table', '0;0;0']
+  ])('resolves the hint when the next click lands on %s', (_label, offset) => {
+    click(TOTAL);
+    expect(showing).toBe(true);
+
+    click(offset);
+    expect(caretTitle()).not.toBe('Grand total');
+    expect(showing).toBe(false);
+    // The stale re-show for the cell being left, then the resolve - both in
+    // the one click.
+    expect(calls).toEqual(['show', 'resolve']);
   });
 });
 
@@ -343,7 +451,11 @@ describe('save gating', () => {
   });
 
   it('refuses a save while a bound cell holds invalid input', () => {
-    writeIntoControl(editor, '[[name=quantity|type=integer|row=r-1]]', 'twelve');
+    writeIntoControl(
+      editor,
+      '[[name=quantity|type=integer|row=r-1]]',
+      'twelve'
+    );
 
     expect(attached.commitForSave()).toBe(false);
     expect(
@@ -386,10 +498,9 @@ describe('content-change suppression', () => {
   it('brackets the initial reconcile so it is not read as a user edit', () => {
     const editor = makeEditor(buildTemplateTokenDocument());
     const calls: boolean[] = [];
-    const attached = attachBindings(
-      editor as unknown as SyncfusionEditorLike,
-      { onSuppressContentChange: (suppressed) => calls.push(suppressed) }
-    );
+    const attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      onSuppressContentChange: (suppressed) => calls.push(suppressed)
+    });
     try {
       // Computing a template's formulas is the editor doing its job, not the
       // user dirtying the document.
@@ -454,9 +565,7 @@ describe('surviving the editor being torn down mid-event', () => {
     try {
       expect(() => handlers.selectionChange()).not.toThrow();
       expect(() => handlers.contentChange()).not.toThrow();
-      expect(() =>
-        handlers.keyDown({ event: { key: 'Enter' } })
-      ).not.toThrow();
+      expect(() => handlers.keyDown({ event: { key: 'Enter' } })).not.toThrow();
     } finally {
       // Heal before afterEach so destroy() can read selection normally.
       healSelection();
@@ -478,6 +587,25 @@ describe('surviving the editor being torn down mid-event', () => {
     attached = attachBindings(editor as unknown as SyncfusionEditorLike);
   });
 
+  it('disposes silently once the editor is already destroyed', () => {
+    // Instance recreation and step navigation both destroy the editor before
+    // dispose runs. Its listeners died with it — poking the corpse throws
+    // inside ej2 and used to log four red dispose errors every teardown.
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      destroy(editor);
+      const removeSpy = jest.spyOn(editor, 'removeEventListener');
+      attached.dispose();
+      expect(removeSpy).not.toHaveBeenCalled();
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+    // Fresh instances so afterEach's dispose/destroy stay valid.
+    editor = makeEditor(buildTemplateTokenDocument());
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike);
+  });
+
   it('dispose does not throw when the editor was already destroyed', () => {
     // The real unmount order: React runs the host's instance.destroy() cleanup
     // before this binding's dispose. removeEventListener and the un-patch helpers
@@ -489,6 +617,39 @@ describe('surviving the editor being torn down mid-event', () => {
     // time; reattaching against the destroyed instance is not possible, so make
     // both safe no-ops.
     attached = { dispose() {} } as AttachedBindings;
-    editor = { destroy() {}, get element() { return null; } } as unknown as DocumentEditor;
+    editor = {
+      destroy() {},
+      get element() {
+        return null;
+      }
+    } as unknown as DocumentEditor;
+  });
+});
+
+describe('host field values from a document with blank fields', () => {
+  it('reports a blank number as no value and a blank text as empty, so saving clears the form field', () => {
+    const control = (tag: string) => ({
+      contentControlProperties: { tag, type: 'Text' },
+      inlines: [{ text: '' }]
+    });
+    const editor = makeEditor({
+      sections: [
+        {
+          blocks: [
+            {
+              inlines: [
+                control('[[name=premium|type=currency]]'),
+                control('[[name=note]]')
+              ]
+            }
+          ]
+        }
+      ]
+    });
+    const attached = attachBindings(editor as unknown as SyncfusionEditorLike);
+
+    expect(attached.fieldValues()).toEqual({ premium: null, note: '' });
+    attached.dispose();
+    editor.destroy();
   });
 });

@@ -2,7 +2,7 @@
  * Event queue for holding events before user interaction
  */
 
-export interface QueuedEvent {
+interface QueuedEvent {
   eventData: any;
   timestamp: number;
   resolve: (value: any) => void;
@@ -12,12 +12,13 @@ export interface QueuedEvent {
 export class EventQueue {
   private queue: QueuedEvent[] = [];
   private isReplaying = false;
+  private idleWaiters: (() => void)[] = [];
 
   enqueue(eventData: any): Promise<any> {
     return new Promise((resolve, reject) => {
       this.queue.push({
         eventData,
-        timestamp: Date.now(), // TODO: pass UTC timestamp to BE
+        timestamp: Date.now(),
         resolve,
         reject
       });
@@ -48,6 +49,12 @@ export class EventQueue {
     this.isReplaying = replaying;
   }
 
+  /** Resolves once nothing is queued or replaying */
+  whenIdle(): Promise<void> {
+    if (this.isEmpty() && !this.isReplaying) return Promise.resolve();
+    return new Promise((resolve) => this.idleWaiters.push(resolve));
+  }
+
   /**
    * Apply replay function to all queued events
    * @param replayFn Function to call for each event
@@ -74,6 +81,9 @@ export class EventQueue {
       }
     } finally {
       this.setReplayState(false);
+      const waiters = this.idleWaiters;
+      this.idleWaiters = [];
+      waiters.forEach((resolve) => resolve());
     }
   }
 }

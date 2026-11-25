@@ -11,14 +11,18 @@ import {
   resolveRevisionsAsOneUndo,
   RevisionGroupItem
 } from '../../../../utils/documentEditorPrimitives';
-import { isAssistantWriting } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
+import { isRobinEditing } from '../robinActivity';
 import { featheryWindow } from '../../../../utils/browser';
+import { cardResolverFor } from '../../../../robin/document/mounts';
+import { withTocRefresh } from '../toc/refreshToc';
+import { redoDocument, undoDocument } from '../historyRouting';
 import { isOpeningDocument, setActiveInlineRevisions } from '../useDocxEditor';
 import BookmarkTab from './BookmarkTab';
 import RailHead from './RailHead';
 import GroupCard from './GroupCard';
 import { ChipView, GroupView } from './types';
 import { ACCENT_LINE, INK, PANEL } from './styles';
+import type { TrackedChangeAcceptance } from '../history/useDocxHistorySession';
 
 // Review rail for pending tracked changes: one card per assistant change set
 // (plus one per human author), expanding to −/+ diff "chips" with
@@ -37,6 +41,11 @@ interface Props {
   onHiddenChange?: (hidden: boolean) => void;
   /** Reports the pending tracked-change count whenever it changes. */
   onPendingCountChange?: (count: number) => void;
+  /** Persists an accept operation as a distinct confirmed history version. */
+  onAcceptTrackedChanges?: (
+    acceptance: TrackedChangeAcceptance,
+    accept: () => void
+  ) => Promise<void>;
 }
 
 // contentChange fires once per keystroke; one trailing refresh after typing
@@ -74,11 +83,16 @@ function afterNextPaint(fn: () => void): void {
 // here rather than being swallowed at its call site. Contained errors log at
 // the browser's verbose/debug level: teardown noise stays out of production
 // logs, but a RECURRING failure - a real regression - stays visible.
-const handleEditorEvent = (fn: () => void) => {
+const reportEditorEventError = (error: unknown) =>
+  console.debug('Feathery: tracked-changes rail editor call failed.', error);
+
+const handleEditorEvent = (fn: () => void | Promise<void>) => {
   try {
-    fn();
+    const result = fn();
+    if (result && typeof result.catch === 'function')
+      result.catch(reportEditorEventError);
   } catch (error) {
-    console.debug('Feathery: tracked-changes rail editor call failed.', error);
+    reportEditorEventError(error);
   }
 };
 
@@ -138,6 +152,17 @@ const chipRevisions = (chip: ChipView) => [
   ...(chip.partnerRevisions ?? (chip.partner ? [chip.partner] : []))
 ];
 
+/**
+ * The first chip a person can see: one whose text, before or after, holds more
+ * than page breaks, paragraph marks and whitespace. A card can open with a page
+ * break or an empty paragraph, and going there shows nothing; the first chip
+ * when none is visible.
+ */
+const firstVisibleChip = (chips: ChipView[]): ChipView =>
+  chips.find((chip) =>
+    /[^\s\ufffc]/.test(`${chip.text ?? ''}${chip.beforeText ?? ''}`)
+  ) ?? chips[0];
+
 const itemRevisions = (item: RevisionGroupItem) => [
   ...item.revisions,
   ...(item.partnerRevisions ?? [])
@@ -147,17 +172,18 @@ function TrackedChangeGroups({
   editor,
   hidden,
   onHiddenChange,
-  onPendingCountChange
+  onPendingCountChange,
+  onAcceptTrackedChanges
 }: Props) {
   // Only live (pending) revisions render; a resolved edit disappears from
   // the rail and reappears if the resolution is undone.
   const [groups, setGroups] = useState<GroupView[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  // Which bulk action is running, for RailHead's spinner. The resolve loop
-  // is synchronous, so it's deferred past a paint (see afterNextPaint).
-  const [resolvingAll, setResolvingAll] = useState<'accept' | 'reject' | null>(
-    null
-  );
+  // One review operation owns every entry point, including the paint delay.
+  const [resolving, setResolving] = useState<{
+    action: 'accept' | 'reject';
+    target: 'all' | string | ChipView;
+  } | null>(null);
   // The edits ringed in the document — a group-title click rings the whole
   // group. First entry is primary: what stepping and scroll-into-view use.
   const [activeRevisions, setActiveRevisions] = useState<any[]>([]);
@@ -166,6 +192,13 @@ function TrackedChangeGroups({
   // every arrow press skip an edit.
   const activeRevisionRef = useRef<any>(null);
   const ignoreSelectionRef = useRef(false);
+  const resolvingRef = useRef<object | null>(null);
+  useEffect(() => {
+    setResolving(null);
+    return () => {
+      resolvingRef.current = null;
+    };
+  }, [editor]);
   // Survives the refresh that follows the resolve, and only that: the next
   // resolve replaces it, and a clean one clears it.
   const [stall, setStall] = useState<string | null>(null);
@@ -220,7 +253,7 @@ function TrackedChangeGroups({
     lastRevisionCountRef.current = revisionCount();
     // Neither a (re)load nor an assistant batch is something the user asked
     // to review, so nothing stays expanded through one.
-    if (isOpeningDocument(editor) || isAssistantWriting(editor)) {
+    if (isOpeningDocument(editor) || isRobinEditing(editor)) {
       setExpanded({});
     }
     setGroups(
@@ -228,8 +261,14 @@ function TrackedChangeGroups({
         key: groupKeyOf(view.changeSetId, view.group),
         changeSetId: view.changeSetId,
         group: view.group,
-        // A human view's "group" IS the author name; keep it verbatim.
-        title: view.untagged ? view.group : humanizeGroupId(view.group),
+        // A human view's "group" IS the author name; keep it verbatim. An engine card carries
+        // its own title in the tag.
+        title: view.untagged
+          ? view.group
+          : view.title ?? humanizeGroupId(view.group),
+        ...(view.intent ? { intent: view.intent } : {}),
+        engineOwned:
+          !view.untagged && !!cardResolverFor(editor)?.owns(view.changeSetId),
         untagged: view.untagged,
         // Shown once in the group header instead of on every chip. Untagged
         // groups already show it as the title, so leave theirs unset.
@@ -278,8 +317,7 @@ function TrackedChangeGroups({
         // Every op changes the revision count, so refreshing immediately on
         // each one is O(n^2) across a batch whose intermediate state nobody
         // sees. Debounce instead: one refresh once the batch settles.
-        const suppressed =
-          isOpeningDocument(editor) || isAssistantWriting(editor);
+        const suppressed = isOpeningDocument(editor) || isRobinEditing(editor);
         if (!suppressed && revisionCount() !== lastRevisionCountRef.current)
           refresh();
         else timer = setTimeout(refresh, CONTENT_REFRESH_DEBOUNCE_MS);
@@ -312,7 +350,7 @@ function TrackedChangeGroups({
         if (ignoreSelectionRef.current) return;
         // Same window refresh() collapses for. Without this, each op expands
         // whichever group it lands on and refresh() collapses it right back.
-        if (isOpeningDocument(editor) || isAssistantWriting(editor)) return;
+        if (isOpeningDocument(editor) || isRobinEditing(editor)) return;
         const current = editor.selection?.getCurrentRevision?.();
         const revisions: any[] = Array.isArray(current)
           ? current
@@ -404,6 +442,99 @@ function TrackedChangeGroups({
     }
   };
 
+  const revisionIdsForAcceptance = (
+    revisions: any[],
+    beforeSfdt: string
+  ): string[] => {
+    const ids = revisions
+      .map((revision) => revision?.revisionID ?? revision?.revisionId)
+      .filter((id): id is string => typeof id === 'string' && !!id);
+    if (ids.length) return Array.from(new Set(ids));
+
+    // Older Syncfusion builds did not expose revisionID on the live wrapper.
+    // Match the SFDT metadata in that case so confirmation versions still work.
+    const keys = new Set(
+      revisions.map((revision) =>
+        JSON.stringify([
+          revision?.author ?? '',
+          revision?.revisionType ?? '',
+          revision?.customData ?? ''
+        ])
+      )
+    );
+    const doc = JSON.parse(beforeSfdt);
+    return Array.from(
+      new Set<string>(
+        (doc.revisions ?? [])
+          .filter((revision: any) =>
+            keys.has(
+              JSON.stringify([
+                revision?.author ?? '',
+                revision?.revisionType ?? '',
+                revision?.customData ?? ''
+              ])
+            )
+          )
+          .map((revision: any) => String(revision.revisionId ?? ''))
+          .filter(Boolean)
+      )
+    );
+  };
+
+  const resolveWithHistory = async (
+    revisions: any[],
+    isAccept: boolean,
+    resolve: () => void,
+    target: 'all' | string | ChipView
+  ) => {
+    if (resolvingRef.current) return;
+    const operation = {
+      action: isAccept ? ('accept' as const) : ('reject' as const),
+      target
+    };
+    resolvingRef.current = operation;
+    setResolving(operation);
+    setStall(null);
+    try {
+      // Paint feedback before serialization or a synchronous engine resolve.
+      await new Promise<void>((resolve) => afterNextPaint(resolve));
+      if (resolvingRef.current !== operation || isTornDown(editor)) return;
+      if (isAccept && onAcceptTrackedChanges) {
+        const beforeSfdt = editor.serialize();
+        await onAcceptTrackedChanges(
+          {
+            beforeSfdt,
+            revisionIds: revisionIdsForAcceptance(revisions, beforeSfdt)
+          },
+          () => {
+            if (resolvingRef.current === operation && !isTornDown(editor))
+              suppressingSelectionEcho(resolve);
+          }
+        );
+      } else {
+        suppressingSelectionEcho(resolve);
+      }
+      if (resolvingRef.current !== operation || isTornDown(editor)) return;
+      refresh();
+      // Resolving the last edit unmounts the rail — focus would land on
+      // <body>, where nobody sees the next ⌘Z.
+      if (listRevisionGroups(editor).length) refocusPanel();
+      else editor?.focusIn?.();
+    } catch (error) {
+      if (resolvingRef.current === operation)
+        setStall(
+          `Could not finish ${
+            isAccept ? 'accepting' : 'rejecting'
+          } changes. Check the document's save status before retrying.`
+        );
+      throw error;
+    } finally {
+      if (resolvingRef.current === operation) {
+        resolvingRef.current = null;
+        setResolving(null);
+      }
+    }
+  };
   // Every resolve path reports through here, so a stall can never be surfaced
   // by one entry point and swallowed by another.
   const reportStall = (
@@ -413,52 +544,82 @@ function TrackedChangeGroups({
   ) =>
     setStall(unresolved ? stallNotice(unresolved, resolved, isAccept) : null);
 
+  // The editor's own accept or reject, with the document's table of contents refreshed after it in
+  // the same undo, for every reviewer (a refresh that fails is logged and skipped).
+  const settled = <T,>(resolve: () => T): T => withTocRefresh(editor, resolve);
+
   // Non-cascading resolve (native accept/reject settles whatever is
   // CONTIGUOUS, not the group), wrapped as ONE undo step.
   const resolveChips = (chips: ChipView[], isAccept: boolean) => {
-    if (!chips.length) return;
+    if (!chips.length) return Promise.resolve();
     const revisions = chips.flatMap(chipRevisions).filter(Boolean);
-    const outcome = suppressingSelectionEcho(() =>
-      resolveRevisionsAsOneUndo(editor, revisions, isAccept)
+    return resolveWithHistory(
+      revisions,
+      isAccept,
+      () => {
+        const outcome = settled(() =>
+          resolveRevisionsAsOneUndo(editor, revisions, isAccept)
+        );
+        reportStall(
+          outcome?.unresolved?.length ?? 0,
+          outcome?.length ?? 0,
+          isAccept
+        );
+      },
+      chips[0]
     );
-    reportStall(
-      outcome?.unresolved?.length ?? 0,
-      outcome?.length ?? 0,
-      isAccept
-    );
-    refresh();
-    // Resolving the last edit unmounts the rail — focus would land on
-    // <body>, where nobody sees the next ⌘Z.
-    if (listRevisionGroups(editor).length) refocusPanel();
-    else editor?.focusIn?.();
   };
 
-  const resolveGroups = (groupViews: GroupView[], isAccept: boolean) => {
-    const outcome = suppressingSelectionEcho(() =>
-      resolveLiveRevisionGroupsAsOneUndo(editor, groupViews, isAccept)
-    );
-    reportStall(
-      outcome?.unresolved?.length ?? 0,
-      outcome?.length ?? 0,
-      isAccept
-    );
-    refresh();
-    if (listRevisionGroups(editor).length) refocusPanel();
-    else editor?.focusIn?.();
-  };
-
-  // Accept all / Reject all: the same resolve, but a big batch blocks long
-  // enough to be worth a spinner. See afterNextPaint.
-  const resolveAllWithSpinner = (
+  // A card the document engine owns (structural, or one the editor's own accept or reject cannot
+  // settle) is resolved by the engine as a whole; every other card natively, as before.
+  const resolveGroups = (
     groupViews: GroupView[],
-    isAccept: boolean
+    isAccept: boolean,
+    all = false
   ) => {
-    if (resolvingAll) return;
-    setResolvingAll(isAccept ? 'accept' : 'reject');
-    afterNextPaint(() => {
-      handleEditorEvent(() => resolveGroups(groupViews, isAccept));
-      setResolvingAll(null);
-    });
+    // The rail lingers after the last edit to show a stall notice, so Accept/
+    // Reject all can fire with nothing left; resolving none must not cut a version.
+    if (!groupViews.length) return Promise.resolve();
+    const revisions = groupViews.flatMap((group) =>
+      group.chips.flatMap(chipRevisions)
+    );
+    return resolveWithHistory(
+      revisions,
+      isAccept,
+      () => {
+        const resolver = cardResolverFor(editor);
+        const owned = groupViews.filter(
+          (g) => !g.untagged && resolver?.owns(g.changeSetId)
+        );
+        const native = groupViews.filter((g) => !owned.includes(g));
+        let outcome = null as ReturnType<
+          typeof resolveLiveRevisionGroupsAsOneUndo
+        > | null;
+        const resolveNative = () => {
+          outcome = settled(() =>
+            resolveLiveRevisionGroupsAsOneUndo(editor, native, isAccept)
+          );
+        };
+        let ownedResolved = true;
+        // A batch with engine-owned cards resolves the rest alongside them, as one undo step
+        if (owned.length)
+          ownedResolved = !!resolver?.resolve(
+            owned.map((g) => g.changeSetId),
+            isAccept,
+            native.length ? resolveNative : undefined
+          );
+        else if (native.length) resolveNative();
+        const unresolvedOwned = ownedResolved
+          ? 0
+          : groupViews.reduce((n, g) => n + g.chips.length, 0);
+        reportStall(
+          (outcome?.unresolved?.length ?? 0) + unresolvedOwned,
+          outcome?.length ?? 0,
+          isAccept
+        );
+      },
+      all ? 'all' : groupViews[0].key
+    );
   };
 
   // Suppresses selectRevision's selectionChange echo (sync + trailing
@@ -505,12 +666,13 @@ function TrackedChangeGroups({
     refocusPanel();
   };
 
-  // Group-title click: navigate to the group's first edit but ring every
-  // chip, and never expand — that's the caret's job alone.
+  // Group-title click: navigate to the group's first edit a person can see
+  // (not a page break or an empty paragraph mark) but ring every chip, and
+  // never expand — that's the caret's job alone.
   const focusGroupFirst = (group: GroupView) => {
     if (!group.chips.length) return;
     commitActiveRevisions(group.chips.flatMap(chipRevisions));
-    selectAndScrollToRevision(group.chips[0].revision);
+    selectAndScrollToRevision(firstVisibleChip(group.chips).revision);
     refocusPanel();
   };
 
@@ -533,15 +695,20 @@ function TrackedChangeGroups({
 
   const onPanelKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const key = event.key.toLowerCase();
+    if (resolvingRef.current && ['a', 'r', 'z', 'y'].includes(key)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     // The rail holds focus for J/K/A/R, so Syncfusion never sees undo/redo
     // chords pressed here — forward them to the document history.
     if ((event.ctrlKey || event.metaKey) && !event.altKey) {
       if (key === 'z' || key === 'y') {
         event.preventDefault();
         event.stopPropagation();
-        const history = editor?.editorHistory ?? editor?.editorHistoryModule;
-        if (key === 'y' || event.shiftKey) history?.redo?.();
-        else history?.undo?.();
+        // the same routing as the document and the toolbar (decision D4)
+        if (key === 'y' || event.shiftKey) redoDocument(editor);
+        else undoDocument(editor);
       }
       return;
     }
@@ -579,10 +746,13 @@ function TrackedChangeGroups({
     if (!focused) return;
     event.preventDefault();
     event.stopPropagation();
-    resolveChips([focused], key === 'a');
+    // an engine card has no per-edit resolution: A or R settles the card
+    const owner = groups.find((g) => g.chips.includes(focused));
+    if (owner?.engineOwned) return resolveGroups([owner], key === 'a');
+    return resolveChips([focused], key === 'a');
   };
 
-  if (!groups.length) return null;
+  if (!groups.length && !resolving && !stall) return null;
 
   return (
     <div
@@ -628,8 +798,18 @@ function TrackedChangeGroups({
           <RailHead
             pendingCount={allChips.length}
             onHide={onHiddenChange ? () => onHiddenChange(true) : undefined}
-            onResolveAll={(isAccept) => resolveAllWithSpinner(groups, isAccept)}
-            resolvingAll={resolvingAll}
+            onResolveAll={(isAccept) =>
+              handleEditorEvent(() => resolveGroups(groups, isAccept, true))
+            }
+            disabled={!!resolving}
+            resolvingAll={resolving?.target === 'all' ? resolving.action : null}
+            progress={
+              resolving
+                ? `${
+                    resolving.action === 'accept' ? 'Accepting' : 'Rejecting'
+                  } changes…`
+                : null
+            }
             notice={stall}
           />
           <div
@@ -648,6 +828,16 @@ function TrackedChangeGroups({
               <GroupCard
                 key={mem.key}
                 group={mem}
+                disabled={!!resolving}
+                resolving={
+                  resolving?.target === mem.key ? resolving.action : null
+                }
+                resolvingChip={
+                  typeof resolving?.target === 'object'
+                    ? resolving.target
+                    : undefined
+                }
+                resolvingAction={resolving?.action}
                 cardRef={(el) => {
                   if (el) groupRefs.current.set(mem.key, el);
                   else groupRefs.current.delete(mem.key);

@@ -1,6 +1,7 @@
 import React, { memo, useMemo } from 'react';
 import { isFit } from '../../utils/hydration';
 import { isNum } from '../../utils/primitives';
+import { getImageColorStyles } from '../../utils/styles';
 import {
   DEFAULT_CHEVRON_GAP,
   DROPDOWN_CHEVRON_CLEARANCE,
@@ -9,7 +10,9 @@ import {
   INNER_PADDING_LEFT,
   INNER_PADDING_RIGHT,
   INPUT_BOX_FIELDS,
+  rendersPlaceholderStyles,
   MULTISELECT_FIELD,
+  nativeIconGapStyles,
   RESET_INLINE_PADDING_CSS
 } from '../styles';
 import {
@@ -232,6 +235,10 @@ function applyLabelFontStyles(styles: any) {
   styles.applyFontStyles('fieldLabel', false, true, 'label_', true);
 }
 
+// Option icons follow an explicit state font color, like button icons do.
+const optionIconStateColor = (color: string) =>
+  color ? { '[data-feathery-option-icon]': { color: `#${color}` } } : {};
+
 export function applyFieldStyles(field: any, styles: any) {
   const type = field.servar.type;
   styles.addTargets(
@@ -352,6 +359,7 @@ export function applyFieldStyles(field: any, styles: any) {
       styles.applyWidth('img', 'image_');
       styles.applyMargin('img', 'image_');
       styles.applyFlexDirection('ac');
+      styles.applyColor('img', 'icon_color', 'color');
       styles.applyColor('bar', 'bar_color', 'backgroundColor');
       break;
     case 'file_upload':
@@ -374,6 +382,7 @@ export function applyFieldStyles(field: any, styles: any) {
       styles.applyFlexDirection('ac');
       styles.applyWidth('img', 'image_');
       styles.applyMargin('img', 'image_');
+      styles.applyColor('img', 'icon_color', 'color');
       styles.apply(
         'ac',
         [
@@ -478,27 +487,24 @@ export function applyFieldStyles(field: any, styles: any) {
       );
       styles.applyWidth('img', 'image_');
       styles.applyMargin('img', 'image_');
+      styles.applyColor('img', 'icon_color', 'color');
+      styles.apply('img', 'image_color', getImageColorStyles);
+      styles.apply('iconGap', 'flex_direction', nativeIconGapStyles);
       styles.apply('hover', 'hover_image_color', (a: string) => {
         if (!a) return {};
-        const level = a === 'black' ? 0 : 100;
         return {
-          img: {
-            webkitFilter: `brightness(${level}%)`,
-            filter: `brightness(${level}%)`
-          }
+          'img, [data-feathery-option-icon]': getImageColorStyles(a)
         };
       });
       styles.applyColor('hover', 'hover_font_color', 'color');
+      styles.apply('hover', 'hover_font_color', optionIconStateColor);
       styles.applyColor('active', 'selected_font_color', 'color');
+      styles.apply('active', 'selected_font_color', optionIconStateColor);
 
       styles.apply('active', 'selected_image_color', (a: string) => {
         if (!a) return {};
-        const level = a === 'black' ? 0 : 100;
         return {
-          img: {
-            webkitFilter: `brightness(${level}%)`,
-            filter: `brightness(${level}%)`
-          }
+          'img, [data-feathery-option-icon]': getImageColorStyles(a)
         };
       });
       break;
@@ -516,7 +522,7 @@ export function applyFieldStyles(field: any, styles: any) {
       styles.applyBoxShadow('sub-fc');
       styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
       styles.applyCorners('field');
-      if (field.properties.placeholder)
+      if (rendersPlaceholderStyles(type, field.properties))
         styles.applyPlaceholderStyles(type, field.styles);
       break;
     case 'pin_input':
@@ -603,10 +609,11 @@ export function applyFieldStyles(field: any, styles: any) {
       styles.applyColor('activeFont', 'selected_font_color', 'color');
       styles.applyColor('completedFont', 'completed_font_color', 'color');
 
-      styles.applyPlaceholderStyles(type, field.styles);
+      if (rendersPlaceholderStyles(type, field.properties))
+        styles.applyPlaceholderStyles(type, field.styles);
       break;
     case 'phone_number':
-      styles.addTargets('fieldToggle', 'dropdown');
+      styles.addTargets('fieldToggle', 'fieldFlag', 'dropdown');
 
       styles.applyFontStyles('dropdown', false, true);
       styles.apply('dropdown', 'background_color', (color: any) => {
@@ -635,7 +642,8 @@ export function applyFieldStyles(field: any, styles: any) {
         l === undefined ? {} : { paddingInlineStart: RESET_INLINE_PADDING_CSS }
       );
       styles.applyPhoneFlagPlacement();
-      styles.applyPlaceholderStyles(type, field.styles);
+      if (rendersPlaceholderStyles(type, field.properties))
+        styles.applyPlaceholderStyles(type, field.styles);
 
       styles.apply('fieldToggle', 'font_size', (a: any) => ({
         fontSize: `${1.5 * a}px`,
@@ -673,7 +681,7 @@ export function applyFieldStyles(field: any, styles: any) {
       styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
-      if (field.properties.placeholder)
+      if (rendersPlaceholderStyles(type, field.properties))
         styles.applyPlaceholderStyles(type, field.styles);
       break;
   }
@@ -681,6 +689,9 @@ export function applyFieldStyles(field: any, styles: any) {
   // percentage height brings a floor of its own to merge with.
   if (INPUT_BOX_FIELDS.includes(type) || type === MULTISELECT_FIELD)
     styles.applyInputBoxMinHeight(type);
+  // Not the multiselect: it keeps block layout until the theme sets padding or
+  // alignment, and restacking it here would shift untouched chips.
+  if (INPUT_BOX_FIELDS.includes(type)) styles.applyInputBoxLabelFlow();
   return styles;
 }
 
