@@ -119,13 +119,27 @@ export const getAllElements = (step: any) => {
   ];
 };
 
+const TRIGGER_ELEMENT_LISTS: Record<string, string> = {
+  button: 'buttons',
+  text: 'texts',
+  table: 'tables',
+  tab: 'tabs',
+  progress_bar: 'progress_bars'
+};
+
+const getElementKey = (step: any, elementID: string, type: string) => {
+  const list = step[TRIGGER_ELEMENT_LISTS[type]];
+  if (!Array.isArray(list)) return '';
+  return list.find((el: any) => el.id === elementID)?.key ?? '';
+};
+
 export const lookUpTrigger = (
   step: any,
   elementID: string,
   type: string,
   additionalPayload?: Record<string, any>
 ): Record<string, any> => {
-  let payload = {};
+  let payload: Record<string, any> = {};
   if (type === 'button') {
     const element = step.buttons.find((button: any) => button.id === elementID);
     payload = { text: element?.properties?.text ?? '' };
@@ -147,6 +161,11 @@ export const lookUpTrigger = (
     // All table-specific data is provided via additionalPayload
     payload = {};
   }
+  // Non-field elements may carry a user-defined key in the designer. It is
+  // surfaced beside the id so rule code can match on a stable, readable name
+  // without changing the existing id contract.
+  const key = getElementKey(step, elementID, type);
+  if (key) payload.key = key;
   return { id: elementID, type, ...payload, ...additionalPayload };
 };
 
