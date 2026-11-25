@@ -1,6 +1,6 @@
 import type { NfNode } from '../../../tree';
 import { canonicalJson, clone } from '../../../tree';
-import { highlightKey } from '../native';
+import { themeColorKey } from '../native';
 import { szToPt } from '../../../../../elements/components/PptxEditor/core/model/units';
 import {
   child,
@@ -48,7 +48,7 @@ export interface ReadNodes {
   sources: Map<NfNode, ONode>;
   inherited?: Record<string, Record<string, Record<string, unknown>>>;
   links?: Record<string, string>;
-  highlights?: Record<string, string>;
+  themeColors?: Record<string, string>;
   slidePath?: string;
 }
 
@@ -120,13 +120,15 @@ function ownRunFormat(
   if (underline !== undefined) out.underline = underline !== 'none';
   if (strike !== undefined) out.strike = strike !== 'noStrike';
   if (size !== undefined) out.size = szToPt(Number(size));
+  const themed = (colored: ONode) =>
+    read.slidePath === undefined
+      ? undefined
+      : read.themeColors?.[themeColorKey(read.slidePath, colored)];
   if (rgb) out.color = `#${(getAttr(rgb, 'val') ?? '').toUpperCase()}`;
+  else if (fill && themed(fill)) out.color = themed(fill);
   if (highlightRgb)
     out.highlight = `#${(getAttr(highlightRgb, 'val') ?? '').toUpperCase()}`;
-  else if (highlight && read.slidePath !== undefined) {
-    const shown = read.highlights?.[highlightKey(read.slidePath, highlight)];
-    if (shown) out.highlight = shown;
-  }
+  else if (highlight && themed(highlight)) out.highlight = themed(highlight);
   if (latin && getAttr(latin, 'typeface'))
     out.font = getAttr(latin, 'typeface');
   return out;

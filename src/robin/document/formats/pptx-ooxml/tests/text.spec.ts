@@ -2,7 +2,7 @@ import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { PptxEditorEngine } from '../../../../../elements/components/PptxEditor/engine/PptxEditorEngine';
 import { conformanceProblems } from '../../../pack';
 import { createHost, pptxPack } from '../index';
-import { highlightKey, serializeDeck, writeNative } from '../native';
+import { themeColorKey, serializeDeck, writeNative } from '../native';
 import { parseXml } from '../../../../../elements/components/PptxEditor/core/opc/xml';
 import { fixture, openDeck, type WriteResult } from './harness';
 
@@ -259,7 +259,7 @@ describe('PowerPoint text', () => {
       `<a:rPr lang="en">${highlight}</a:rPr><a:t>Marketing Plan Presentation`
     );
     const [first, second] = ['ppt/slides/slide1.xml', 'ppt/slides/slide2.xml'];
-    const key = (path: string) => highlightKey(path, parseXml(highlight)[0]);
+    const key = (path: string) => themeColorKey(path, parseXml(highlight)[0]);
     const { nf } = pptxPack.adapter.toNormalForm(
       writeNative({
         slides: [
@@ -267,11 +267,84 @@ describe('PowerPoint text', () => {
           { path: second, xml }
         ],
         pending: [],
-        highlights: { [key(first)]: '#6AD1FA', [key(second)]: '#4285F4' }
+        themeColors: { [key(first)]: '#6AD1FA', [key(second)]: '#4285F4' }
       })
     );
     const shown = JSON.stringify(nf.root).match(/"highlight":"#[0-9A-F]{6}"/g);
     expect(shown).toEqual(['"highlight":"#6AD1FA"', '"highlight":"#4285F4"']);
+  });
+
+  const injected = (
+    slide: string,
+    from: string,
+    to: string
+  ): ReturnType<typeof openDeck> => {
+    const files = unzipSync(fixture('marketing-parity.pptx'));
+    const path = `ppt/slides/${slide}.xml`;
+    files[path] = strToU8(strFromU8(files[path]).replace(from, to));
+    return openDeck('marketing-parity.pptx', zipSync(files));
+  };
+  const total = (deck: ReturnType<typeof openDeck>, query: object) =>
+    (deck.call('find', query) as { total: number }).total;
+
+  it('finds text by the theme colour it shows', () => {
+    const deck = injected(
+      'slide1',
+      '<a:rPr lang="en"/><a:t>Marketing Plan Presentation',
+      '<a:rPr lang="en"><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:rPr><a:t>Marketing Plan Presentation'
+    );
+    const accent = { feature: { name: 'color', value: '#6AD1FA' } };
+    expect(total(deck, accent)).toBe(
+      total(openDeck('marketing-parity.pptx'), accent) + 1
+    );
+  });
+
+  it('matches no slide number field or empty run by colour or highlight', () => {
+    const deck = injected(
+      'slide24',
+      '<a:rPr lang="en"/><a:t>‹#›</a:t></a:fld>',
+      '<a:rPr lang="en"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:highlight><a:srgbClr val="FFFF00"/></a:highlight></a:rPr><a:t>‹#›</a:t></a:fld><a:r><a:rPr lang="en"><a:highlight><a:srgbClr val="FFFF00"/></a:highlight></a:rPr><a:t></a:t></a:r>'
+    );
+    expect(total(deck, { feature: { name: 'color', value: '#FF0000' } })).toBe(
+      0
+    );
+    expect(total(deck, { feature: { name: 'highlight' } })).toBe(0);
+  });
+
+  it('suggests no change to text whose highlight is cleared when it had none', () => {
+    const deck = injected(
+      'slide1',
+      '<a:rPr lang="en"/><a:t>Marketing Plan Presentation',
+      '<a:rPr lang="en"><a:highlight><a:srgbClr val="FFFF00"/></a:highlight></a:rPr><a:t>Marketing Plan Presentation'
+    );
+    const find = { kind: 'run' };
+    const found = deck.call('find', find) as { total: number; shape: string };
+    expectCard(
+      deck.write({
+        intent: 'Remove every highlight.',
+        scope: { ids: [], bulk: [{ find, total: found.total }] },
+        changes: [
+          {
+            kind: 'set',
+            target: { find, total: found.total, shape: found.shape },
+            props: { highlight: 'none' }
+          }
+        ]
+      })
+    );
+    const [card] = deck.pending();
+    expect(new Set(card.targets.map((target) => target.shapeId)).size).toBe(1);
+  });
+
+  it('round-trips a deck with a theme highlight byte for byte', () => {
+    const deck = injected(
+      'slide1',
+      '<a:rPr lang="en"/><a:t>Marketing Plan Presentation',
+      '<a:rPr lang="en"><a:highlight><a:schemeClr val="accent1"/></a:highlight></a:rPr><a:t>Marketing Plan Presentation'
+    );
+    expect(
+      conformanceProblems(pptxPack, { deck: serializeDeck(deck.engine) })
+    ).toEqual([]);
   });
 
   it('takes the underline off underlined text', () => {

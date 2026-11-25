@@ -873,23 +873,6 @@ describe('PowerPoint tables', () => {
     );
   });
 
-  it.each([
-    ['right after it', 2],
-    ['at the end', 5],
-    ['right before it', 1],
-    ['first, before an earlier row', 0]
-  ])('adds a row copied with its ids %s as a new row', (_, at) => {
-    const { deck, table } = deckWithTable();
-    expectCard(
-      replaceTable(deck, table, (node) => {
-        node.rows.splice(at, 0, JSON.parse(JSON.stringify(node.rows[1])));
-      })
-    );
-    acceptAll(deck);
-    expect(deck.find('$45', 'turn-2')).toHaveLength(2);
-    expect(deck.read(tableIn(deck, 'turn-2'), 'turn-2').rows).toHaveLength(6);
-  });
-
   it('moves a table and adds a row to it in one write', () => {
     const { deck, table } = deckWithTable();
     const drawn = deck.read(table).frame;
@@ -927,12 +910,127 @@ describe('PowerPoint tables', () => {
     expect(deck.find('New', 'turn-2')).toHaveLength(1);
   });
 
-  it('copies a row of a table saved by PowerPoint, whose rows carry ids', () => {
+  it.each([
+    [
+      'a row right after it',
+      (node: Node) =>
+        node.rows.splice(2, 0, JSON.parse(JSON.stringify(node.rows[1])))
+    ],
+    [
+      'a row first, before an earlier row',
+      (node: Node) =>
+        node.rows.unshift(JSON.parse(JSON.stringify(node.rows[1])))
+    ],
+    [
+      'a column',
+      (node: Node) =>
+        node.rows.forEach((row: Node) =>
+          row.cells.push(JSON.parse(JSON.stringify(row.cells[1])))
+        )
+    ],
+    [
+      'a cell from another row into a new row',
+      (node: Node) =>
+        node.rows.push({
+          kind: 'row',
+          cells: [
+            JSON.parse(JSON.stringify(node.rows[1].cells[0])),
+            newCell('$1')
+          ]
+        })
+    ]
+  ])('refuses copying %s by its ids, saying to write a new one', (_, edit) => {
+    const { deck, table } = deckWithTable();
+    const result = replaceTable(deck, table, edit);
+    expectLimits(result);
+    expect(JSON.stringify(result)).toContain(
+      'write a new row or column without ids'
+    );
+  });
+
+  it('refuses copying a header merged across columns by its ids', () => {
+    const { deck } = deckWithTable();
+    mergeHeader(deck);
+    expectLimits(
+      replaceTable(
+        deck,
+        tableIn(deck, 'turn-2'),
+        (node) => {
+          node.rows.unshift(JSON.parse(JSON.stringify(node.rows[0])));
+        },
+        'turn-2'
+      )
+    );
+  });
+
+  it('refuses copying a row of a table saved by PowerPoint by its ids', () => {
     const deck = sampleWithSlide4((xml) => xml);
-    expectCard(
+    expectLimits(
       replaceTable(deck, tableWithColumns(deck, 4), (node) => {
         node.rows.push(JSON.parse(JSON.stringify(node.rows[1])));
       })
+    );
+  });
+
+  it('refuses a slide copy whose table holds a row twice, saying to write a new one', () => {
+    const deck = openDeck('sample.pptx');
+    const table = tableWithColumns(deck, 4);
+    const hit = (
+      deck.call('find', { kind: 'table' }) as {
+        hits: Array<{ id: string; within: string[] }>;
+      }
+    ).hits.find((h) => h.id === table)!;
+    const slide = hit.within.find((id) => deck.read(id).kind === 'slide')!;
+    const copy = JSON.parse(JSON.stringify(deck.read(slide)));
+    const copied = copy.shapes.find((shape: Node) => shape.id === table);
+    copied.rows.push(JSON.parse(JSON.stringify(copied.rows[1])));
+    const result = deck.write({
+      intent: 'Copy the slide with one more row.',
+      scope: { ids: [slide] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: slide,
+          node: { ...copy, id: 'tmp:copy' }
+        }
+      ]
+    });
+    expectLimits(result);
+    expect(JSON.stringify(result)).toContain(
+      'write a new row or column without ids'
+    );
+  });
+
+  it('refuses a slide copy whose new row is made of copied cells, saying to write a new one', () => {
+    const deck = openDeck('sample.pptx');
+    const table = tableWithColumns(deck, 4);
+    const slide = (
+      deck.call('find', { kind: 'table' }) as {
+        hits: Array<{ id: string; within: string[] }>;
+      }
+    ).hits
+      .find((h) => h.id === table)!
+      .within.find((id) => deck.read(id).kind === 'slide')!;
+    const copy = JSON.parse(JSON.stringify(deck.read(slide)));
+    const copied = copy.shapes.find((shape: Node) => shape.id === table);
+    copied.rows.push({
+      kind: 'row',
+      cells: JSON.parse(JSON.stringify(copied.rows[0].cells))
+    });
+    const result = deck.write({
+      intent: 'Copy the slide with a new row.',
+      scope: { ids: [slide] },
+      changes: [
+        {
+          kind: 'insert_after',
+          anchor: slide,
+          node: { ...copy, id: 'tmp:copy' }
+        }
+      ]
+    });
+    expectLimits(result);
+    expect(JSON.stringify(result)).toContain(
+      'write a new row or column without ids'
     );
   });
 
@@ -959,45 +1057,6 @@ describe('PowerPoint tables', () => {
     );
     acceptAll(deck);
     expect(deck.find('Grouped', 'turn-2')).toHaveLength(1);
-  });
-
-  const unmerge = (row: Node) =>
-    row.cells.forEach((cell: Node) => {
-      for (const mark of ['gridSpan', 'rowSpan', 'hMerge', 'vMerge'])
-        delete cell[mark];
-    });
-
-  it.each([
-    ['a header merged across columns, as read', 0, false],
-    ['a header merged across columns, without its merge marks', 0, true],
-    ['a row merged with the row below, as read', 3, false],
-    ['a row merged with the row below, without its merge marks', 3, true]
-  ])('adds a copy of %s as a row of its own', (_, from, strip) => {
-    const { deck } = deckWithTable();
-    mergeHeader(deck);
-    expectCard(
-      replaceTable(
-        deck,
-        tableIn(deck, 'turn-2'),
-        (node) => {
-          const copy = JSON.parse(JSON.stringify(node.rows[from]));
-          if (strip) unmerge(copy);
-          node.rows.push(copy);
-        },
-        'turn-2'
-      )
-    );
-    acceptAll(deck);
-    const rows = deck.read(tableIn(deck, 'turn-3'), 'turn-3').rows;
-    expect(
-      rows
-        .at(-1)
-        .cells.map((cell: Node) =>
-          ['gridSpan', 'rowSpan', 'hMerge', 'vMerge'].filter(
-            (mark) => cell[mark]
-          )
-        )
-    ).toEqual([[], []]);
   });
 
   it('refuses adding or removing a column across cells merged over columns', () => {

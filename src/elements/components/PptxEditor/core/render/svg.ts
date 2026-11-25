@@ -32,7 +32,7 @@ import {
   excessTopLeadingRatio,
   splitFontWeight
 } from './fonts';
-import { readSlide } from '../model/import';
+import { pictureRelationship, readSlide } from '../model/import';
 import {
   PH_NO_IDX,
   resolveListProps,
@@ -2829,8 +2829,7 @@ function embeddedImageUrl(
   ownerPart: string,
   node: ONode
 ): string | undefined {
-  const blip = descendant(node, 'a:blip');
-  const rid = blip && getAttr(blip, 'r:embed');
+  const rid = pictureRelationship(node);
   const target = rid ? pkg.relTarget(ownerPart, rid) : undefined;
   const bytes = target && pkg.binary(target);
   if (!bytes || !target) return undefined;

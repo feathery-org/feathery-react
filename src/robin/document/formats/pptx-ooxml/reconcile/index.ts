@@ -246,7 +246,7 @@ export function planDeck(
   /** The editor commands for a table's rows, columns and cell text */
   function tableChanges(slide: SlideRef, old: NfNode, table: NfNode): void {
     const shapeRef = String(table.shapeId);
-    const layout = tableLayout(old, table, originOf);
+    const layout = tableLayout(old, table, originOf, (id) => !!before.get(id));
     if (typeof layout === 'string') {
       refuse(table.id, layout);
       return;

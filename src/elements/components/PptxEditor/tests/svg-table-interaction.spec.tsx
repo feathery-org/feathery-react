@@ -530,7 +530,8 @@ it.each([
     // Chrome types Shift+Enter as a newline in the run's own text
     const run = cell.querySelector('[data-source-run="0"]')!;
     if (typed === '<br>') {
-      run.textContent = 'Gamma';
+      // Chrome leaves the typed newline and a plain line break that shows it
+      run.textContent = 'Gamma\n';
       run.after(document.createElement('br'));
     } else run.textContent = typed;
     await act(async () => cell.blur());

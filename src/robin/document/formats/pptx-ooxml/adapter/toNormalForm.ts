@@ -204,7 +204,7 @@ export function toNormalForm(native: string): {
   const read: ReadNodes = {
     residue: {},
     sources: new Map(),
-    highlights: deck.highlights
+    themeColors: deck.themeColors
   };
   const slides = deck.slides.map(({ path, xml, inherited, links }) => {
     read.links = links;
@@ -214,7 +214,10 @@ export function toNormalForm(native: string): {
   read.links = undefined;
   const residue: Residue = {
     ...read.residue,
-    [DECK_ID]: { pending: deck.pending }
+    [DECK_ID]: {
+      pending: deck.pending,
+      ...(deck.themeColors ? { themeColors: deck.themeColors } : {})
+    }
   };
   return {
     nf: { root: { id: DECK_ID, kind: 'deck', slides }, formats: {} },

@@ -28,6 +28,8 @@ it('opens the changes panel when a suggestion lands and closes it once resolved'
     />
   );
   await waitFor(() => expect(store?.getState().deck).toBeTruthy());
+  // The editor reports a loaded deck before it draws it
+  await screen.findByRole('button', { name: 'Tracked edits' });
   const changes = () => screen.getByRole('button', { name: 'Tracked edits' });
   expect(changes()).toHaveAttribute('aria-pressed', 'false');
 

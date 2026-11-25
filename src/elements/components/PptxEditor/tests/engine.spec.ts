@@ -9,6 +9,7 @@ import { deckToJSON } from '../core/model/json';
 import {
   child,
   childrenOf,
+  el,
   getAttr,
   root,
   tagOf,
@@ -864,6 +865,12 @@ it.each([
       expect(fitted[3]).toBeGreaterThan(Math.max(...fitted.slice(0, 3)))
   ],
   [
+    'keeps a narrow column at the narrowest width the editor allows',
+    [100000, 2000000, 3000000, 1500000],
+    4990194,
+    (fitted: number[]) => expect(Math.min(...fitted)).toBe(90000)
+  ],
+  [
     'shares freed width between nearly equal trailing columns',
     [1200000, 900000, 901000],
     3901000,
@@ -932,6 +939,28 @@ it('rejects a suggestion from inside a transaction that already changed somethin
     outcome = engine.rejectChange(suggestion.id);
   });
   expect(outcome).toEqual(expect.objectContaining({ ok: true }));
+});
+
+it('replaces a cell saved with no fill by the fill picked, after its borders', () => {
+  const deck = importDeck(fixture);
+  const slide = deck.slides[0];
+  const table = insertTable(deck, slide, 1, 1, 0, 0, 1000000, 400000);
+  const pr = child(tableCell(table, 0, 0)!, 'a:tcPr')!;
+  childrenOf(pr).splice(0, childrenOf(pr).length, el('a:lnL'), el('a:noFill'));
+  new PptxEditorEngine(deck).execute({
+    type: 'edit-table',
+    slideId: slide.path,
+    shapeId: table.id,
+    operations: [
+      {
+        kind: 'style-cells',
+        range: { startRow: 0, startCol: 0, endRow: 0, endCol: 0 },
+        style: { fill: 'FF0000' }
+      }
+    ]
+  });
+
+  expect(childrenOf(pr).map(tagOf)).toEqual(['a:lnL', 'a:solidFill']);
 });
 
 it('refuses a cell target on a shape that is not a table', () => {

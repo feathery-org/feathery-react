@@ -39,11 +39,16 @@ export const pptxPack: Pack = {
   outline: { defaultDepth: 1, belowBlocks, detail },
   text: ownText,
   // Runs are found by their colour and highlight, the way people point at them
+  // Only text a run holds itself has a look to find by
   features: (node) =>
-    FEATURES.filter((name) => typeof node[name] === 'string').map((name) => ({
-      name,
-      value: node[name] as string
-    })),
+    node.kind !== 'run' || !node.text
+      ? []
+      : FEATURES.filter((name) => typeof node[name] === 'string').map(
+          (name) => ({
+            name,
+            value: node[name] as string
+          })
+        ),
   featureSpecs: (schemaFor('run') ?? []).filter((spec) =>
     FEATURES.includes(spec.name)
   ),

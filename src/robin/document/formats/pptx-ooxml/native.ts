@@ -45,7 +45,7 @@ export interface NativeSlide {
 export interface DeckNative {
   slides: NativeSlide[];
   pending: PendingSuggestion[];
-  highlights?: Record<string, string>;
+  themeColors?: Record<string, string>;
 }
 
 export function writeNative(native: DeckNative): string {
@@ -65,7 +65,7 @@ export function writeNative(native: DeckNative): string {
         ...(links ? { links } : {})
       })
     ),
-    ...(native.highlights ? { highlights: native.highlights } : {})
+    ...(native.themeColors ? { themeColors: native.themeColors } : {})
   });
 }
 
@@ -127,7 +127,7 @@ export function serializeDeck(engine: PptxEditorEngine): string {
   const pendingRecords = engine
     .changes()
     .filter((record) => record.status === 'pending');
-  const highlights = themedHighlights(deck, [
+  const colors = themeColors(deck, [
     ...deck.slides,
     ...pendingRecords.flatMap((record) =>
       Object.entries(record.beforeSlides ?? {}).map(([path, raw]) => ({
@@ -149,29 +149,33 @@ export function serializeDeck(engine: PptxEditorEngine): string {
       };
     }),
     pending,
-    ...(highlights ? { highlights } : {})
+    ...(colors ? { themeColors: colors } : {})
   });
 }
 
-// A theme colour depends on the slide's theme, so the same highlight can show differently on two slides
-export const highlightKey = (slidePath: string, highlight: unknown) =>
-  `${slidePath} ${canonicalJson(highlight)}`;
+// A theme colour depends on the slide's theme, so the same colour can show differently on two slides
+export const themeColorKey = (slidePath: string, colored: unknown) =>
+  `${slidePath} ${canonicalJson(colored)}`;
 
-/** The colour each highlight not written as a plain colour shows, by its slide and how the file writes it */
-function themedHighlights(
+/** The colour each theme-coloured run or highlight shows, by its slide and how the file writes it */
+function themeColors(
   deck: Deck,
   slides: Array<{ path: string; raw: OTree }>
 ): Record<string, string> | null {
   const out: Record<string, string> = {};
   for (const { path, raw } of slides)
     for (const node of raw)
-      for (const highlight of descendants(node, 'a:highlight')) {
-        if (child(highlight, 'a:srgbClr')) continue;
-        const shown = resolveColorAt(highlight, deck.pkg, path)?.toUpperCase();
-        // A system colour with no colour of its own resolves to no colour
-        if (shown && /^#[0-9A-F]{6}$/.test(shown))
-          out[highlightKey(path, highlight)] = shown;
-      }
+      for (const rPr of descendants(node, 'a:rPr'))
+        for (const colored of [
+          child(rPr, 'a:highlight'),
+          child(rPr, 'a:solidFill')
+        ]) {
+          if (!colored || child(colored, 'a:srgbClr')) continue;
+          const shown = resolveColorAt(colored, deck.pkg, path)?.toUpperCase();
+          // A system colour with no colour of its own resolves to no colour
+          if (shown && /^#[0-9A-F]{6}$/.test(shown))
+            out[themeColorKey(path, colored)] = shown;
+        }
   return Object.keys(out).length ? out : null;
 }
 

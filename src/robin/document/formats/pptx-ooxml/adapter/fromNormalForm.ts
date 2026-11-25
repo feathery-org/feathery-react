@@ -6,8 +6,6 @@ import {
   childrenOf,
   descendant,
   el,
-  getAttr,
-  removeAttr,
   tagOf,
   text,
   type ONode,
@@ -18,14 +16,7 @@ import {
   type InheritedFormat,
   type PendingSuggestion
 } from '../native';
-import {
-  MERGE_MARKS,
-  isMerge,
-  isSlot,
-  linkKey,
-  linkOf,
-  runText
-} from './nodes';
+import { isSlot, linkKey, linkOf, runText } from './nodes';
 import { DECK_ID, spTreeOf, type Pending } from './toNormalForm';
 
 const isLive = (node: NfNode) =>
@@ -129,13 +120,6 @@ function writeShape(shape: NfNode, residue: Residue): ONode {
           rowNode,
           (row.cells as NfNode[]).map((cell) => {
             const cellNode = residueOf(residue, cell);
-            // A merge the cell no longer shows is gone, as when a copied row stands on its own
-            for (const mark of MERGE_MARKS)
-              if (
-                cell[mark] === undefined &&
-                isMerge(mark, getAttr(cellNode, mark))
-              )
-                removeAttr(cellNode, mark);
             fill(
               child(cellNode, 'a:txBody'),
               writeParagraphs(cell.paragraphs as NfNode[], residue)
@@ -181,6 +165,13 @@ export function fromNormalForm(nf: NormalForm, residue: Residue): string {
       ...(links ? { links } : {})
     };
   });
-  const { pending } = residue[DECK_ID] as { pending: PendingSuggestion[] };
-  return writeNative({ slides, pending });
+  const { pending, themeColors } = residue[DECK_ID] as {
+    pending: PendingSuggestion[];
+    themeColors?: Record<string, string>;
+  };
+  return writeNative({
+    slides,
+    pending,
+    ...(themeColors ? { themeColors } : {})
+  });
 }

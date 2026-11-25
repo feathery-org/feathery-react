@@ -69,7 +69,8 @@ export const continueFormatFinalizer: Finalizer = {
     walk(after.root, pptxTree, ({ node }) => {
       if (node.kind === 'table') {
         const old = before.get(origin(node.id));
-        const layout = old && tableLayout(old, node, origin);
+        const layout =
+          old && tableLayout(old, node, origin, (id) => !!before.get(id));
         if (!old || typeof layout !== 'object') return false;
         (node.rows as NfNode[]).forEach((row, i) =>
           (row.cells as NfNode[]).forEach((cell, j) =>

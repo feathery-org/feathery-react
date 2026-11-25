@@ -122,7 +122,15 @@ it('renders theme-based run highlights after import and preserves them on export
 it("sizes unsized text from the text box's own list style before the master's", () => {
   const deck = fixture();
   const slide = deck.slides[0];
-  const shape = addTextBox(deck, slide, 100000, 100000, 2000000, 500000, 'Small');
+  const shape = addTextBox(
+    deck,
+    slide,
+    100000,
+    100000,
+    2000000,
+    500000,
+    'Small'
+  );
   const lstStyle = descendant(shape.node, 'a:lstStyle')!;
   lstStyle['a:lstStyle'] = [
     el('a:lvl1pPr', undefined, [el('a:defRPr', { sz: '1000' })])
@@ -189,7 +197,7 @@ it('aligns selected table cells horizontally and vertically and exposes it in JS
   ).toMatchObject({ align: 'ctr', verticalAlign: 'b' });
 });
 
-it('keeps a table cell\'s vertical alignment on the cell, where PowerPoint reads it', () => {
+it("keeps a table cell's vertical alignment on the cell, where PowerPoint reads it", () => {
   const deck = fixture();
   const slide = deck.slides[0];
   const table = insertTable(deck, slide, 1, 2, 100000, 100000, 1500000, 600000);
@@ -298,6 +306,63 @@ it('shows a picture PowerPoint saved only as SVG', () => {
       (shape) => shape.id === picture.id
     );
     expect(shown?.imageSrc).toBe('blob:svg');
+  } finally {
+    URL.createObjectURL = original;
+  }
+});
+
+it('shows a picture PowerPoint saved only as SVG inside a group', () => {
+  const deck = fixture();
+  const slide = deck.slides[0];
+  const picture = insertImage(
+    deck,
+    slide,
+    strToU8('<svg xmlns="http://www.w3.org/2000/svg"/>'),
+    'svg',
+    0,
+    0,
+    100000,
+    100000
+  );
+  const blip = descendant(picture.node, 'a:blip')!;
+  const relationship = getAttr(blip, 'r:embed')!;
+  delete blip[':@'];
+  blip['a:blip'] = [
+    el('a:extLst', undefined, [
+      el('a:ext', { uri: '{96DAC541-7B7A-43D3-8B79-37D633B846F1}' }, [
+        el('asvg:svgBlip', { 'r:embed': relationship })
+      ])
+    ])
+  ];
+  const spTree = slide.raw
+    .map((node) => descendant(node, 'p:spTree'))
+    .find(Boolean)!;
+  const tree = childrenOf(spTree);
+  const box = el('a:xfrm', undefined, [
+    el('a:off', { x: '0', y: '0' }),
+    el('a:ext', { cx: '100000', cy: '100000' }),
+    el('a:chOff', { x: '0', y: '0' }),
+    el('a:chExt', { cx: '100000', cy: '100000' })
+  ]);
+  tree.splice(
+    tree.indexOf(picture.node),
+    1,
+    el('p:grpSp', undefined, [
+      el('p:nvGrpSpPr', undefined, [
+        el('p:cNvPr', { id: '900', name: 'Group' }),
+        el('p:cNvGrpSpPr'),
+        el('p:nvPr')
+      ]),
+      el('p:grpSpPr', undefined, [box]),
+      picture.node
+    ])
+  );
+  const original = URL.createObjectURL;
+  URL.createObjectURL = jest.fn(() => 'blob:svg');
+  try {
+    const reopened = importDeck(exportDeckBytes(deck));
+    const svg = renderSlideSvg(reopened, reopened.slides[0]);
+    expect(svg.outerHTML).toContain('blob:svg');
   } finally {
     URL.createObjectURL = original;
   }

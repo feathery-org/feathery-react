@@ -165,6 +165,25 @@ describe('PowerPoint slide copies', () => {
     expect(JSON.stringify(result)).not.toContain('stacking order');
   });
 
+  it('copies a slide before its source, the source keeping its id and part', () => {
+    const deck = openDeck('template1-text-group.pptx');
+    const part = deck.read(SLIDE).path;
+    const result = deck.write({
+      intent: 'Copy the slide before itself.',
+      scope: { ids: [SLIDE] },
+      changes: [
+        {
+          kind: 'insert_before',
+          anchor: SLIDE,
+          node: { ...deck.read(SLIDE), id: 'tmp:copy' }
+        }
+      ]
+    }) as { ok: boolean; mapping: Record<string, string> };
+    expect(result.ok).toBe(true);
+    expect(deck.read(SLIDE, 'turn-2').path).toBe(part);
+    expect(deck.read(result.mapping['tmp:copy'], 'turn-2').path).not.toBe(part);
+  });
+
   it('refuses a new slide holding copies of shapes from two slides', () => {
     const deck = openDeck('template1-text-group.pptx');
     const other = (deck.call('outline', {}) as { lines: string }).lines

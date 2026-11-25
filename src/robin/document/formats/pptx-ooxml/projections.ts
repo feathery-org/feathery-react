@@ -1,5 +1,4 @@
 import { FILLS } from '../../../../elements/components/PptxEditor/core/model/edit';
-import { MERGE_MARKS, isMerge } from './adapter/nodes';
 import type { Normalization } from '../../pack';
 import {
   clone,
@@ -123,14 +122,9 @@ function unmodeled(
   if (tag === 'a:pPr')
     for (const name of PARAGRAPH_ATTRIBUTES) delete attributes[name];
   if (tag === 'a:tc') {
-    for (const mark of MERGE_MARKS)
-      if (isMerge(mark, attributes[`@_${mark}`]))
-        delete attributes[`@_${mark}`];
     // A text body holding nothing but paragraphs is what a cell without one gets once written
     kids = kids.filter((kid) => !(tagOf(kid) === 'a:txBody' && isBare(kid)));
   }
-  // The editor gives a row it copies an id of its own
-  if (tag === 'a:tr') kids = kids.filter((kid) => tagOf(kid) !== 'a:extLst');
   const out: Record<string, unknown> = { [tag]: kids };
   if (Object.keys(attributes).length) out[':@'] = attributes;
   if ((tag === 'a:rPr' || tag === 'a:pPr') && isEmpty(out, tag)) return null;

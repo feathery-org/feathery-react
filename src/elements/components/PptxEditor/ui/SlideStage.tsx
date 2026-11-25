@@ -434,6 +434,8 @@ function extractRichText(
   };
   const collectRuns = (root: HTMLElement): RichRun[] => {
     const runs: RichRun[] = [];
+    const drawnOnly = new Set<RichRun>();
+    const typed = new Set<RichRun>();
     const walker = featheryDoc().createTreeWalker(
       root,
       NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
@@ -463,7 +465,10 @@ function extractRichText(
                 paragraph: Number(n.dataset.sourceParagraph),
                 run: Number(n.dataset.sourceRun)
               };
-        runs.push({ text: '\n', break: true, source });
+        const lineBreak: RichRun = { text: '\n', break: true, source };
+        if (n.hasAttribute('data-soft-break')) typed.add(lineBreak);
+        else if (!source) drawnOnly.add(lineBreak);
+        runs.push(lineBreak);
         continue;
       }
       const r = runFromTextNode(n as Text);
@@ -473,10 +478,12 @@ function extractRichText(
         if (text) runs.push({ ...r, text });
       });
     }
-    // Chrome doubles a line break that ends a paragraph, or fills an empty one, only to show the line
+    // A plain break ending a paragraph, or a newline doubled at its end, is only there to show the line
     const last = runs[runs.length - 1];
-    const placeholder = runs.length === 1 || runs[runs.length - 2]?.break;
-    if (last?.break && !last.source && placeholder) runs.pop();
+    const placeholder =
+      drawnOnly.has(last) || runs.length === 1 || runs[runs.length - 2]?.break;
+    if (last?.break && !last.source && !typed.has(last) && placeholder)
+      runs.pop();
     return runs;
   };
   const paras: RichPara[] = [];
@@ -1072,6 +1079,12 @@ export function SvgSlide({
           const br = featheryDoc().createElement('br');
           br.dataset.softBreak = '';
           range.insertNode(br);
+          // A break that ends a paragraph needs a second one after it for its new line to show
+          const rest = featheryDoc().createRange();
+          rest.setStartAfter(br);
+          rest.setEnd(paragraph, paragraph.childNodes.length);
+          if (!rest.toString() && !rest.cloneContents().querySelector('br'))
+            br.after(featheryDoc().createElement('br'));
           const caret = featheryDoc().createRange();
           caret.setStartAfter(br);
           caret.collapse(true);

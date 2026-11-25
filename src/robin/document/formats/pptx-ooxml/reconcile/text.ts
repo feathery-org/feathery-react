@@ -27,6 +27,34 @@ function breakLocation(
   return undefined;
 }
 
+// Taking the highlight off text that has none changes nothing
+const isNoHighlight = (
+  key: string,
+  value: unknown,
+  from: Record<string, unknown>
+) => key === 'highlight' && value === 'none' && from.highlight === undefined;
+
+/** The paragraphs with every highlight taken off where there was none already, which writes nothing */
+function withoutNoOpHighlights(after: NfNode[], before: NfNode[]): NfNode[] {
+  const had = new Set(
+    before.flatMap((paragraph) =>
+      leafRuns(paragraph)
+        .filter((run) => run.highlight !== undefined)
+        .map((run) => run.id)
+    )
+  );
+  return JSON.parse(
+    JSON.stringify(after),
+    function (this: Record<string, unknown>, key: string, value: unknown) {
+      return key === 'highlight' &&
+        value === 'none' &&
+        !had.has(String(this.id))
+        ? undefined
+        : value;
+    }
+  );
+}
+
 function styleChange(
   from: Record<string, unknown>,
   to: NfNode
@@ -34,7 +62,12 @@ function styleChange(
   const style: TextStyle = {};
   for (const key of RUN_FORMAT) {
     const value = to[key];
-    if (value === undefined || value === from[key]) continue;
+    if (
+      value === undefined ||
+      value === from[key] ||
+      isNoHighlight(key, value, from)
+    )
+      continue;
     if (key === 'size') style.sizePt = value as number;
     else if (key === 'color')
       style.color = String(value).replace('#', '').toUpperCase();
@@ -77,7 +110,10 @@ export function textOperations(
   cell?: TableCellAddress
 ): DeckOperation[] {
   if (
-    canonicalJson(paragraphsOf(before)) === canonicalJson(paragraphsOf(after))
+    canonicalJson(paragraphsOf(before)) ===
+    canonicalJson(
+      withoutNoOpHighlights(paragraphsOf(after), paragraphsOf(before))
+    )
   )
     return [];
   const sources = textSources(before, after, origin);

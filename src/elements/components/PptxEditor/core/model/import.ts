@@ -42,7 +42,7 @@ function imageUrl(
 }
 
 /** The picture's image part, or its SVG part when PowerPoint saved no raster copy */
-function pictureRelationship(node: ONode): string | undefined {
+export function pictureRelationship(node: ONode): string | undefined {
   const blip = descendant(node, 'a:blip');
   const svg = blip && descendant(blip, 'asvg:svgBlip');
   return blip && (getAttr(blip, 'r:embed') ?? (svg && getAttr(svg, 'r:embed')));

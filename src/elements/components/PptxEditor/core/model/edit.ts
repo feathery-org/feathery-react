@@ -556,6 +556,30 @@ function setRunLink(runNode: ONode, from: ONode | undefined): void {
   kids.splice(0, kids.length, ...kept);
 }
 
+const CELL_LINES = [
+  'a:lnL',
+  'a:lnR',
+  'a:lnT',
+  'a:lnB',
+  'a:lnTlToBr',
+  'a:lnBlToTr',
+  'a:cell3D'
+];
+
+/** Gives a cell one fill, after its borders as the schema orders them */
+function setCellFill(pr: ONode, color: string): void {
+  const kids = childrenOf(pr);
+  for (let i = kids.length - 1; i >= 0; i--)
+    if (FILLS.includes(tagOf(kids[i]) as string)) kids.splice(i, 1);
+  const lines = kids.filter((kid) => CELL_LINES.includes(tagOf(kid) as string));
+  const at = lines.length ? kids.indexOf(lines[lines.length - 1]) + 1 : 0;
+  kids.splice(
+    at,
+    0,
+    el('a:solidFill', undefined, [el('a:srgbClr', { val: color })])
+  );
+}
+
 export const FILLS = [
   'a:noFill',
   'a:solidFill',
@@ -1410,10 +1434,19 @@ export function fitTableColumns(
   const lead = widths.slice(0, widths.length - run);
   const share = Math.floor((width - lead.reduce((a, b) => a + b, 0)) / run);
   const total = widths.reduce((a, b) => a + b, 0);
+  const narrowest = 90000;
+  const scaled = widths.map((w) => Math.floor((w * width) / (total || 1)));
+  // No column goes narrower than the editor allows, the wider ones give up the difference
+  const short = scaled.reduce((sum, w) => sum + Math.max(0, narrowest - w), 0);
+  const roomy = scaled.filter((w) => w > narrowest).reduce((a, b) => a + b, 0);
   const fitted =
-    run >= 2 && share >= 90000
+    run >= 2 && share >= narrowest
       ? [...lead, ...Array.from({ length: run }, () => share)]
-      : widths.map((w) => Math.floor((w * width) / (total || 1)));
+      : scaled.map((w) =>
+          w <= narrowest || !roomy
+            ? Math.max(w, narrowest)
+            : Math.floor(w - (short * w) / roomy)
+        );
   fitted[fitted.length - 1] += width - fitted.reduce((a, b) => a + b, 0);
   cols.forEach((col, i) => setAttr(col, 'w', String(fitted[i])));
   syncTableFrame(shape);
@@ -1715,13 +1748,7 @@ export function setTableCellRangeStyle(
         pr = el('a:tcPr');
         childrenOf(cell).push(pr);
       }
-      const old = child(pr, 'a:solidFill');
-      if (old) childrenOf(pr).splice(childrenOf(pr).indexOf(old), 1);
-      childrenOf(pr).unshift(
-        el('a:solidFill', undefined, [
-          el('a:srgbClr', { val: normalizedStyle.fill })
-        ])
-      );
+      setCellFill(pr, normalizedStyle.fill);
     }
     const textStyle: TextStyle = { ...normalizedStyle };
     delete (textStyle as TextStyle & { fill?: string }).fill;
@@ -1871,11 +1898,7 @@ export function setTableStyle(
         childrenOf(cell).push(pr);
       }
       if (fill) {
-        const old = child(pr, 'a:solidFill');
-        if (old) childrenOf(pr).splice(childrenOf(pr).indexOf(old), 1);
-        childrenOf(pr).unshift(
-          el('a:solidFill', undefined, [el('a:srgbClr', { val: fill })])
-        );
+        setCellFill(pr, fill);
       }
       if (border)
         for (const edge of ['a:lnL', 'a:lnT', 'a:lnR', 'a:lnB']) {
