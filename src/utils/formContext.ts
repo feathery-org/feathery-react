@@ -431,6 +431,7 @@ export const getFormContext = (formUuid: string) => {
       repeatable,
       download,
       merge,
+      mergeGroups,
       mergedFileName,
       zipName,
       saveDocumentFieldKey,
@@ -504,6 +505,9 @@ export const getFormContext = (formUuid: string) => {
       repeatable?: boolean;
       download?: boolean;
       merge?: boolean;
+      // Packets: each inner list of document references / template ids merges
+      // into one PDF (one DocuSign document, or one download file).
+      mergeGroups?: string[][];
       mergedFileName?: string;
       zipName?: string;
       saveDocumentFieldKey?: string;
@@ -607,7 +611,10 @@ export const getFormContext = (formUuid: string) => {
         !!envelopeAction ||
         !!toolbarActions?.length ||
         !!repeatable ||
+        !!mergeGroups?.length ||
         documentIds.some((doc) => typeof doc !== 'string');
+      // Captured before awaits below, like the document sources.
+      mergeGroups = mergeGroups?.map((group) => [...group]);
       // Capture explicit Quik inputs before awaiting saves or opening review.
       // Caller edits to the original object must not change this request.
       documentIds = documentIds.map((doc) =>
@@ -638,6 +645,44 @@ export const getFormContext = (formUuid: string) => {
         return Promise.reject(
           new Error(
             "generateDocuments: references require signMethod 'docusign' and cannot be merged"
+          )
+        );
+      }
+      if (
+        mergeGroups?.length &&
+        (merge || envelopeAction === 'open_in_editor')
+      ) {
+        // Fail fast; the backend rejects both combinations anyway.
+        return Promise.reject(
+          new Error(
+            'generateDocuments: mergeGroups cannot combine with merge or ' +
+              "envelopeAction 'open_in_editor'"
+          )
+        );
+      }
+      // A packet call with no signing inputs means fill, not the flow's
+      // default sign; undefined below becomes 'sign' in generateEnvelopes.
+      const resolvedEnvelopeAction =
+        envelopeAction ??
+        (!signMethod && !signers?.length && !toolbarActions?.length && !redirect
+          ? download
+            ? 'download'
+            : mergeGroups?.length
+            ? 'fill'
+            : undefined
+          : undefined);
+      if (
+        mergeGroups?.length &&
+        signMethod !== 'docusign' &&
+        (resolvedEnvelopeAction === undefined ||
+          resolvedEnvelopeAction === 'sign')
+      ) {
+        // Signing a packet needs DocuSign; otherwise the backend 400s only
+        // after field flushes and source-file saves. Fail fast instead.
+        return Promise.reject(
+          new Error(
+            "generateDocuments: mergeGroups signing requires signMethod 'docusign'; " +
+              'set envelopeAction to fill/download/save, or signMethod to docusign'
           )
         );
       }
@@ -692,16 +737,8 @@ export const getFormContext = (formUuid: string) => {
             type: 'open_fuser_envelopes',
             documents: documentIds,
             // The flow has no separate download flag; it's an envelope action,
-            // unless the call already asks to sign.
-            envelope_action:
-              envelopeAction ??
-              (download &&
-              !signMethod &&
-              !signers?.length &&
-              !toolbarActions?.length &&
-              !redirect
-                ? 'download'
-                : undefined),
+            // unless the call already asks to sign (see resolvedEnvelopeAction).
+            envelope_action: resolvedEnvelopeAction,
             sign_method: signMethod,
             ...(draft !== undefined ? { draft } : {}),
             // Omitted rather than nulled: the backend's role_id rejects an
@@ -748,6 +785,7 @@ export const getFormContext = (formUuid: string) => {
             custom_fields: customFields,
             repeatable,
             merge_docs: merge,
+            merge_groups: mergeGroups,
             merged_file_name: mergedFileName,
             envelope_zip_name: zipName,
             save_document_field_key: saveDocumentFieldKey,
@@ -775,6 +813,13 @@ export const getFormContext = (formUuid: string) => {
         return Promise.reject(
           new Error(
             'generateDocuments: per-role signers require a mounted <Form />.'
+          )
+        );
+      }
+      if (mergeGroups?.length) {
+        return Promise.reject(
+          new Error(
+            'generateDocuments: mergeGroups require a mounted <Form />.'
           )
         );
       }

@@ -670,6 +670,37 @@ describe('IntegrationClient', () => {
       expect(result).toEqual({ files: ['file1.pdf', 'file2.pdf'] });
     });
 
+    it('routes a merge_groups action directly and forwards the groups', async () => {
+      // client-utils' generateFormDocuments can't forward merge_groups, so
+      // the action must take the direct generate call.
+      const integrationClient = new IntegrationClient('test_form_key');
+      const action = {
+        documents: ['doc1', 'doc2'],
+        run_async: false,
+        envelope_action: 'download',
+        merge_groups: [['doc1', 'doc2']],
+        merged_file_name: 'packet'
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: ['merged.pdf'] })
+      });
+
+      const result = await integrationClient.generateEnvelopes(action);
+
+      expect(requestUrl()).toBe(`${API_URL}document/form/generate/`);
+      expect(requestBody()).toEqual(
+        expect.objectContaining({
+          documents: ['doc1', 'doc2'],
+          envelope_action: 'fill',
+          merge_groups: [['doc1', 'doc2']],
+          merged_file_name: 'packet'
+        })
+      );
+      expect(result).toEqual({ files: ['merged.pdf'] });
+    });
+
     it('does not treat a plain action as an editor action (regression)', async () => {
       const formKey = 'test_form_key';
       const integrationClient = new IntegrationClient(formKey);
