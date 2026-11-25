@@ -87,11 +87,16 @@ export class IdTable {
     const previousRoots = previous.map((p) => p.root);
     // After a write, a deleted copy cannot continue a node the write kept
     const kept = new Set<string>();
+    const written = new Set<string>();
     if (previous.length > 1)
       walk(previous[0].root, shape, ({ node }) => {
+        written.add(node.id);
         if (!shape.goneOnAccept?.(node)) kept.add(node.id);
       });
-    this.alignChildren(nf.root, previousRoots, shape, used, renamed, kept);
+    this.alignChildren(nf.root, previousRoots, shape, used, renamed, {
+      kept,
+      written
+    });
     walk(nf.root, shape, ({ node }) => {
       node.id = renamed.get(node.id) ?? node.id;
     });
@@ -134,7 +139,7 @@ export class IdTable {
     shape: PackTree,
     used: Set<string>,
     renamed: Map<string, string>,
-    kept: Set<string>,
+    after: { kept: Set<string>; written: Set<string> },
     guessed = false
   ): void {
     for (const key of shape.childLists(node)) {
@@ -170,7 +175,7 @@ export class IdTable {
         shape,
         used,
         primary,
-        kept
+        after
       );
       kids.forEach((kid, i) => {
         const prev = match[i];
@@ -184,7 +189,7 @@ export class IdTable {
               .map((p) => findChild(p, shape, prev.id))
               .filter((c): c is NfNode => !!c)
           : [];
-        this.alignChildren(kid, continued, shape, used, renamed, kept, unsure);
+        this.alignChildren(kid, continued, shape, used, renamed, after, unsure);
       });
     }
   }
@@ -214,15 +219,19 @@ function alignList(
   shape: PackTree,
   used: Set<string>,
   primary: NfNode[],
-  kept: Set<string>
+  after: { kept: Set<string>; written: Set<string> }
 ): { match: Array<NfNode | undefined>; ambiguous: Set<number> } {
   const out: Array<NfNode | undefined> = kids.map(() => undefined);
   const ambiguous = new Set<number>();
   const taken = new Set<number>();
   const available = (j: number) => !taken.has(j) && !used.has(candidates[j].id);
   const gone = (n: NfNode) => shape.goneOnAccept?.(n) ?? false;
-  const fits = (i: number, j: number) =>
-    available(j) && !(gone(kids[i]) && kept.has(candidates[j].id));
+  // A node the write removed outright continues only as a deletion still on the page
+  const removed = (n: NfNode) =>
+    !!shape.goneOnAccept && after.written.size > 0 && !after.written.has(n.id);
+  const continues = (i: number, j: number) =>
+    gone(kids[i]) ? !after.kept.has(candidates[j].id) : !removed(candidates[j]);
+  const fits = (i: number, j: number) => available(j) && continues(i, j);
   const take = (i: number, j: number) => {
     out[i] = candidates[j];
     taken.add(j);
@@ -317,7 +326,8 @@ function alignList(
       if (
         available(j) &&
         candidates[j].kind === kid.kind &&
-        gone(candidates[j]) === gone(kid)
+        gone(candidates[j]) === gone(kid) &&
+        (gone(kid) || !removed(candidates[j]))
       ) {
         take(i, j);
         break;

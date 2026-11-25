@@ -8,6 +8,7 @@ export const RUN_FORMAT = [
   'strike',
   'size',
   'color',
+  'highlight',
   'font'
 ] as const;
 export const PARAGRAPH_FORMAT = ['align', 'level'] as const;

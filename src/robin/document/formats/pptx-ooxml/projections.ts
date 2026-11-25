@@ -73,7 +73,13 @@ export function othersOf(pending: unknown, turnId: string): unknown {
 
 const RUN_ATTRIBUTES = ['@_b', '@_i', '@_u', '@_strike', '@_sz'];
 // A run's link tags follow the link it sits in
-const RUN_CHILDREN = [...FILLS, 'a:latin', 'a:hlinkClick', 'a:hlinkMouseOver'];
+const RUN_CHILDREN = [
+  ...FILLS,
+  'a:highlight',
+  'a:latin',
+  'a:hlinkClick',
+  'a:hlinkMouseOver'
+];
 const PARAGRAPH_ATTRIBUTES = ['@_algn', '@_lvl'];
 
 const tagOf = (node: Record<string, unknown>) =>
@@ -88,7 +94,14 @@ function unmodeled(
   node: Record<string, unknown>
 ): Record<string, unknown> | null {
   const tag = tagOf(node);
-  if (tag === '#slot' || tag === 'a:xfrm' || tag === 'p:xfrm') return null;
+  // A frame and a table's column grid follow from what the normal form shows
+  if (
+    tag === '#slot' ||
+    tag === 'a:xfrm' ||
+    tag === 'p:xfrm' ||
+    tag === 'a:tblGrid'
+  )
+    return null;
   if (!tag || !Array.isArray(node[tag])) return node;
   const attributes = { ...((node[':@'] as Record<string, string>) ?? {}) };
   let kids = (node[tag] as Array<Record<string, unknown>>)
@@ -108,11 +121,23 @@ function unmodeled(
   }
   if (tag === 'a:pPr')
     for (const name of PARAGRAPH_ATTRIBUTES) delete attributes[name];
+  if (tag === 'a:tc') {
+    // A text body holding nothing but paragraphs is what a cell without one gets once written
+    kids = kids.filter((kid) => !(tagOf(kid) === 'a:txBody' && isBare(kid)));
+  }
   const out: Record<string, unknown> = { [tag]: kids };
   if (Object.keys(attributes).length) out[':@'] = attributes;
   if ((tag === 'a:rPr' || tag === 'a:pPr') && isEmpty(out, tag)) return null;
   return out;
 }
+
+const isBare = (body: Record<string, unknown>) =>
+  (body['a:txBody'] as Array<Record<string, unknown>>).every(
+    (kid) =>
+      ['a:bodyPr', 'a:lstStyle'].includes(tagOf(kid) as string) &&
+      !kid[':@'] &&
+      !(kid[tagOf(kid) as string] as unknown[]).length
+  );
 
 export function conservedResidue(entry: unknown): unknown {
   if (!isPlainObject(entry) || 'pending' in entry) return null;
@@ -208,6 +233,38 @@ export const editorIdentity: Normalization = {
         delete node.shapeId;
         delete node.name;
       }
+    });
+    return out;
+  }
+};
+
+/** A run with no highlight reads back without one, as written with none */
+export const noHighlight: Normalization = {
+  name: 'no-highlight',
+  apply(nf) {
+    let found = false;
+    walk(nf.root, pptxTree, ({ node }) => {
+      if (node.highlight === 'none') found = true;
+    });
+    if (!found) return nf;
+    const out = clone(nf);
+    walk(out.root, pptxTree, ({ node }) => {
+      if (node.highlight === 'none') delete node.highlight;
+    });
+    return out;
+  }
+};
+
+/** The editor fits a table's size to its rows and columns */
+export const tableSize: Normalization = {
+  name: 'table-size',
+  apply(nf) {
+    const out = clone(nf);
+    walk(out.root, pptxTree, ({ node }) => {
+      const frame = node.frame as Record<string, unknown> | undefined;
+      if (node.kind !== 'table' || !frame) return;
+      delete frame.cx;
+      delete frame.cy;
     });
     return out;
   }

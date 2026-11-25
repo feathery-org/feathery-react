@@ -257,7 +257,26 @@ export function readVerb(state: DocumentState, input: ReadInput): ReadResult {
   return { ok: true, outlineHash: state.outlineHash, nodes, formats, missing };
 }
 
-export function findVerb(state: DocumentState, input: FindInput): FindResult {
+export function findVerb(
+  state: DocumentState,
+  input: FindInput
+): FindResult | RefusedResult {
+  // A feature is checked as a write checks its property
+  const { feature } = input;
+  const specs = state.pack.featureSpecs;
+  const spec = feature && specs?.find((s) => s.name === feature.name);
+  const why =
+    feature && specs && !spec
+      ? `${feature.name} is not a feature here, find by ${specs
+          .map((s) => s.name)
+          .join(' or ')}`
+      : spec && feature?.value !== undefined && spec.validate(feature.value);
+  if (why)
+    return refusedResult(
+      makeRefusal([
+        problem('property-invalid', `Nothing was searched: ${why}.`)
+      ])
+    );
   const hits = matchQuery(state.view, state.pack, input);
   const limit = input.limit ?? FIND_DEFAULT_LIMIT;
   return {

@@ -10,6 +10,7 @@ import {
   textSources,
   type Location
 } from '../textSources';
+import type { TableCellAddress } from '../../../../../elements/components/PptxEditor/engine/commands';
 import type { DeckOperation, ShapeRef, SlideRef } from '../seams/deck';
 import { leafRuns } from '../tree';
 
@@ -26,6 +27,34 @@ function breakLocation(
   return undefined;
 }
 
+// Taking the highlight off text that has none changes nothing
+const isNoHighlight = (
+  key: string,
+  value: unknown,
+  from: Record<string, unknown>
+) => key === 'highlight' && value === 'none' && from.highlight === undefined;
+
+/** The paragraphs with every highlight taken off where there was none already, which writes nothing */
+function withoutNoOpHighlights(after: NfNode[], before: NfNode[]): NfNode[] {
+  const had = new Set(
+    before.flatMap((paragraph) =>
+      leafRuns(paragraph)
+        .filter((run) => run.highlight !== undefined)
+        .map((run) => run.id)
+    )
+  );
+  return JSON.parse(
+    JSON.stringify(after),
+    function (this: Record<string, unknown>, key: string, value: unknown) {
+      return key === 'highlight' &&
+        value === 'none' &&
+        !had.has(String(this.id))
+        ? undefined
+        : value;
+    }
+  );
+}
+
 function styleChange(
   from: Record<string, unknown>,
   to: NfNode
@@ -33,10 +62,18 @@ function styleChange(
   const style: TextStyle = {};
   for (const key of RUN_FORMAT) {
     const value = to[key];
-    if (value === undefined || value === from[key]) continue;
+    if (
+      value === undefined ||
+      value === from[key] ||
+      isNoHighlight(key, value, from)
+    )
+      continue;
     if (key === 'size') style.sizePt = value as number;
     else if (key === 'color')
       style.color = String(value).replace('#', '').toUpperCase();
+    else if (key === 'highlight')
+      style.highlight =
+        value === 'none' ? null : String(value).replace('#', '').toUpperCase();
     else if (key === 'font') style.font = value as string;
     else style[key] = value as boolean;
   }
@@ -69,10 +106,14 @@ export function textOperations(
   shape: ShapeRef,
   before: NfNode,
   after: NfNode,
-  origin: (id: string) => string = (id) => id
+  origin: (id: string) => string = (id) => id,
+  cell?: TableCellAddress
 ): DeckOperation[] {
   if (
-    canonicalJson(paragraphsOf(before)) === canonicalJson(paragraphsOf(after))
+    canonicalJson(paragraphsOf(before)) ===
+    canonicalJson(
+      withoutNoOpHighlights(paragraphsOf(after), paragraphsOf(before))
+    )
   )
     return [];
   const sources = textSources(before, after, origin);
@@ -132,6 +173,7 @@ export function textOperations(
         type: 'replace-rich-text',
         onSlide: slide,
         onShape: shape,
+        ...(cell ? { cell } : {}),
         paragraphs
       }
     }
@@ -151,6 +193,7 @@ export function textOperations(
             type: 'format-text',
             onSlide: slide,
             onShape: shape,
+            ...(cell ? { cell } : {}),
             style,
             ranges: [{ paragraph: p, start, end: offset }]
           }

@@ -556,6 +556,30 @@ function setRunLink(runNode: ONode, from: ONode | undefined): void {
   kids.splice(0, kids.length, ...kept);
 }
 
+const CELL_LINES = [
+  'a:lnL',
+  'a:lnR',
+  'a:lnT',
+  'a:lnB',
+  'a:lnTlToBr',
+  'a:lnBlToTr',
+  'a:cell3D'
+];
+
+/** Gives a cell one fill, after its borders as the schema orders them */
+function setCellFill(pr: ONode, color: string): void {
+  const kids = childrenOf(pr);
+  for (let i = kids.length - 1; i >= 0; i--)
+    if (FILLS.includes(tagOf(kids[i]) as string)) kids.splice(i, 1);
+  const lines = kids.filter((kid) => CELL_LINES.includes(tagOf(kid) as string));
+  const at = lines.length ? kids.indexOf(lines[lines.length - 1]) + 1 : 0;
+  kids.splice(
+    at,
+    0,
+    el('a:solidFill', undefined, [el('a:srgbClr', { val: color })])
+  );
+}
+
 export const FILLS = [
   'a:noFill',
   'a:solidFill',
@@ -1123,6 +1147,21 @@ function blankCell(): ONode {
   ]);
 }
 
+// PowerPoint tells rows and columns apart by the ids in their extensions, so a copy drops them
+function withoutIds(node: ONode): ONode {
+  const kids = childrenOf(node);
+  for (let i = kids.length - 1; i >= 0; i--)
+    if (tagOf(kids[i]) === 'a:extLst') kids.splice(i, 1);
+  return node;
+}
+
+// A copied look never carries a merge
+function unmerged(cell: ONode): ONode {
+  for (const mark of ['gridSpan', 'rowSpan', 'hMerge', 'vMerge'])
+    removeAttr(cell, mark);
+  return cell;
+}
+
 function syncTableFrame(shape: Shape): void {
   const cols = tableColumns(shape);
   const rows = tableRows(shape);
@@ -1154,14 +1193,18 @@ export function setTableCellText(
   }
   const oldRPr = descendant(cell, 'a:rPr') || descendant(cell, 'a:endParaRPr');
   const kids = childrenOf(body);
+  const oldPPrs = children(body, 'a:p').map((p) => child(p, 'a:pPr'));
   for (let i = kids.length - 1; i >= 0; i--)
     if (tagOf(kids[i]) === 'a:p') kids.splice(i, 1);
-  for (const line of value.replace(/\r/g, '').split('\n')) {
+  for (const [i, line] of value.replace(/\r/g, '').split('\n').entries()) {
     const rPr = oldRPr
       ? deepClone(oldRPr)
       : el('a:rPr', { lang: 'en-US', sz: String(ptToSz(12)) });
+    // Each line keeps the paragraph look of the line it replaces, bullets included
+    const pPr = oldPPrs[Math.min(i, oldPPrs.length - 1)];
     kids.push(
       el('a:p', undefined, [
+        ...(pPr ? [deepClone(pPr)] : []),
         el('a:r', undefined, [rPr, el('a:t', undefined, [textNode(line)])])
       ])
     );
@@ -1233,12 +1276,13 @@ export function setTableCellPlainText(
   markDirty(deck, slide);
 }
 
-/** Insert a row; `atIndex` places it at that position (default: append). */
+/** Insert a row, in the look of another when asked */
 export function addTableRow(
   deck: Deck,
   slide: Slide,
   shape: Shape,
-  atIndex?: number
+  atIndex?: number,
+  like?: number
 ): void {
   const tbl = tableNode(shape);
   const rows = tableRows(shape);
@@ -1248,11 +1292,15 @@ export function addTableRow(
     rows[Math.min(atIndex ?? rows.length - 1, rows.length - 1)] ??
     rows[rows.length - 1];
   const h = neighbor ? Number(getAttr(neighbor, 'h')) || 400000 : 400000;
-  const newRow = el(
-    'a:tr',
-    { h: String(h) },
-    Array.from({ length: Math.max(1, cols.length) }, blankCell)
-  );
+  const source = like === undefined ? undefined : rows[like];
+  const newRow = source
+    ? withoutIds(deepClone(source))
+    : el(
+        'a:tr',
+        { h: String(h) },
+        Array.from({ length: Math.max(1, cols.length) }, blankCell)
+      );
+  tableCells(newRow).forEach(unmerged);
   const kids = childrenOf(tbl);
   if (atIndex !== undefined && rows[atIndex]) {
     kids.splice(kids.indexOf(rows[atIndex]), 0, newRow);
@@ -1281,12 +1329,13 @@ export function removeTableRow(
   markDirty(deck, slide);
 }
 
-/** Insert a column; `atIndex` places it at that position (default: append). */
+/** Insert a column, in the look of another when asked */
 export function addTableColumn(
   deck: Deck,
   slide: Slide,
   shape: Shape,
-  atIndex?: number
+  atIndex?: number,
+  like?: number
 ): void {
   const tbl = tableNode(shape);
   const cols = tableColumns(shape);
@@ -1298,7 +1347,10 @@ export function addTableColumn(
   const grid = child(tbl, 'a:tblGrid');
   if (!grid) return;
   const gridKids = childrenOf(grid);
-  const newCol = el('a:gridCol', { w: String(w) });
+  const source = like === undefined ? undefined : cols[like];
+  const newCol = source
+    ? withoutIds(deepClone(source))
+    : el('a:gridCol', { w: String(w) });
   if (atIndex !== undefined && cols[atIndex]) {
     gridKids.splice(gridKids.indexOf(cols[atIndex]), 0, newCol);
   } else {
@@ -1307,11 +1359,15 @@ export function addTableColumn(
   for (const row of tableRows(shape)) {
     const cells = tableCells(row);
     const rowKids = childrenOf(row);
-    if (atIndex !== undefined && cells[atIndex]) {
-      rowKids.splice(rowKids.indexOf(cells[atIndex]), 0, blankCell());
-    } else {
-      rowKids.push(blankCell());
-    }
+    const likeCell = like === undefined ? undefined : cells[like];
+    const cell = likeCell ? unmerged(deepClone(likeCell)) : blankCell();
+    // A row's cells come before its extensions
+    const next =
+      atIndex !== undefined && cells[atIndex]
+        ? cells[atIndex]
+        : rowKids.find((node) => tagOf(node) === 'a:extLst');
+    if (next) rowKids.splice(rowKids.indexOf(next), 0, cell);
+    else rowKids.push(cell);
   }
   syncTableFrame(shape);
   markDirty(deck, slide);
@@ -1353,6 +1409,50 @@ export function setTableColumnWidth(
   const col = tableColumns(shape)[index];
   if (!col) return;
   setAttr(col, 'w', String(Math.max(90000, Math.round(width))));
+  syncTableFrame(shape);
+  markDirty(deck, slide);
+}
+
+/** Spread a width over the columns: a trailing run of equal columns shares what leading columns leave, else every column scales */
+export function fitTableColumns(
+  deck: Deck,
+  slide: Slide,
+  shape: Shape,
+  width: number
+): void {
+  const cols = tableColumns(shape);
+  if (!cols.length) return;
+  const widths = cols.map((col) => Number(getAttr(col, 'w')) || 0);
+  const last = widths[widths.length - 1];
+  // Columns within 1% of each other count as equal, as hand-dragged ones rarely match exactly
+  let run = 1;
+  while (
+    run < widths.length &&
+    Math.abs(widths[widths.length - run - 1] - last) <= last / 100
+  )
+    run++;
+  const lead = widths.slice(0, widths.length - run);
+  const share = Math.floor((width - lead.reduce((a, b) => a + b, 0)) / run);
+  const total = widths.reduce((a, b) => a + b, 0);
+  const narrowest = 90000;
+  const scaled = widths.map((w) => Math.floor((w * width) / (total || 1)));
+  // No column goes narrower than the editor allows, the others give up what they have above that
+  const short = scaled.reduce((sum, w) => sum + Math.max(0, narrowest - w), 0);
+  const spare = scaled.reduce((sum, w) => sum + Math.max(0, w - narrowest), 0);
+  const floored =
+    short && width >= widths.length * narrowest
+      ? scaled.map((w) =>
+          w <= narrowest
+            ? narrowest
+            : Math.floor(w - (short * (w - narrowest)) / spare)
+        )
+      : scaled;
+  const fitted =
+    run >= 2 && share >= narrowest
+      ? [...lead, ...Array.from({ length: run }, () => share)]
+      : floored;
+  fitted[fitted.length - 1] += width - fitted.reduce((a, b) => a + b, 0);
+  cols.forEach((col, i) => setAttr(col, 'w', String(fitted[i])));
   syncTableFrame(shape);
   markDirty(deck, slide);
 }
@@ -1652,13 +1752,7 @@ export function setTableCellRangeStyle(
         pr = el('a:tcPr');
         childrenOf(cell).push(pr);
       }
-      const old = child(pr, 'a:solidFill');
-      if (old) childrenOf(pr).splice(childrenOf(pr).indexOf(old), 1);
-      childrenOf(pr).unshift(
-        el('a:solidFill', undefined, [
-          el('a:srgbClr', { val: normalizedStyle.fill })
-        ])
-      );
+      setCellFill(pr, normalizedStyle.fill);
     }
     const textStyle: TextStyle = { ...normalizedStyle };
     delete (textStyle as TextStyle & { fill?: string }).fill;
@@ -1694,7 +1788,7 @@ export function setTableCellRangeAlign(
       ]);
       childrenOf(cell).unshift(body);
     }
-    if (vertical) setAttr(ensureChild(body, 'a:bodyPr'), 'anchor', vertical);
+    if (vertical) setAttr(ensureChild(cell, 'a:tcPr'), 'anchor', vertical);
     if (align) {
       const paragraphs = children(body, 'a:p');
       if (!paragraphs.length) paragraphs.push(ensureChild(body, 'a:p'));
@@ -1808,11 +1902,7 @@ export function setTableStyle(
         childrenOf(cell).push(pr);
       }
       if (fill) {
-        const old = child(pr, 'a:solidFill');
-        if (old) childrenOf(pr).splice(childrenOf(pr).indexOf(old), 1);
-        childrenOf(pr).unshift(
-          el('a:solidFill', undefined, [el('a:srgbClr', { val: fill })])
-        );
+        setCellFill(pr, fill);
       }
       if (border)
         for (const edge of ['a:lnL', 'a:lnT', 'a:lnR', 'a:lnB']) {

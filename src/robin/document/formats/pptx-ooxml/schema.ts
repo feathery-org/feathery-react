@@ -36,6 +36,13 @@ const RUN: readonly PropertySpec[] = [
     (value) => typeof value === 'string' && /^#[0-9A-F]{6}$/.test(value)
   ),
   spec(
+    'highlight',
+    'a colour #RRGGBB in capitals, or none for no highlight',
+    (value) =>
+      value === 'none' ||
+      (typeof value === 'string' && /^#[0-9A-F]{6}$/.test(value))
+  ),
+  spec(
     'font',
     'a font name',
     (value) =>

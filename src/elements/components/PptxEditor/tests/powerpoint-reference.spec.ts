@@ -17,6 +17,10 @@ const renderReference = (deck = importDeck(referenceBytes())) => {
   return Array.from(svg.querySelectorAll('[data-source-run]')) as HTMLElement[];
 };
 
+// A unitless line height scales the element's own font size
+const lineBoxPx = (element: HTMLElement) =>
+  parseFloat(element.style.lineHeight) * parseFloat(element.style.fontSize);
+
 it('uses master otherStyle for ordinary text boxes without explicit font sizes', () => {
   const runs = renderReference();
   const company = runs.find((run) => run.textContent === 'Company name')!;
@@ -37,7 +41,7 @@ it('lifts compressed title lines above their rules without changing the line pit
   ) as HTMLElement[];
   expect(paragraphs).toHaveLength(2);
   for (const paragraph of paragraphs) {
-    expect(parseFloat(paragraph.style.lineHeight)).toBeCloseTo(67.2);
+    expect(lineBoxPx(paragraph)).toBeCloseTo(67.2);
     expect(parseFloat(paragraph.style.marginTop)).toBeCloseTo(-14.4);
     expect(parseFloat(paragraph.style.marginBottom)).toBeCloseTo(14.4);
   }
@@ -61,9 +65,38 @@ it('inherits the master line spacing for text without paragraph overrides', () =
   const company = renderReference().find(
     (run) => run.textContent === 'Company name'
   )!;
-  expect(parseFloat(company.parentElement!.style.lineHeight)).toBeCloseTo(
-    ((14 * 96) / 72) * 1.2
+  expect(lineBoxPx(company.parentElement!)).toBeCloseTo(((14 * 96) / 72) * 1.2);
+});
+
+it('sizes each line from its own largest run', () => {
+  const deck = importDeck(referenceBytes());
+  const paragraph = deck.slides[0].shapes.find(
+    (shape) => shape.text?.paragraphs[0].runs[0]?.text === 'Company Name'
+  )!.text!.paragraphs[0];
+  paragraph.runs[0].sizePt = 12;
+  paragraph.runs.push({ ...paragraph.runs[0], text: ' large', sizePt: 40 });
+  childrenOf(child(paragraph.node, 'a:pPr')!).push(
+    el('a:lnSpc', undefined, [el('a:spcPct', { val: '100000' })])
   );
+  const large = renderReference(deck).find(
+    (run) => run.textContent === ' large'
+  )!;
+  expect(
+    parseFloat(large.parentElement!.style.lineHeight) *
+      parseFloat(large.style.fontSize)
+  ).toBeCloseTo(((40 * 96) / 72) * 1.2);
+});
+
+it('draws a paragraph of spaces as one line', () => {
+  const deck = importDeck(referenceBytes());
+  const paragraph = deck.slides[0].shapes.find(
+    (shape) => shape.text?.paragraphs[0].runs[0]?.text === 'Company Name'
+  )!.text!.paragraphs[0];
+  paragraph.runs = [{ ...paragraph.runs[0], text: '   ' }];
+  const spaces = renderReference(deck).find(
+    (run) => run.textContent === '   '
+  )!;
+  expect(spaces.parentElement!.querySelector('br')).toBeNull();
 });
 
 it('wraps words wider than their text box, as PowerPoint does', () => {

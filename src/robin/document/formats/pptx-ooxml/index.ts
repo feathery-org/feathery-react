@@ -14,9 +14,11 @@ import {
   editorIdentity,
   emptyRuns,
   inheritedFormat,
+  noHighlight,
   othersOf,
   reject,
-  resolveGroup
+  resolveGroup,
+  tableSize
 } from './projections';
 import { plan } from './reconcile';
 import { deckSeam } from './seams/deck';
@@ -26,6 +28,8 @@ import { pptxTree } from './tree';
 import VOCABULARY from './vocabulary';
 import type { PendingSuggestion } from './native';
 
+const FEATURES: readonly string[] = ['color', 'highlight'];
+
 export const pptxPack: Pack = {
   format: 'pptx-ooxml',
   vocabulary: VOCABULARY,
@@ -34,7 +38,20 @@ export const pptxPack: Pack = {
   adapter: { toNormalForm, fromNormalForm },
   outline: { defaultDepth: 1, belowBlocks, detail },
   text: ownText,
-  features: () => [],
+  // Runs are found by their colour and highlight, the way people point at them
+  // Only text a run holds itself has a look to find by
+  features: (node) =>
+    node.kind !== 'run' || !node.text
+      ? []
+      : FEATURES.filter((name) => typeof node[name] === 'string').map(
+          (name) => ({
+            name,
+            value: node[name] as string
+          })
+        ),
+  featureSpecs: (schemaFor('run') ?? []).filter((spec) =>
+    FEATURES.includes(spec.name)
+  ),
   annotate: () => new Map(),
   properties: {
     schema: schemaFor,
@@ -51,7 +68,14 @@ export const pptxPack: Pack = {
   projections: {
     accept,
     reject,
-    normalizations: [emptyRuns, adjacentLinks, inheritedFormat, editorIdentity],
+    normalizations: [
+      emptyRuns,
+      adjacentLinks,
+      inheritedFormat,
+      editorIdentity,
+      noHighlight,
+      tableSize
+    ],
     authoredBy,
     othersOf,
     conservedResidue,

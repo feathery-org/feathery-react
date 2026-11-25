@@ -250,6 +250,27 @@ describe('the format pack', () => {
     expect(sections.map((h) => h.trackedChangesInside)).toEqual([undefined]);
   });
 
+  it("finds no text in a person's pending deletion of a whole paragraph, and still finds a paragraph they deleted part of", () => {
+    const doc = JSON.stringify({
+      sections: [
+        {
+          blocks: [
+            { characterFormat: { revisionIds: ['p1'] }, inlines: [{ text: 'Commercial lines', revisionIds: ['p1'] }] },
+            { inlines: [{ text: 'Commercial ' }, { text: 'auto', revisionIds: ['p1'] }] },
+            { inlines: [{ text: 'Commercial property' }] }
+          ]
+        }
+      ],
+      revisions: [{ author: 'Reviewer', date: '2026-11-24T00:00:00Z', revisionType: 'Deletion', revisionId: 'p1' }]
+    });
+    const { call } = mount(doc);
+    const hits = (call('find', { text: 'Commercial' }) as { hits: Array<{ snippet: string; trackedChangesInside?: boolean }> }).hits;
+    expect(hits.map((h) => [h.snippet, h.trackedChangesInside])).toEqual([
+      ['Commercial auto', true],
+      ['Commercial property', undefined]
+    ]);
+  });
+
   const williams = path.join(process.env.ROBIN_DOCUMENT_PRIVATE_CORPUS ?? '/nonexistent', 'hilb-williams.sfdt.json');
   (fs.existsSync(williams) ? it : it.skip)('refuses the captain\'s table split, which deleted rows and reused their ids in the new table, as ambiguous-move (private corpus only)', () => {
     const { call } = mount(fs.readFileSync(williams, 'utf8'));

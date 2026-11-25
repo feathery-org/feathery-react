@@ -30,6 +30,7 @@ import {
   deleteShape,
   insertImage,
   insertSlideNumber,
+  fitTableColumns,
   insertTable,
   mergeTableCells,
   removeTableColumn,
@@ -60,9 +61,24 @@ import {
   snapTableRowsToContent,
   unmergeTableCells
 } from '../core/model/edit';
+import { readTextBody } from '../core/model/read';
+import { tableCell } from '../core/model/table';
 import type { Deck, Shape, Slide } from '../core/model/types';
-import type { OTree } from '../core/opc/xml';
-import type { CommandMeta, EditorCommand, Invalidation } from './commands';
+import {
+  buildXml,
+  child,
+  childrenOf,
+  descendant,
+  el,
+  getAttr,
+  type OTree
+} from '../core/opc/xml';
+import type {
+  CommandMeta,
+  EditorCommand,
+  Invalidation,
+  TableCellAddress
+} from './commands';
 import { deriveChangeRecord, type PptxChangeRecord } from './changes';
 
 const HISTORY_LIMIT = 100;
@@ -168,6 +184,44 @@ function jsonInvalidations(
   return invalidations;
 }
 
+/** A top-level shape's place on its slide and its XML, found by its id */
+function placedShape(
+  slide: OTree | undefined,
+  shapeId: string
+): { at: number; xml: string } | null {
+  const spTree = slide
+    ?.map((node) => descendant(node, 'p:spTree'))
+    .find(Boolean);
+  const shapes = spTree ? childrenOf(spTree) : [];
+  const at = shapes.findIndex(
+    (node) => getAttr(descendant(node, 'p:cNvPr') ?? {}, 'id') === shapeId
+  );
+  return at < 0 ? null : { at, xml: buildXml([shapes[at]]) };
+}
+
+// A transaction's command that left its shape as it was has nothing to review
+function changedOnly(
+  invalidations: Invalidation[],
+  before: PptxHistorySnapshot,
+  after: PptxHistorySnapshot
+): Invalidation[] {
+  return invalidations.flatMap((invalidation): Invalidation[] => {
+    if (invalidation.kind !== 'shapes') return [invalidation];
+    const shapeIds = invalidation.shapeIds.filter((shapeId) => {
+      const was = placedShape(
+        before.sourceSlides[invalidation.slideId],
+        shapeId
+      );
+      const now = placedShape(
+        after.sourceSlides[invalidation.slideId],
+        shapeId
+      );
+      return !was || !now || was.at !== now.at || was.xml !== now.xml;
+    });
+    return shapeIds.length ? [{ ...invalidation, shapeIds }] : [];
+  });
+}
+
 /** Framework-free owner of PPTX mutations, JSON projection, transactions and history. */
 export class PptxEditorEngine {
   private deck: Deck | null;
@@ -267,11 +321,12 @@ export class PptxEditorEngine {
     this.openTransaction = open;
     const close = () => {
       this.openTransaction = null;
+      const after = this.present || captureHistorySnapshot(deck, before);
       return this.record(
         before,
-        this.present || captureHistorySnapshot(deck, before),
+        after,
         meta.label || open.labels[0] || 'Edit',
-        open.invalidations,
+        changedOnly(open.invalidations, before, after),
         'change',
         open.createdShapeIds,
         meta
@@ -291,7 +346,7 @@ export class PptxEditorEngine {
     // untouched slides structurally). Consumers must deepClone before mutating
     // a draft - the JSON panel and applySlideJson callers already do.
     const document =
-      this.present?.document || (this.deck ? deckToJSON(this.deck) : null);
+      this.current()?.document || (this.deck ? deckToJSON(this.deck) : null);
     return {
       document,
       dirty: !!(
@@ -344,7 +399,11 @@ export class PptxEditorEngine {
       }
       case 'format-text': {
         const slide = this.requireSlide(command.slideId);
-        const shape = this.requireTextShape(slide, command.shapeId);
+        const shape = this.requireTextTarget(
+          slide,
+          command.shapeId,
+          command.cell
+        );
         if (command.ranges?.length)
           setTextRangeStyle(deck, slide, shape, command.ranges, command.style);
         else setTextStyle(deck, slide, shape, command.style);
@@ -391,7 +450,11 @@ export class PptxEditorEngine {
       }
       case 'replace-rich-text': {
         const slide = this.requireSlide(command.slideId);
-        const shape = this.requireTextShape(slide, command.shapeId);
+        const shape = this.requireTextTarget(
+          slide,
+          command.shapeId,
+          command.cell
+        );
         setShapeRichText(deck, slide, shape, command.paragraphs);
         invalidations = [
           { kind: 'shapes', slideId: slide.path, shapeIds: [shape.id] }
@@ -431,7 +494,7 @@ export class PptxEditorEngine {
       }
       case 'edit-table': {
         const slide = this.requireSlide(command.slideId);
-        const shape = this.requireShape(slide, command.shapeId);
+        const shape = this.requireShapeOrGroupMember(slide, command.shapeId);
         if (shape.type !== 'table')
           throw new Error(
             `Table ${command.shapeId} was not found on ${slide.path}`
@@ -449,16 +512,25 @@ export class PptxEditorEngine {
               );
               break;
             case 'add-row':
-              addTableRow(deck, slide, shape, operation.index);
+              addTableRow(deck, slide, shape, operation.index, operation.like);
               break;
             case 'remove-row':
               removeTableRow(deck, slide, shape, operation.index);
               break;
             case 'add-column':
-              addTableColumn(deck, slide, shape, operation.index);
+              addTableColumn(
+                deck,
+                slide,
+                shape,
+                operation.index,
+                operation.like
+              );
               break;
             case 'remove-column':
               removeTableColumn(deck, slide, shape, operation.index);
+              break;
+            case 'fit-columns':
+              fitTableColumns(deck, slide, shape, operation.width);
               break;
             case 'set-column-width':
               setTableColumnWidth(
@@ -909,7 +981,7 @@ export class PptxEditorEngine {
         deck,
         keepingOtherSlides(
           snapshots.before,
-          this.present as PptxHistorySnapshot,
+          this.current() as PptxHistorySnapshot,
           slidesChangedBetween(snapshots.before, snapshots.after)
         )
       );
@@ -1015,7 +1087,7 @@ export class PptxEditorEngine {
 
   // Every target's XML still looks the way the suggestion left it, wherever it sits now
   private isUnchangedSince(record: PptxChangeRecord): boolean {
-    const present = this.present;
+    const present = this.current();
     const snapshots = this.pendingSnapshots.get(record.id);
     if (!present || !snapshots) return false;
     return record.targets.every((target) => {
@@ -1041,16 +1113,24 @@ export class PptxEditorEngine {
 
   /** Cheap dirty check against the saved baseline (no snapshot cloning). */
   isDirty(): boolean {
+    const present = this.current();
     return !!(
-      this.present &&
+      present &&
       this.baseline &&
-      !sameHistoryDocument(this.present, this.baseline)
+      !sameHistoryDocument(present, this.baseline)
     );
   }
 
   /** Handle to the current state, to pass to markSaved once an export of it
    *  has been persisted (edits made meanwhile stay dirty). */
   savePoint(): PptxSavePoint | null {
+    return this.current();
+  }
+
+  // A transaction snapshots the deck when it closes, a read before then takes one on demand
+  private current(): PptxHistorySnapshot | null {
+    if (!this.present && this.deck)
+      this.present = captureHistorySnapshot(this.deck);
     return this.present;
   }
 
@@ -1113,28 +1193,36 @@ export class PptxEditorEngine {
     meta: CommandMeta = {}
   ): CommandResult {
     const deck = this.requireDeck();
-    const before = this.present || captureHistorySnapshot(deck);
-    const after = captureHistorySnapshot(deck, before);
-    this.present = after;
     invalidations = this.groupOwnedInvalidations(invalidations);
     const open = this.openTransaction;
-    if (!open)
-      return this.record(
-        before,
-        after,
-        label,
-        invalidations,
-        event,
-        createdShapeIds,
-        meta
-      );
-    const changed = !sameHistoryDocument(before, after);
-    if (changed) {
+    // A transaction snapshots the deck once when it closes, not after every command
+    if (open) {
+      this.present = null;
       open.labels.push(label);
       open.invalidations.push(...invalidations);
       open.createdShapeIds.push(...createdShapeIds);
+      const snapshot = () => this.snapshot();
+      return {
+        changed: true,
+        invalidations,
+        createdShapeIds,
+        get snapshot() {
+          return snapshot();
+        }
+      };
     }
-    return this.result(changed, invalidations, createdShapeIds);
+    const before = this.present || captureHistorySnapshot(deck);
+    const after = captureHistorySnapshot(deck, before);
+    this.present = after;
+    return this.record(
+      before,
+      after,
+      label,
+      invalidations,
+      event,
+      createdShapeIds,
+      meta
+    );
   }
 
   private pushHistory(entry: PptxHistoryEntry): void {
@@ -1237,6 +1325,29 @@ export class PptxEditorEngine {
     if (!shape?.text)
       throw new Error(`Text shape ${shapeId} was not found on ${slide.path}`);
     return shape;
+  }
+
+  // A table cell's text is edited like a shape's, through a view of the cell's text body
+  private requireTextTarget(
+    slide: Slide,
+    shapeId: string,
+    cell: TableCellAddress | undefined
+  ): Shape {
+    if (!cell) return this.requireTextShape(slide, shapeId);
+    const shape = this.requireShapeOrGroupMember(slide, shapeId);
+    const cellNode =
+      shape.type === 'table' ? tableCell(shape, cell.row, cell.col) : undefined;
+    // A cell may leave out its text body until it holds text
+    if (cellNode && !child(cellNode, 'a:txBody'))
+      childrenOf(cellNode).unshift(
+        el('a:txBody', undefined, [el('a:bodyPr'), el('a:lstStyle'), el('a:p')])
+      );
+    const text = readTextBody(cellNode && child(cellNode, 'a:txBody'));
+    if (!text)
+      throw new Error(
+        `Cell ${cell.row},${cell.col} of table ${shapeId} has no text on ${slide.path}`
+      );
+    return { ...shape, text };
   }
 
   private requireShape(slide: Slide, shapeId: string): Shape {

@@ -45,6 +45,7 @@ function readSlide(
 ): NfNode {
   const spTree = spTreeOf(tree);
   read.inherited = inherited;
+  read.slidePath = path;
   const seen = new Map<string, number>();
   const shapes = spTree
     ? childrenOf(spTree)
@@ -124,6 +125,7 @@ function markPending(
     for (const [path, xml] of Object.entries(beforeSlides)) {
       const tree = parseXml(xml);
       read.links = links?.[path];
+      read.slidePath = path;
       const after = state.find((slide) => slide.path === path);
       if (!after || (stays && !stays.has(path))) {
         if (after) mark(after.node, 'insertion', by);
@@ -199,7 +201,11 @@ export function toNormalForm(native: string): {
   residue: Residue;
 } {
   const deck = readNative(native);
-  const read: ReadNodes = { residue: {}, sources: new Map() };
+  const read: ReadNodes = {
+    residue: {},
+    sources: new Map(),
+    themeColors: deck.themeColors
+  };
   const slides = deck.slides.map(({ path, xml, inherited, links }) => {
     read.links = links;
     return readSlide(path, parseXml(xml), path, read, inherited);
@@ -208,7 +214,10 @@ export function toNormalForm(native: string): {
   read.links = undefined;
   const residue: Residue = {
     ...read.residue,
-    [DECK_ID]: { pending: deck.pending }
+    [DECK_ID]: {
+      pending: deck.pending,
+      ...(deck.themeColors ? { themeColors: deck.themeColors } : {})
+    }
   };
   return {
     nf: { root: { id: DECK_ID, kind: 'deck', slides }, formats: {} },
