@@ -3,19 +3,14 @@ Business Source License 1.1
 Parameters
 
 Licensor:             Feathery, Inc.
-Licensed Work:        Feathery
-                      The Licensed Work is (c) 2021 Feathery, Inc.
-Additional Use Grant: You may make use of the Licensed Work, provided that you do
-                      not use the Licensed Work for a Form Building Service.
+Licensed Work:        Feathery React SDK (@feathery/react)
+                      The Licensed Work is (c) 2021-2026 Feathery, Inc.
+Additional Use Grant: You may make production use of the Licensed Work,
+                      provided that such use is solely in connection with
+                      services provided by Feathery, Inc. under an active
+                      agreement or account with Feathery, Inc.
 
-                      A "Form Building Service" is a commercial or non-commercial
-                      offering that allows third parties (other than your
-                      employees and contractors) to access the functionality of
-                      the Licensed Work so that such third parties directly benefit
-                      from the form or survey designing, building, storage, or rendering
-                      features of the Licensed Work.
-
-Change Date:          2024-02-15
+Change Date:          2030-11-25
 
 Change License:       Apache License, Version 2.0
 
