@@ -35,7 +35,11 @@ import {
   SpreadsheetTableHandle
 } from './spreadsheet/SpreadsheetTable';
 import { usePendingEdits } from './spreadsheet/usePendingEdits';
-import { editorKindFor, parseCellInput } from './spreadsheet/fieldEditors';
+import {
+  editorKindFor,
+  formatCellDisplay,
+  parseCellInput
+} from './spreadsheet/fieldEditors';
 import {
   buildCellIssues,
   CellIssues,
@@ -47,11 +51,12 @@ import {
 import {
   CellErrors,
   cellErrorKey,
-  fieldCellRules,
   mergeCellErrors,
   parseCellErrorKey,
+  validateCellValue,
   validateGrid
 } from './spreadsheet/validation';
+import { useFieldCellRules } from './useFieldCellRules';
 import { sampleRowCount, validationColors } from './spreadsheet/styles';
 import { AddColumnHandler, CellWrite, GetCellShading } from './types';
 import { STATUS_HUB_FIELD_ID, UNVERIFY_ACTION_LABEL } from './hubStatus';
@@ -185,6 +190,23 @@ function TableElement({
     return { ...element, properties };
   }, [isHub, element, hub.hubColumns, wantsSpreadsheet]);
 
+  /**
+   * The column rules that shape each cell's editor and, in spreadsheet mode,
+   * its validation. A Hub owns its own field schema; a field-backed table reads
+   * each column's form field off the form (its type, options, date shape), so
+   * it can offer the right control and check formats but not the field's own
+   * required/length settings — those are enforced when the step is submitted.
+   */
+  const fieldRules = useFieldCellRules(
+    elementForData.properties.columns ?? [],
+    formId,
+    !isHub && !editMode
+  );
+  const cellRules = useMemo(
+    () => (isHub ? hub.cellRules : fieldRules),
+    [isHub, hub.cellRules, fieldRules]
+  );
+
   const {
     // search
     enableSearch,
@@ -229,6 +251,7 @@ function TableElement({
   } = useTableData({
     element: elementForData,
     editMode,
+    cellRules,
     // The classic preview keeps its two sample rows; a spreadsheet preview
     // fills the height it was given so the canvas shows a sheet, not a strip.
     exampleRows: wantsSpreadsheet
@@ -352,19 +375,6 @@ function TableElement({
     []
   );
   const stopEdit = useCallback(() => setEditingCell(null), []);
-  const navigateEdit = useCallback(
-    (rowIndex: number, colIndex: number, backward: boolean) => {
-      setEditingCell(
-        getNextEditableCell(
-          paginatedRowIndices,
-          columns.length,
-          { rowIndex, colIndex },
-          backward
-        )
-      );
-    },
-    [paginatedRowIndices, columns.length]
-  );
   const handleCancelDelete = useCallback(() => setDeleteRowIndex(null), []);
   const deleteIconRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
   const actionCellRefs = useRef<Map<number, HTMLTableCellElement>>(new Map());
@@ -553,17 +563,6 @@ function TableElement({
   }, [activeFieldValues, buffersEdits, pendingEdits.writes]);
 
   /**
-   * The column rules the spreadsheet validates against. A Hub owns its own
-   * field schema; a field-backed table has only each column's form field type,
-   * so it can check formats but not the field's own required/length settings —
-   * those are enforced when the step is submitted.
-   */
-  const cellRules = useMemo(
-    () => (isHub ? hub.cellRules : fieldCellRules(columns)),
-    [isHub, hub.cellRules, columns]
-  );
-
-  /**
    * Every failing cell: the ones this client can see, plus any the backend
    * rejected. A live client-side result wins, because a server error describes
    * a write the user may already have corrected.
@@ -631,6 +630,22 @@ function TableElement({
       (isHub && hub.readOnlyKeys.has(storageKey)) ||
       editorKindFor(cellRules[storageKey]) === 'readonly',
     [isHub, hub.readOnlyKeys, cellRules]
+  );
+  // Tab walks the editable cells only: a read-only column (hub status, a
+  // builder-locked hub field, an upload field) has no editor to land in.
+  const navigateEdit = useCallback(
+    (rowIndex: number, colIndex: number, backward: boolean) => {
+      setEditingCell(
+        getNextEditableCell(
+          paginatedRowIndices,
+          columns.length,
+          { rowIndex, colIndex },
+          backward,
+          (col) => !isColumnReadOnly(columns[col].field_key)
+        )
+      );
+    },
+    [paginatedRowIndices, columns, isColumnReadOnly]
   );
 
   // The rows and columns a finding can land on, a hub row also by entry id
@@ -971,11 +986,26 @@ function TableElement({
               message: `Column '${fieldKey}' cannot be edited.`
             };
           }
+          const rule = cellRules[storageKey];
           const parsed = parseCellInput(
             value == null ? '' : String(value),
-            cellRules[storageKey],
+            rule,
             cellValue(rowIndex, storageKey)
           );
+          // Held to the column's own rule the way a typed value is flagged:
+          // a checkbox takes no "yes", a number no letters, a dropdown no
+          // value off its list. A blank is a clear, which every column allows.
+          const problem =
+            rule && parsed !== null && parsed !== ''
+              ? validateCellValue(parsed, rule)
+              : null;
+          if (problem) {
+            return {
+              ok: false,
+              reason: 'invalid_value',
+              message: `Column '${fieldKey}': ${problem}.`
+            };
+          }
           accepted.push({ fieldKey: storageKey, rowIndex, value: parsed });
           return { ok: true, value: parsed };
         }
@@ -1492,6 +1522,16 @@ function TableElement({
                       const cellFieldKey = isTransposed
                         ? baseColumns[rowIndex]?.field_key
                         : column.field_key;
+                      // The rule of the field this cell shows a value OF. The
+                      // transposed header cell shows a field's NAME, which no
+                      // rule should format.
+                      const cellRule =
+                        cellFieldKey && !isFirstColInTranspose
+                          ? cellRules[cellFieldKey]
+                          : undefined;
+                      const cellText = cellRule
+                        ? formatCellDisplay(cellValue, cellRule)
+                        : stringifyWithNull(cellValue) ?? '';
 
                       return (
                         <CellElement
@@ -1521,14 +1561,12 @@ function TableElement({
                                 />
                               </span>
                             </div>
-                          ) : canEdit &&
-                            !(
-                              isHub && hub.readOnlyKeys.has(column.field_key)
-                            ) ? (
+                          ) : canEdit && !isColumnReadOnly(column.field_key) ? (
                             <EditableCell
                               value={cellValue}
                               fieldKey={column.field_key}
                               rowIndex={rowIndex}
+                              rule={cellRule}
                               isEditing={
                                 editingCell?.rowIndex === rowIndex &&
                                 editingCell?.colIndex === colIndex
@@ -1543,7 +1581,7 @@ function TableElement({
                               }
                             />
                           ) : (
-                            stringifyWithNull(cellValue) ?? ''
+                            cellText
                           )}
                         </CellElement>
                       );

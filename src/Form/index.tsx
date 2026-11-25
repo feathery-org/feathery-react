@@ -1736,6 +1736,7 @@ function Form({
         setUserProgress,
         setDataMappingState,
         steps,
+        hiddenFields,
         setStepKey,
         updateFieldOptions: (
           newOptions: FieldOptions,
