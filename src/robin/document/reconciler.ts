@@ -146,6 +146,8 @@ export function reconcile(input: ReconcileInput): ReconcileOutcome {
       ...(input.derived ? { derived: input.derived } : {})
     });
     const steps = (plan as CommitPlan).steps;
+    // A plan with nothing for the editor to do changes nothing, as an equal document does
+    if (!steps.length) return { outcome: 'unchanged' };
     let refreshFailed = -1;
     const runSteps = (upTo = steps.length) => {
       for (const [k, step] of steps.slice(0, upTo).entries()) {

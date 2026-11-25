@@ -6,9 +6,15 @@ import {
   withoutLists,
   type NfNode
 } from '../../../tree';
+import { MERGE_MARKS } from '../adapter/nodes';
 import type { Pending } from '../adapter/toNormalForm';
+import type {
+  TableCellAddress,
+  TableEditOperation
+} from '../../../../../elements/components/PptxEditor/engine/commands';
 import type { DeckOperation, ShapeRef, SlideRef } from '../seams/deck';
 import { PARAGRAPH_FORMAT, RUN_FORMAT } from '../textSources';
+import { lookOf, tableLayout } from '../tableLayout';
 import { isShapeKind, leafRuns, pptxTree } from '../tree';
 import { textOperations } from './text';
 
@@ -104,6 +110,17 @@ const resized = (old: NfNode, node: NfNode) => {
   return was.cx !== now.cx || was.cy !== now.cy;
 };
 
+const withoutMerge = (cell: NfNode) =>
+  Object.fromEntries(
+    Object.entries(cell).filter(([key]) => !MERGE_MARKS.includes(key))
+  ) as NfNode;
+// A cell under a merged cell beside or above it shows none of its own text
+const isCovered = (cell: NfNode) => !!cell.hMerge || !!cell.vMerge;
+const spansRows = (cell: NfNode) =>
+  cell.rowSpan !== undefined || cell.vMerge !== undefined;
+const spansColumns = (cell: NfNode) =>
+  cell.gridSpan !== undefined || cell.hMerge !== undefined;
+
 const sameContent = (a: NfNode, b: NfNode) =>
   canonicalJson(content(a)) === canonicalJson(content(b));
 
@@ -179,12 +196,12 @@ export function planDeck(
           );
           continue;
         }
+        // A run already in the deck with no text shows no formatting, so formatting it changes nothing
         if (
+          !origin &&
           node.kind === 'run' &&
           node.text === '' &&
-          RUN_FORMAT.some(
-            (key) => node[key] !== undefined && node[key] !== origin?.[key]
-          )
+          RUN_FORMAT.some((key) => node[key] !== undefined)
         )
           refuse(
             node.id,
@@ -215,12 +232,153 @@ export function planDeck(
     slide: SlideRef,
     shapeRef: ShapeRef,
     old: NfNode,
-    shape: NfNode
+    shape: NfNode,
+    cell?: TableCellAddress
   ): void {
     if (!Array.isArray(old.paragraphs) || !Array.isArray(shape.paragraphs))
       return;
     checkText(old, shape);
-    operations.push(...textOperations(slide, shapeRef, old, shape, originOf));
+    operations.push(
+      ...textOperations(slide, shapeRef, old, shape, originOf, cell)
+    );
+  }
+
+  /** The editor commands for a table's rows, columns and cell text */
+  function tableChanges(slide: SlideRef, old: NfNode, table: NfNode): void {
+    const shapeRef = String(table.shapeId);
+    const layout = tableLayout(old, table, originOf, (id) => !!before.get(id));
+    if (typeof layout === 'string') {
+      refuse(table.id, layout);
+      return;
+    }
+    const oldRows = listOf(old, 'rows');
+    const oldWidth = listOf(oldRows[0], 'cells').length;
+    const mergedAcross = oldRows.some((row) =>
+      listOf(row, 'cells').some(spansColumns)
+    );
+    const editTable = (operation: TableEditOperation) =>
+      operations.push({
+        command: {
+          type: 'edit-table',
+          onSlide: slide,
+          onShape: shapeRef,
+          operations: [operation]
+        }
+      });
+
+    // Removals go first and from the end, by the positions the table was read with
+    const removedRows = oldRows
+      .map((_, r) => r)
+      .filter((r) => !layout.rows.includes(r))
+      .reverse();
+    for (const r of removedRows) {
+      if (listOf(oldRows[r], 'cells').some(spansRows)) {
+        refuse(
+          oldRows[r].id,
+          'holds a cell merged with the row above or below, so removing it would break the table: tell the person to remove it by hand'
+        );
+        continue;
+      }
+      editTable({ kind: 'remove-row', index: r });
+    }
+    const removedColumns = Array.from({ length: oldWidth }, (_, c) => c)
+      .filter((c) => !layout.columns.includes(c))
+      .reverse();
+    const addsColumns = layout.columns.includes(undefined);
+    if ((removedColumns.length || addsColumns) && mergedAcross) {
+      refuse(
+        table.id,
+        'has cells merged across columns, so a column cannot be added or removed: tell the person to do it by hand'
+      );
+      return;
+    }
+    for (const c of removedColumns)
+      editTable({ kind: 'remove-column', index: c });
+
+    // New columns, then new rows, each copying the one beside it
+    const columnsNow: Array<number | undefined> = layout.columns.filter(
+      (c) => c !== undefined
+    );
+    layout.columns.forEach((c, j) => {
+      if (c !== undefined) return;
+      editTable({
+        kind: 'add-column',
+        index: j,
+        like: columnsNow.indexOf(layout.columnLooks[j])
+      });
+      columnsNow.splice(j, 0, undefined);
+    });
+    // A table keeps the width it was drawn at
+    const drawnWidth = (old.frame as Frame | undefined)?.cx;
+    if ((removedColumns.length || addsColumns) && drawnWidth)
+      editTable({ kind: 'fit-columns', width: drawnWidth });
+    const rowsNow: Array<number | undefined> = layout.rows.filter(
+      (r) => r !== undefined
+    );
+    layout.rows.forEach((r, i) => {
+      if (r !== undefined) return;
+      const below = layout.rows.slice(i + 1).find((r) => r !== undefined);
+      if (
+        below !== undefined &&
+        listOf(oldRows[below], 'cells').some((cell) => cell.vMerge)
+      ) {
+        refuse(
+          listOf(table, 'rows')[i].id,
+          'would split cells merged across the rows above and below it: add the row before or after the merged rows'
+        );
+        return;
+      }
+      editTable({
+        kind: 'add-row',
+        index: i,
+        like: rowsNow.indexOf(layout.rowLooks[i])
+      });
+      rowsNow.splice(i, 0, undefined);
+    });
+
+    // Every cell's text last, where it now stands
+    listOf(table, 'rows').forEach((row, i) => {
+      const own = layout.rows[i];
+      const was = own === undefined ? undefined : oldRows[own];
+      const keys = was ? unwritable(was, row) : [];
+      if (keys.length)
+        refuse(
+          row.id,
+          `changes ${keys.join(', ')} on a row, which the editor keeps as it is`
+        );
+      listOf(row, 'cells').forEach((cell, j) => {
+        const isNew =
+          layout.rows[i] === undefined || layout.columns[j] === undefined;
+        const look = lookOf(old, layout, i, j);
+        if (isNew && MERGE_MARKS.some((mark) => cell[mark] !== undefined)) {
+          refuse(
+            cell.id,
+            `is a new cell written with ${MERGE_MARKS.filter(
+              (mark) => cell[mark] !== undefined
+            ).join(
+              ', '
+            )}: a new cell stands on its own, write it with its text and without those`
+          );
+          return;
+        }
+        // A new cell takes the look beside it without its merge
+        const base = isNew ? withoutMerge(look) : look;
+        const cellKeys = unwritable(base, cell);
+        if (cellKeys.length)
+          refuse(
+            cell.id,
+            `changes ${cellKeys.join(
+              ', '
+            )} on a cell, which the editor keeps as it is`
+          );
+        if (!isNew && isCovered(look) && !sameContent(look, cell))
+          refuse(
+            cell.id,
+            'is hidden under the merged cell beside or above it, so its text never shows: write the text into that merged cell'
+          );
+        textChanges(slide, shapeRef, base, cell, { row: i, col: j });
+      });
+    });
   }
 
   function shapeChanges(
@@ -228,7 +386,7 @@ export function planDeck(
     old: NfNode,
     shape: NfNode,
     inGroup: boolean
-  ): Frame | null {
+  ): Partial<Frame> | null {
     const keys = unwritable(old, shape);
     if (keys.length)
       refuse(
@@ -242,7 +400,7 @@ export function planDeck(
       refuse(shape.id, lists);
       return null;
     }
-    let frame: Frame | null = null;
+    let frame: Partial<Frame> | null = null;
     if (canonicalJson(old.frame) !== canonicalJson(shape.frame)) {
       if (inGroup)
         refuse(
@@ -264,16 +422,9 @@ export function planDeck(
       else frame = shape.frame as Frame;
     }
     if (shape.kind === 'table') {
-      // Its frame is a move, its rows are the content
-      if (
-        canonicalJson(content(old).children) !==
-        canonicalJson(content(shape).children)
-      )
-        refuse(
-          shape.id,
-          "is a table, whose content can't be changed yet: tell the person to edit the table by hand"
-        );
-      return frame;
+      tableChanges(slide, old, shape);
+      // A table only moves, its size follows its rows and columns
+      return frame && { x: frame.x, y: frame.y };
     }
     if (shape.kind === 'group') {
       const members = (group: NfNode) =>
@@ -358,9 +509,21 @@ export function planDeck(
     oldShapes: NfNode[],
     shapes: NfNode[]
   ): void {
+    const copiedFrom = new Set<NfNode>();
+    const repeated = new Set<NfNode>();
     const pairs = shapes.flatMap((shape) => {
       const old = oldShapes.find((c) => c.id === originOf(shape.id));
-      return old ? [{ old, shape }] : [];
+      if (!old) return [];
+      if (copiedFrom.has(old)) {
+        repeated.add(shape);
+        refuse(
+          shape.id,
+          'copies a shape already on this slide a second time, which the editor cannot do: copy each shape once, or add a new text box'
+        );
+        return [];
+      }
+      copiedFrom.add(old);
+      return [{ old, shape }];
     });
     const kept = new Set(pairs.map(({ old }) => old));
     // The editor finds a shape by its shapeId, so it cannot tell apart two that share one
@@ -413,7 +576,9 @@ export function planDeck(
       });
 
     const paired = new Set(pairs.map(({ shape }) => shape));
-    const added = shapes.filter((shape) => !paired.has(shape));
+    const added = shapes.filter(
+      (shape) => !paired.has(shape) && !repeated.has(shape)
+    );
     added.forEach((shape, i) =>
       newShape(
         slide,
@@ -430,6 +595,18 @@ export function planDeck(
       );
   }
 
+  /** The one slide every shape of a new slide was copied from, which makes it a copy of that slide */
+  function slideOfCopiedShapes(slide: NfNode): NfNode | undefined {
+    const shapes = liveShapes(slide);
+    if (!shapes.length || !shapes.every((shape) => isCopy(shape.id)))
+      return undefined;
+    const sources = new Set(
+      shapes.map((shape) => before.placement(originOf(shape.id))?.parent)
+    );
+    const [source] = sources;
+    return sources.size === 1 ? source ?? undefined : undefined;
+  }
+
   const beforeSlides = (before.nf.root.slides as NfNode[]).filter(isLive);
   const afterSlides = (intended.nf.root.slides as NfNode[]).filter(isLive);
   const keyOf = new Map<NfNode, string>();
@@ -440,7 +617,7 @@ export function planDeck(
   for (const slide of added) {
     const source = isCopy(slide.id)
       ? before.get(originOf(slide.id))
-      : undefined;
+      : slideOfCopiedShapes(slide);
     if (source?.kind !== 'slide' || !isLive(source)) {
       refuse(slide.id, `is a new slide: ${COPY_SLIDE}`);
       continue;
@@ -540,7 +717,7 @@ export function plan(ctx: PlanContext): CommitPlan {
   // The limits invariant refuses these before a write gets here
   if (cannot.length) throw new Error(`${cannot[0].id} ${cannot[0].why}`);
   return {
-    steps: [{ seam: 'deck', payload: operations }],
+    steps: operations.length ? [{ seam: 'deck', payload: operations }] : [],
     landed: 'card',
     history: 'editor'
   };

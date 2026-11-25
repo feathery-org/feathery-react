@@ -137,6 +137,10 @@ export function matchQuery(
     );
     if (query.within !== undefined && !ancestors.includes(query.within))
       continue;
+    // What accepting the pending changes removes is no longer there to point at
+    const gone = (n: NfNode | undefined) =>
+      !!n && !!pack.tree.goneOnAccept?.(n);
+    if (gone(node) || ancestors.some((a) => gone(view.get(a)))) continue;
     if (
       query.feature !== undefined &&
       !pack

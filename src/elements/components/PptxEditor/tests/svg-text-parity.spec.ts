@@ -5,6 +5,7 @@ import { deckToJSON } from '../core/model/json';
 import { refreshShapeText } from '../core/model/read';
 import { renderSlideSvg } from '../core/render/svg';
 import { onFontMetricsSettled } from '../core/render/fonts';
+import { schemeColorHexAt } from '../core/render/color';
 import { child, childrenOf, el, setAttr, tagOf } from '../core/opc/xml';
 
 it('carries DrawingML autofit, paragraph spacing, tabs, and field identity into JSON and SVG text', () => {
@@ -94,14 +95,12 @@ it('carries DrawingML autofit, paragraph spacing, tabs, and field identity into 
   // Percent spacing multiplies the ~1.2x natural line box, so 1.1 -> 1.2 * 1.1.
   const fontPx = ((18 * 96) / 72) * 0.8;
   const lineHeightPx = fontPx * 1.2 * 1.1;
-  // Expanded line spacing stays inside the line box. Paragraph margins retain
-  // the explicit 12pt before / zero after spacing from the source.
-  expect(Number.parseFloat(firstPara.style.lineHeight)).toBeCloseTo(
-    lineHeightPx
-  );
-  expect(Number.parseFloat(firstPara.style.marginTop)).toBeCloseTo(
-    (12 * 96) / 72
-  );
+  // Expanded spacing stays inside the line box, and the first paragraph's space before is dropped
+  expect(
+    Number.parseFloat(firstPara.style.lineHeight) *
+      Number.parseFloat(firstPara.style.fontSize)
+  ).toBeCloseTo(lineHeightPx);
+  expect(Number.parseFloat(firstPara.style.marginTop)).toBeCloseTo(0);
   expect(Number.parseFloat(firstPara.style.marginBottom)).toBeCloseTo(0);
   expect(Number.parseFloat(firstRun.style.fontSize)).toBeCloseTo(
     (((shape.text!.paragraphs[0].runs[0].sizePt ?? 18) * 96) / 72) * 0.8
@@ -173,6 +172,9 @@ it('renders DrawingML hyperlinks as clickable anchors in SVG text', () => {
     .runs[0];
   const rPr = run.rPr || el('a:rPr');
   if (!run.rPr) childrenOf(run.node).unshift(rPr);
+  childrenOf(rPr).unshift(
+    el('a:solidFill', undefined, [el('a:srgbClr', { val: '000000' })])
+  );
   const relationshipId = deck.pkg.addRelationship(
     slide.path,
     'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink',
@@ -195,6 +197,27 @@ it('renders DrawingML hyperlinks as clickable anchors in SVG text', () => {
   expect(link.getAttribute('target')).toBe('_blank');
   expect(link.getAttribute('title')).toBe('Open documentation');
   expect(link.textContent).toContain(run.text);
+  const linkColor = () =>
+    (
+      renderSlideSvg(deck, slide).querySelector(
+        `[data-shape-id="${shape.id}"] a[data-hyperlink] span`
+      ) as HTMLElement
+    ).style.color;
+  const hex = schemeColorHexAt('hlink', deck.pkg, slide.path)!.replace('#', '');
+  const themeLink = `rgb(${[0, 2, 4]
+    .map((at) => parseInt(hex.slice(at, at + 2), 16))
+    .join(', ')})`;
+  expect(linkColor()).toBe(themeLink);
+  const hyperlink = child(rPr, 'a:hlinkClick')!;
+  childrenOf(hyperlink).push(
+    el('a:extLst', undefined, [
+      el('a:ext', { uri: '{A12FA001-AC4F-418D-AE19-62706E023703}' }, [
+        el('ahyp:hlinkClr', { val: 'tx' })
+      ])
+    ])
+  );
+  refreshShapeText(shape);
+  expect(linkColor()).not.toBe(themeLink);
 });
 
 it('stacks and loads metric clones for Microsoft fonts', () => {

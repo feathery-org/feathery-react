@@ -3,6 +3,7 @@ import { deepClone } from '../core/opc/deepClone';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import {
+  drawnTableRowHeights,
   reconcileSlideSvg,
   renderSlideSvg,
   rerenderShape
@@ -18,7 +19,6 @@ import {
   tableCellGridSpan,
   tableCellIsMergeContinuation,
   tableCellRowSpan,
-  tableCellText,
   tableCells,
   tableColumns,
   tableRows
@@ -32,7 +32,7 @@ import {
 import { snapMove, type Guide } from './snap';
 import { readBodyProps } from '../core/model/textLayout';
 import { selectedTextRanges } from './textSelection';
-import type { TableEditOperation } from '../engine';
+import type { EditorCommand, TableEditOperation } from '../engine';
 import { canUngroup } from '../core/model/groups';
 
 function slideShapeElement(
@@ -163,7 +163,9 @@ function tableGridSizes(shape: Shape) {
   const columns = tableColumns(shape).map(
     (column) => Number(getAttr(column, 'w')) || 0
   );
-  const rows = tableRows(shape).map((row) => Number(getAttr(row, 'h')) || 0);
+  const rows =
+    drawnTableRowHeights(shape) ??
+    tableRows(shape).map((row) => Number(getAttr(row, 'h')) || 0);
   return {
     columns,
     rows,
@@ -349,6 +351,21 @@ function styleSignature(cs: CSSStyleDeclaration): string {
   ].join('|');
 }
 
+/** Each source run's look when editing opens, so a commit can tell which runs the person restyled */
+function sourceStyles(root: HTMLElement): Map<string, string> {
+  return new Map(
+    [...root.querySelectorAll('[data-source-paragraph][data-source-run]')].map(
+      (span) => {
+        const el = span as HTMLElement;
+        return [
+          `${el.dataset.sourceParagraph}:${el.dataset.sourceRun}`,
+          styleSignature(getComputedStyle(el))
+        ];
+      }
+    )
+  );
+}
+
 function extractRichText(
   root: HTMLElement,
   fontScale = 1,
@@ -417,6 +434,8 @@ function extractRichText(
   };
   const collectRuns = (root: HTMLElement): RichRun[] => {
     const runs: RichRun[] = [];
+    const drawnOnly = new Set<RichRun>();
+    const typed = new Set<RichRun>();
     const walker = featheryDoc().createTreeWalker(
       root,
       NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
@@ -424,7 +443,8 @@ function extractRichText(
         acceptNode: (n: Node) => {
           if (n instanceof Element) {
             if (n.hasAttribute('data-bullet')) return NodeFilter.FILTER_REJECT;
-            return n.tagName === 'BR' && n.hasAttribute('data-soft-break')
+            // A line break the person typed may come back without the marks of a drawn one
+            return n.tagName === 'BR'
               ? NodeFilter.FILTER_ACCEPT
               : NodeFilter.FILTER_SKIP;
           }
@@ -445,12 +465,25 @@ function extractRichText(
                 paragraph: Number(n.dataset.sourceParagraph),
                 run: Number(n.dataset.sourceRun)
               };
-        runs.push({ text: '\n', break: true, source });
+        const lineBreak: RichRun = { text: '\n', break: true, source };
+        if (n.hasAttribute('data-soft-break')) typed.add(lineBreak);
+        else if (!source) drawnOnly.add(lineBreak);
+        runs.push(lineBreak);
         continue;
       }
       const r = runFromTextNode(n as Text);
-      if (r) runs.push(r);
+      // Shift+Enter types a newline into the text, which is a soft line break
+      r?.text.split('\n').forEach((text, i) => {
+        if (i > 0) runs.push({ text: '\n', break: true });
+        if (text) runs.push({ ...r, text });
+      });
     }
+    // A plain break ending a paragraph, or a newline doubled at its end, is only there to show the line
+    const last = runs[runs.length - 1];
+    const placeholder =
+      drawnOnly.has(last) || runs.length === 1 || runs[runs.length - 2]?.break;
+    if (last?.break && !last.source && !typed.has(last) && placeholder)
+      runs.pop();
     return runs;
   };
   const paras: RichPara[] = [];
@@ -879,17 +912,7 @@ export function SvgSlide({
     // Capture the baseline afterward so toolbar focus/blur cannot create a
     // hidden history entry before the actual formatting action.
     editStartHtmlRef.current = div.innerHTML;
-    editStylesRef.current = new Map(
-      [...div.querySelectorAll('[data-source-paragraph][data-source-run]')].map(
-        (span) => {
-          const el = span as HTMLElement;
-          return [
-            `${el.dataset.sourceParagraph}:${el.dataset.sourceRun}`,
-            styleSignature(getComputedStyle(el))
-          ];
-        }
-      )
-    );
+    editStylesRef.current = sourceStyles(div);
     // grow the box so overflowing text stays visible (not clipped by the fO viewport)
     const prevFoH = fo?.getAttribute('height');
     const prevFoOverflow = fo?.style.overflow ?? '';
@@ -1056,6 +1079,12 @@ export function SvgSlide({
           const br = featheryDoc().createElement('br');
           br.dataset.softBreak = '';
           range.insertNode(br);
+          // A break that ends a paragraph needs a second one after it for its new line to show
+          const rest = featheryDoc().createRange();
+          rest.setStartAfter(br);
+          rest.setEnd(paragraph, paragraph.childNodes.length);
+          if (!rest.toString() && !rest.cloneContents().querySelector('br'))
+            br.after(featheryDoc().createElement('br'));
           const caret = featheryDoc().createRange();
           caret.setStartAfter(br);
           caret.collapse(true);
@@ -1147,27 +1176,24 @@ export function SvgSlide({
     selection?.addRange(range);
     let committed = false;
     const target = slide.shapes.find((s) => s.id === cell.shapeId);
-    const textOperation = (): TableEditOperation | undefined => {
-      if (!target) return undefined;
-      const value = (div.innerText ?? div.textContent ?? '').replace(/\n$/, '');
-      if (tableCellText(tableCell(target, cell.row, cell.col)) === value)
-        return undefined;
-      return { kind: 'set-cell-text', row: cell.row, col: cell.col, value };
-    };
+    // A cell's runs keep their own formatting, read back the way a text box's are
+    const openedHtml = div.innerHTML;
+    const openedStyles = sourceStyles(div);
+    const textCommand = (): EditorCommand | undefined =>
+      !target || div.innerHTML === openedHtml
+        ? undefined
+        : {
+            type: 'replace-rich-text',
+            slideId: slide.path,
+            shapeId: target.id,
+            cell: { row: cell.row, col: cell.col },
+            paragraphs: extractRichText(div, 1, openedStyles)
+          };
     const commit = () => {
       if (committed) return;
       committed = true;
-      const operation = textOperation();
-      if (operation && target)
-        store.executeCommand(
-          {
-            type: 'edit-table',
-            slideId: slide.path,
-            shapeId: target.id,
-            operations: [operation]
-          },
-          'Edit table cell'
-        );
+      const command = textCommand();
+      if (command) store.executeCommand(command, 'Edit table cell');
       setEditingCell(null);
     };
     // Keyboard save, undo/redo and toolbar commands flush the active edit
@@ -1184,27 +1210,23 @@ export function SvgSlide({
       e.preventDefault();
       e.stopPropagation();
       committed = true;
-      const operations: TableEditOperation[] = [];
-      const text = textOperation();
-      if (text) operations.push(text);
-      let next = nextTableAnchor(target, cell.row, cell.col);
-      if (!next) {
-        next = { row: tableRows(target).length, col: 0 };
-        operations.push({ kind: 'add-row' });
-      }
-      const { row, col } = next;
-      if (operations.length)
-        store.executeCommand(
-          {
+      const text = textCommand();
+      const anchor = nextTableAnchor(target, cell.row, cell.col);
+      const addsRow = !anchor;
+      const newRow = tableRows(target).length;
+      if (text && !addsRow) store.executeCommand(text, 'Edit table cell');
+      // A new row and the text typed before it are one step to undo
+      if (addsRow)
+        store.transaction({ label: 'Add table row' }, () => {
+          if (text) store.engine.execute(text);
+          store.engine.execute({
             type: 'edit-table',
             slideId: slide.path,
             shapeId: target.id,
-            operations
-          },
-          operations.some((operation) => operation.kind === 'add-row')
-            ? 'Add table row'
-            : 'Edit table cell'
-        );
+            operations: [{ kind: 'add-row' }]
+          });
+        });
+      const { row, col } = anchor ?? { row: newRow, col: 0 };
       // Tab and Shift+Tab advance to the next cell, as requested.
       store.setTableSelection({
         shapeId: target.id,
