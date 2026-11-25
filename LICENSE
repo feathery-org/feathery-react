@@ -6,14 +6,20 @@ Licensor:             Feathery, Inc.
 Licensed Work:        Feathery React SDK (@feathery/react)
                       The Licensed Work is (c) 2021-2026 Feathery, Inc.
 Additional Use Grant: You may make use of the Licensed Work, provided that you do
-                      not use the Licensed Work for a Form Building Service.
+                      not use the Licensed Work for a Competing Service.
 
-                      A "Form Building Service" is a commercial or non-commercial
+                      A "Competing Service" is a commercial or non-commercial
                       offering that allows third parties (other than your
                       employees and contractors) to access the functionality of
-                      the Licensed Work so that such third parties directly benefit
-                      from the form or survey designing, building, storage, or rendering
-                      features of the Licensed Work.
+                      the Licensed Work so that such third parties directly
+                      benefit from any of its features, including without
+                      limitation: designing, building, rendering, or storing
+                      forms, surveys, or workflows; collecting, validating, or
+                      processing submitted data; viewing, editing, generating,
+                      or signing documents (including PDF, DOCX, and PPTX
+                      files); rendering tables or data hub records; logic,
+                      rules, and integrations; authentication; and AI
+                      assistants or AI-powered data extraction.
 
 Change Date:          2030-11-25
 
