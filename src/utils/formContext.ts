@@ -1,4 +1,8 @@
 import type { GenerateDocumentRef } from './featheryClient/integrationClient';
+import {
+  collapseTemplateCopies,
+  type TemplateCopyInput
+} from './templateCopies';
 import Field from './entities/Field';
 import { featheryWindow } from './browser';
 import { getAllElements } from './formHelperFunctions';
@@ -414,7 +418,7 @@ export const getFormContext = (formUuid: string) => {
       });
     },
     generateDocuments: ({
-      documentIds: documentSources,
+      documentIds: documentInputs,
       signers,
       envelopeAction,
       signMethod,
@@ -440,7 +444,10 @@ export const getFormContext = (formUuid: string) => {
       // A plain template UUID string, a file upload field itself (e.g.
       // `FileUpload1`), or a source object such as the Quik item
       // `{ kind: 'quik' }` — mirroring the action config.
-      documentIds: (GenerateDocumentRef | Field)[];
+      // `{ documentId, values }` generates one copy of a PDF template filled
+      // with its own values (by field key) ahead of the saved answers; repeat
+      // it for each copy. `repeatable` is not needed.
+      documentIds: (GenerateDocumentRef | Field | TemplateCopyInput)[];
       // Per-document, per-role signer emails; a document with no entry here
       // gets no signer. `roleId` targets one of the document's signer roles,
       // or is left off to cover every role of that document. `filler` marks
@@ -450,7 +457,8 @@ export const getFormContext = (formUuid: string) => {
       // (DocuSign only), unless SMS authentication is off for the send. Give
       // it in E.164 form, e.g. '+15555555555'; a number with no country code
       // is taken as +1.
-      // `repeatIndex` targets a zero-based PDF copy when repeatable=true.
+      // `repeatIndex` targets a zero-based PDF copy when repeatable=true, or
+      // a template's nth `{ documentId, values }` copy.
       // It requires roleId. Omit it to apply that role to every copy; a
       // copy-specific entry overrides the default for the same role.
       signers?: {
@@ -557,6 +565,12 @@ export const getFormContext = (formUuid: string) => {
               ])
             );
       signers = signers?.map((signer) => ({ ...signer }));
+      let documentSources: (GenerateDocumentRef | Field)[];
+      try {
+        documentSources = collapseTemplateCopies(documentInputs);
+      } catch (e) {
+        return Promise.reject(e);
+      }
       if (
         signMethod !== 'docusign' &&
         (signers?.some((signer) => signer.signerId?.trim()) ||
@@ -623,7 +637,10 @@ export const getFormContext = (formUuid: string) => {
           : typeof doc !== 'string' && doc.kind === 'template'
           ? {
               ...doc,
-              ...(doc.references ? { references: [...doc.references] } : {})
+              ...(doc.references ? { references: [...doc.references] } : {}),
+              ...(doc.values
+                ? { values: doc.values.map((copy) => ({ ...copy })) }
+                : {})
             }
           : doc
       );

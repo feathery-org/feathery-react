@@ -53,6 +53,7 @@ import {
   signsViaDocusign
 } from '../document';
 import { withLinkRequestHeaders } from '../accessLinkRequest';
+import type { TemplateCopyValues } from '../templateCopies';
 
 // A configured Generate Documents entry in the ordered `documents` array: a
 // template UUID string, an explicit template, one Quik source, or a file
@@ -85,6 +86,10 @@ export type GenerateDocumentRef =
       document_id: string;
       // Exactly one opaque reference per generated copy, in repeat order.
       references?: string[];
+      // One { field key: value } object per generated copy, in order. A value
+      // wins over the saved answer ('' is an intentional blank); a field left
+      // out falls back to it. PDF templates only.
+      values?: TemplateCopyValues[];
     };
 
 // The template id a document entry names, or null for a non-template source.
