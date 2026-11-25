@@ -165,6 +165,44 @@ export function schemeColorHexAt(
   return themeColors(pkg, themePartForSlide(pkg, slidePath))[slot];
 }
 
+/** A colour made lighter or darker the way PowerPoint does, keeping its hue and saturation */
+function withLuminance(
+  [r, g, b]: number[],
+  change: (luminance: number) => number
+): number[] {
+  const [red, green, blue] = [r, g, b].map((v) => v / 255);
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const lightness = (max + min) / 2;
+  const chroma = max - min;
+  const saturation = chroma ? chroma / (1 - Math.abs(2 * lightness - 1)) : 0;
+  const hue = !chroma
+    ? 0
+    : max === red
+    ? ((green - blue) / chroma + 6) % 6
+    : max === green
+    ? (blue - red) / chroma + 2
+    : (red - green) / chroma + 4;
+
+  const l = Math.max(0, Math.min(1, change(lightness)));
+  const c = (1 - Math.abs(2 * l - 1)) * saturation;
+  const x = c * (1 - Math.abs((hue % 2) - 1));
+  const [r1, g1, b1] =
+    hue < 1
+      ? [c, x, 0]
+      : hue < 2
+      ? [x, c, 0]
+      : hue < 3
+      ? [0, c, x]
+      : hue < 4
+      ? [0, x, c]
+      : hue < 5
+      ? [x, 0, c]
+      : [c, 0, x];
+  const m = l - c / 2;
+  return [r1, g1, b1].map((v) => (v + m) * 255);
+}
+
 /** Resolve a solidFill/color container to '#hex', applying lumMod/lumOff/shade/tint;
  *  phClr substitutes a theme placeholder color when schemeClr val="phClr". */
 export function resolveColorAt(
@@ -207,16 +245,8 @@ export function resolveColorAt(
   const lo = pct(off);
   const sh = pct(shade);
   const tn = pct(tint);
-  if (lm !== undefined) {
-    r *= lm;
-    g *= lm;
-    b *= lm;
-  }
-  if (lo !== undefined) {
-    r += 255 * lo;
-    g += 255 * lo;
-    b += 255 * lo;
-  }
+  if (lm !== undefined || lo !== undefined)
+    [r, g, b] = withLuminance([r, g, b], (l) => l * (lm ?? 1) + (lo ?? 0));
   if (sh !== undefined) {
     r *= sh;
     g *= sh;

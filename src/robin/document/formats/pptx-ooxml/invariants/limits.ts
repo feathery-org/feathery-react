@@ -64,9 +64,11 @@ export const limits: Invariant = {
         !isFrame(node.frame)
       )
         problems.push(refusal(id, `has a frame that is not ${FRAME}`));
+      // A deck may already hold a run with a line break in its text, which formatting alone leaves as it is
       if (
         node.kind === 'run' &&
-        (typeof node.text !== 'string' || /[\r\n]/.test(node.text))
+        (typeof node.text !== 'string' ||
+          (node.text !== old?.text && /[\r\n]/.test(node.text)))
       )
         problems.push(
           refusal(

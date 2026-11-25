@@ -336,6 +336,49 @@ describe('PowerPoint text', () => {
     expect(new Set(card.targets.map((target) => target.shapeId)).size).toBe(1);
   });
 
+  it('clears the highlight on text the deck holds with a line break in it', () => {
+    const deck = injected(
+      'slide1',
+      '<a:rPr lang="en"/><a:t>Marketing Plan Presentation',
+      '<a:rPr lang="en"><a:highlight><a:srgbClr val="FFFF00"/></a:highlight></a:rPr><a:t>Marketing Plan\nPresentation'
+    );
+    const find = { feature: { name: 'highlight' } };
+    const found = deck.call('find', find) as { total: number; shape: string };
+    expectCard(
+      deck.write({
+        intent: 'Remove every highlight.',
+        scope: { ids: [], bulk: [{ find, total: found.total }] },
+        changes: [
+          {
+            kind: 'set',
+            target: { find, total: found.total, shape: found.shape },
+            props: { highlight: 'none' }
+          }
+        ]
+      })
+    );
+    expect(total(deck, find)).toBe(0);
+    expect(deck.find('Marketing Plan\nPresentation')).toHaveLength(1);
+  });
+
+  it('refuses a new run written without its text', () => {
+    const deck = openDeck();
+    const { paragraph } = subtitle(deck);
+    const node = deck.read(paragraph);
+    const result = replaceParagraph(deck, paragraph, {
+      ...node,
+      runs: [...(node.runs as object[]), { kind: 'run', bold: true }]
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: expect.objectContaining({
+          message: expect.stringContaining('is not one line of text')
+        })
+      })
+    );
+  });
+
   it('reports no change, and no card, for clearing a highlight nothing has', () => {
     const deck = openDeck('marketing-parity.pptx');
     const find = { text: 'Company Name' };
