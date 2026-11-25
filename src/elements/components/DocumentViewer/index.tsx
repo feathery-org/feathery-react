@@ -15,7 +15,11 @@ import {
 } from './SigningTags';
 import Toolbar, { ToolbarAction } from './Toolbar';
 import { useActivePage, pageKey } from './useActivePage';
-import { useIsNarrowViewport } from './useIsNarrowViewport';
+import {
+  COLLAPSE_BREAKPOINT,
+  useIsNarrowViewport
+} from './useIsNarrowViewport';
+import useElementSize from '../../../hooks/useElementSize';
 import ViewerSidebar from './sidebar';
 import AlertBanner from './AlertBanner';
 import {
@@ -211,18 +215,15 @@ export interface DocumentViewerPayload {
   documents: ViewerDocument[];
   // The packet's DocuSign recipients, named by position in `signing_tags`.
   signers?: SigningRecipient[];
-  expires_at: string;
+  // Absent embedded: its envelope has no review session to expire.
+  expires_at?: string;
 }
 
-interface DocumentViewerProps {
+interface DocumentViewerBaseProps {
   payload: DocumentViewerPayload;
   // The Generate Documents action: `editor_toolbar_actions` configures the
   // toolbar, `editor_read_only` locks the PDFs' form fields.
   action: Record<string, any>;
-  setShow: (show: boolean) => void;
-  // May return the flow it continues, so a kept-open close can recover when
-  // that flow fails.
-  onComplete: () => void | Promise<unknown>;
   // The toolbar exposes a single Continue action (label varies by
   // `envelope_action`) that calls this to finalize the reviewed envelopes.
   onFinalize?: (params: {
@@ -244,15 +245,41 @@ interface DocumentViewerProps {
   // whatever outcome finalize runs (download, sign, ...) acts on the edited
   // file. Absent = fields still render but edits are never persisted.
   onSaveEnvelopeFile?: (envelopeId: string, file: Blob) => Promise<any>;
+  // Whether any document has field edits not yet saved to its envelope.
+  onDirtyChange?: (dirty: boolean) => void;
+  // Hands the host a save for unsaved edits, run before it replaces the
+  // documents (regenerate, tab switch); null once unmounted.
+  onBeforeReplaceReady?: (save: (() => Promise<unknown>) | null) => void;
 }
+
+type DocumentViewerProps = DocumentViewerBaseProps &
+  (
+    | {
+        // Renders inline in a Document Editor container instead of as a
+        // modal: no portal, Back, focus or key trapping, and nothing closes.
+        embedded: true;
+        setShow?: never;
+        onComplete?: never;
+      }
+    | {
+        embedded?: false;
+        setShow: (show: boolean) => void;
+        // May return the flow it continues, so a kept-open close can recover
+        // when that flow fails.
+        onComplete: () => void | Promise<unknown>;
+      }
+  );
 
 export default function DocumentViewer({
   payload,
   action,
-  setShow,
-  onComplete,
+  embedded = false,
+  setShow = () => {},
+  onComplete = () => {},
   onFinalize,
-  onSaveEnvelopeFile
+  onSaveEnvelopeFile,
+  onDirtyChange,
+  onBeforeReplaceReady
 }: DocumentViewerProps) {
   const loadedDocs = useRef<Record<string, any>>({});
   const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -262,7 +289,7 @@ export default function DocumentViewer({
   // rest of the page can be made `inert` while it is open (see the portal
   // effect below).
   const portalElRef = useRef<HTMLElement | null>(null);
-  if (portalElRef.current === null && runningInClient()) {
+  if (portalElRef.current === null && !embedded && runningInClient()) {
     portalElRef.current = featheryDoc().createElement('div');
   }
   // Key of the toolbar action currently running (spinner + disable-all), or
@@ -305,7 +332,9 @@ export default function DocumentViewer({
   const [pageWidth, setPageWidth] = useState(MAX_PAGE_WIDTH);
 
   const isExpired = useMemo(
-    () => new Date(payload.expires_at).getTime() < Date.now(),
+    () =>
+      !!payload.expires_at &&
+      new Date(payload.expires_at).getTime() < Date.now(),
     [payload.expires_at]
   );
   const [expiredBanner, setExpiredBanner] = useState(isExpired);
@@ -326,7 +355,12 @@ export default function DocumentViewer({
     scrollContainerRef,
     pageOrder
   );
-  const isNarrow = useIsNarrowViewport();
+  const viewportIsNarrow = useIsNarrowViewport();
+  // Embedded, the viewer's own box decides; unmeasured, it starts collapsed.
+  const { width: embeddedWidth } = useElementSize(containerRef);
+  const isNarrow = embedded
+    ? (embeddedWidth ?? 0) <= COLLAPSE_BREAKPOINT
+    : viewportIsNarrow;
   const pageEntriesRef = useRef(pageEntries);
   pageEntriesRef.current = pageEntries;
   const activeKeyRef = useRef(activeKey);
@@ -350,7 +384,7 @@ export default function DocumentViewer({
   // Tab trap alone doesn't constrain a screen reader's virtual cursor.
   useEffect(() => {
     const node = portalElRef.current;
-    if (!node) return undefined;
+    if (!node || embedded) return undefined;
     const body = featheryDoc().body;
     body.appendChild(node);
     const siblings = Array.from(body.children).filter(
@@ -367,6 +401,8 @@ export default function DocumentViewer({
   }, []);
 
   useEffect(() => {
+    // An embedded viewer is part of the page: it takes no focus or keys.
+    if (embedded) return undefined;
     // Restore focus to whatever was focused before the viewer opened when it
     // closes, so keyboard/SR users don't get dropped onto <body>.
     const previouslyFocused = featheryDoc().activeElement as HTMLElement | null;
@@ -432,11 +468,19 @@ export default function DocumentViewer({
     [payload.documents]
   );
 
-  // Documents with field edits not yet saved to their envelope. Tracked via
-  // pdf.js's annotationStorage modified flag: set on the first widget change,
-  // cleared by saveDocument()/resetModified() — so a doc saved once and then
-  // edited again goes dirty again.
+  // Docs whose pdf.js storage changed since the last save (modified flag).
+  // pdf.js also writes storage while rendering, so this alone isn't an edit.
   const dirtyDocs = useRef<Set<string>>(new Set());
+  // Docs the filler edited since the last save; only these are saved, and
+  // they alone drive the host's leave prompt.
+  const editedDocs = useRef<Set<string>>(new Set());
+  // Per-doc edit count, so a save settles only the edits it captured.
+  const editCounts = useRef<Record<string, number>>({});
+  // The running save, which a later caller waits on rather than overlapping.
+  const pendingSave = useRef<Promise<void> | null>(null);
+  // Read by the once-bound storage callbacks below.
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  onDirtyChangeRef.current = onDirtyChange;
 
   const signingTags = useMemo(
     () => payload.documents.flatMap((doc) => doc.signing_tags ?? []),
@@ -469,39 +513,73 @@ export default function DocumentViewer({
     setPageCounts((prev) => ({ ...prev, [pdfUrl]: pdfProxy.numPages }));
   }, []);
 
-  // Write each dirty document's edited field values into its PDF
-  // (pdf.js saveDocument serializes annotationStorage into the AcroForm) and
-  // persist it to the envelope, so every finalize outcome — download, sign,
-  // save — acts on what the filler sees. saveDocument resets the storage's
-  // modified flag, which clears the doc from dirtyDocs via onResetModified.
-  const saveEditedDocuments = async () => {
-    if (!onSaveEnvelopeFile || readOnly) return;
+  // Write each edited document's field values into its PDF (pdf.js
+  // saveDocument serializes annotationStorage) and persist it to the envelope.
+  const saveDocuments = async (
+    persist: NonNullable<typeof onSaveEnvelopeFile>
+  ) => {
     for (const doc of payload.documents) {
-      if (!doc.envelope_id || !dirtyDocs.current.has(doc.pdf_url)) continue;
-      const pdfProxy = loadedDocs.current[doc.pdf_url];
+      const url = doc.pdf_url;
+      if (!doc.envelope_id || !editedDocs.current.has(url)) continue;
+      const pdfProxy = loadedDocs.current[url];
       if (!pdfProxy) continue;
-      try {
-        const bytes = await pdfProxy.saveDocument();
-        await onSaveEnvelopeFile(
-          doc.envelope_id,
-          new Blob([bytes], { type: 'application/pdf' })
-        );
-      } catch (e) {
-        // pdf.js resets the modified flag in saveDocument()'s finally — even
-        // when the save itself rejects — so by now onResetModified has already
-        // dropped the doc from dirtyDocs. Put it back, whichever step failed,
-        // so retrying the toolbar action re-saves it instead of skipping it
-        // and finalizing the unedited file.
-        dirtyDocs.current.add(doc.pdf_url);
-        throw e;
+      const captured = editCounts.current[url] ?? 0;
+      // An edit event that left storage unchanged has nothing to save.
+      if (dirtyDocs.current.has(url)) {
+        try {
+          const bytes = await pdfProxy.saveDocument();
+          await persist(
+            doc.envelope_id,
+            new Blob([bytes], { type: 'application/pdf' })
+          );
+        } catch (e) {
+          // saveDocument() resets the modified flag even when it rejects.
+          dirtyDocs.current.add(url);
+          throw e;
+        }
+      }
+      if ((editCounts.current[url] ?? 0) === captured) {
+        editedDocs.current.delete(url);
+      } else {
+        // Edited mid-save, which the reset flag now hides: save it next time.
+        dirtyDocs.current.add(url);
       }
     }
   };
 
-  const onUserEdit = useCallback(
-    () => setSession((s) => ({ ...s, editRevision: s.editRevision + 1 })),
-    []
-  );
+  const saveEditedDocuments = async () => {
+    if (!onSaveEnvelopeFile || readOnly) return;
+    const previous = pendingSave.current;
+    const save = (async () => {
+      await previous?.catch(() => undefined);
+      await saveDocuments(onSaveEnvelopeFile);
+    })();
+    pendingSave.current = save;
+    try {
+      await save;
+    } finally {
+      if (pendingSave.current === save) pendingSave.current = null;
+      onDirtyChangeRef.current?.(editedDocs.current.size > 0);
+    }
+  };
+
+  // The host saves through this before replacing the documents (regenerate or
+  // tab switch), and aborts the replace if the save fails.
+  const saveEditedDocumentsRef = useRef(saveEditedDocuments);
+  saveEditedDocumentsRef.current = saveEditedDocuments;
+  useEffect(() => {
+    onBeforeReplaceReady?.(() => saveEditedDocumentsRef.current());
+    return () => onBeforeReplaceReady?.(null);
+  }, [onBeforeReplaceReady]);
+  // Unsaved edits die with this viewer, so release the host's leave prompt.
+  useEffect(() => () => onDirtyChangeRef.current?.(false), []);
+
+  const onUserEdit = useCallback((pdfUrl: string) => {
+    editedDocs.current.add(pdfUrl);
+    editCounts.current[pdfUrl] = (editCounts.current[pdfUrl] ?? 0) + 1;
+    setSession((s) => ({ ...s, editRevision: s.editRevision + 1 }));
+    onDirtyChangeRef.current?.(true);
+  }, []);
 
   const registerPageRef = useCallback(
     (pdfUrl: string, pageIndex: number, el: HTMLDivElement | null) => {
@@ -520,11 +598,8 @@ export default function DocumentViewer({
     el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth' });
   }, []);
 
-  // The toolbar is configured on the action: `editor_toolbar_actions` lists
-  // which outcomes the filler may choose. Each button finalizes with its own
-  // envelope action, so one editor session can offer e.g. Sign and Download.
-  // An unconfigured editor still gets a way forward: Continue finalizes with
-  // `fill`, which just returns the generated files and resumes the flow.
+  // Each `editor_toolbar_actions` button finalizes with its own action. With
+  // none, Continue (Save when embedded, after persisting edits) uses `fill`.
   const configuredToolbarActions: EditorToolbarAction[] = (
     action.editor_toolbar_actions ?? []
   ).filter((a: string) =>
@@ -594,41 +669,32 @@ export default function DocumentViewer({
         disabled: isToolbarActionDisabled(session, toolbarAction),
         onClick: () => finalizeWith(toolbarAction, toolbarAction)
       }))
+    : embedded && readOnly
+    ? // Nothing to save and nothing to resume.
+      []
     : [
         {
           key: 'primary',
-          label: 'Continue',
+          label: embedded ? 'Save' : 'Continue',
           variant: 'primary',
           onClick: () => finalizeWith('fill', 'primary')
         }
       ];
 
-  if (!portalElRef.current) return null;
-  return createPortal(
-    <div
-      ref={containerRef}
-      role='dialog'
-      aria-modal='true'
-      aria-label={VIEWER_TITLE}
-      tabIndex={-1}
-      css={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 100,
-        display: 'flex',
-        flexDirection: 'column',
-        backgroundColor: '#f4f5f8',
-        outline: 'none'
-      }}
-    >
+  const content = (
+    <>
       <Toolbar
-        title={VIEWER_TITLE}
-        onBack={close}
+        title={embedded ? undefined : VIEWER_TITLE}
+        onBack={embedded ? undefined : close}
         actions={toolbarActions}
         busyKey={busyKey}
       />
       {expiredBanner && (
-        <AlertBanner message='This session has expired. Please close and reopen the viewer.' />
+        <AlertBanner
+          message={`This session has expired. Please ${
+            embedded ? 'reload the page' : 'close and reopen the viewer'
+          }.`}
+        />
       )}
       {error && <AlertBanner message={error} onDismiss={() => setError('')} />}
       <div css={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
@@ -670,6 +736,44 @@ export default function DocumentViewer({
           </div>
         </div>
       </div>
+    </>
+  );
+  const surfaceCss = {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    backgroundColor: '#f4f5f8',
+    outline: 'none'
+  };
+
+  if (embedded) {
+    return (
+      <div
+        ref={containerRef}
+        css={{
+          ...surfaceCss,
+          width: '100%',
+          height: '100%',
+          minHeight: 0,
+          // Keeps the sidebar drawer's z-index inside the container.
+          position: 'relative',
+          isolation: 'isolate'
+        }}
+      >
+        {content}
+      </div>
+    );
+  }
+  if (!portalElRef.current) return null;
+  return createPortal(
+    <div
+      ref={containerRef}
+      role='dialog'
+      aria-modal='true'
+      aria-label={VIEWER_TITLE}
+      tabIndex={-1}
+      css={{ ...surfaceCss, position: 'fixed', inset: 0, zIndex: 100 }}
+    >
+      {content}
     </div>,
     portalElRef.current
   );

@@ -13,6 +13,8 @@ export interface EditorEnvelope {
   signed: boolean;
   sent?: boolean;
   sent_via?: 'feathery' | 'docusign' | null;
+  // Has signers or a DocuSign draft, so it may already be out.
+  finalized?: boolean;
 }
 
 export interface DocumentPacket {
