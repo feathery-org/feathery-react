@@ -3,8 +3,8 @@ Business Source License 1.1
 Parameters
 
 Licensor:             Feathery, Inc.
-Licensed Work:        Feathery
-                      The Licensed Work is (c) 2021 Feathery, Inc.
+Licensed Work:        Feathery React SDK (@feathery/react)
+                      The Licensed Work is (c) 2021-2026 Feathery, Inc.
 Additional Use Grant: You may make use of the Licensed Work, provided that you do
                       not use the Licensed Work for a Form Building Service.
 
@@ -15,7 +15,7 @@ Additional Use Grant: You may make use of the Licensed Work, provided that you d
                       from the form or survey designing, building, storage, or rendering
                       features of the Licensed Work.
 
-Change Date:          2024-02-15
+Change Date:          2030-11-25
 
 Change License:       Apache License, Version 2.0
 

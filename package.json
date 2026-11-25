@@ -3,7 +3,7 @@
   "version": "2.130.1",
   "description": "React library for Feathery",
   "author": "Boyang Dun",
-  "license": "MIT",
+  "license": "BUSL-1.1",
   "repository": "https://github.com/feathery-org/feathery-react",
   "jsdelivr": "umd/index.js",
   "main": "cjs/index.js",
