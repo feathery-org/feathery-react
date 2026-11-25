@@ -52,7 +52,11 @@ export class PresentationLoader {
     existing?.controller.abort();
     const controller = new AbortController();
     const promise = (async () => {
-      const response = await fetch(url, { signal: controller.signal });
+      // A save overwrites the file at this same URL, so always revalidate.
+      const response = await fetch(url, {
+        cache: 'no-cache',
+        signal: controller.signal
+      });
       if (!response.ok)
         throw new Error(`Document fetch failed (${response.status})`);
       const contentLength = Number(
