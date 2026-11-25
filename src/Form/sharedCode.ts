@@ -78,6 +78,25 @@ const blankOut = (code: string, node: any): TextEdit => ({
   text: code.slice(node.start, node.end).replace(/[^\n]/g, '')
 });
 
+// `export default` exports nothing, but what it wraps still runs: a named
+// function or class stays declared and an expression is still evaluated.
+function defaultExportEdits(code: string, node: any): TextEdit[] {
+  const { declaration } = node;
+  const isDeclaration =
+    declaration.type === 'FunctionDeclaration' ||
+    declaration.type === 'ClassDeclaration';
+  if (isDeclaration) {
+    // An anonymous function or class has nothing left to declare
+    if (!declaration.id) return [blankOut(code, node)];
+    return [{ start: node.start, end: declaration.start, text: '' }];
+  }
+  // Parenthesized so an object literal isn't read as a block
+  return [
+    { start: node.start, end: declaration.start, text: ';(' },
+    { start: declaration.end, end: declaration.end, text: ')' }
+  ];
+}
+
 const specifierName = (node: any): string => node.name ?? String(node.value);
 
 function importBinding(node: any): ImportBinding {
@@ -163,6 +182,8 @@ function compileModule({ key, code }: SharedCodeInfo): SharedCodeModule {
       // `export const a = 1` -> `const a = 1`
       edits.push({ start: node.start, end: node.declaration.start, text: '' });
       exports.push(...declarationNames(node.declaration));
+    } else if (node.type === 'ExportDefaultDeclaration') {
+      edits.push(...defaultExportEdits(code, node));
     } else if (UNSUPPORTED_EXPORTS.includes(node.type)) {
       // The dashboard flags these forms. They export nothing, as before, so
       // the module's other exports keep working.
@@ -314,7 +335,14 @@ export function linkSharedCode(
     `function ${FAIL_FN}(key) {`,
     `  return (cause) => {`,
     `    if (cause && cause.sharedCodeKey) throw cause;`,
-    `    const message = cause && cause.message ? cause.message : String(cause);`,
+    // Same fallbacks the rule's own error handling uses
+    `    let message;`,
+    `    try {`,
+    `      const inner = cause || {};`,
+    `      message = (inner.reason && inner.reason.message) || (inner.error && inner.error.message) || inner.message || String(cause);`,
+    `    } catch (e) {`,
+    `      message = 'Unknown error';`,
+    `    }`,
     `    const error = new Error('Shared code "' + key + '" threw an error: ' + message);`,
     `    error.sharedCodeKey = key;`,
     `    error.cause = cause;`,

@@ -258,6 +258,64 @@ export { x } from 'Other';`
     );
   });
 
+  it('keeps what an export default wraps', async () => {
+    const feathery = { calls: 0 };
+    const named = {
+      L: `export default function helper(x) { return x * 2; }
+export const double = (x) => helper(x);`
+    };
+    await expect(
+      runRule(`import { double } from 'L';\nreturn double(2);`, named)
+    ).resolves.toBe(4);
+
+    const defaults = [
+      'export default init()',
+      'export default { a: feathery.calls++, b: 2 };',
+      'export default function () {}'
+    ];
+    for (const statement of defaults) {
+      const modules = {
+        L: `const init = () => { feathery.calls += 1; }
+${statement}
+export const kept = 1;`
+      };
+      await expect(
+        runRule(`import { kept } from 'L';\nreturn kept;`, modules, {
+          feathery
+        })
+      ).resolves.toBe(1);
+    }
+    expect(feathery.calls).toBe(2);
+  });
+
+  it('names the module whatever it throws', async () => {
+    const run = (thrown: string) =>
+      runRule(`import { a } from 'Mid';\nreturn a;`, {
+        Base: `throw ${thrown};\nexport const a = 1;`,
+        Mid: `import { a } from 'Base';\nexport { a };\nexport const b = 1;`
+      }).catch((e: any) => e.message);
+    const failing = (thrown: string) =>
+      runRule(`import { a } from 'Base';\nreturn a;`, {
+        Base: `throw ${thrown};\nexport const a = 1;`
+      }).catch((e: any) => e.message);
+
+    await expect(
+      failing(`{ error: { message: 'bad request' } }`)
+    ).resolves.toBe('Shared code "Base" threw an error: bad request');
+    await expect(failing(`{ reason: { message: 'rejected' } }`)).resolves.toBe(
+      'Shared code "Base" threw an error: rejected'
+    );
+    await expect(failing(`'oops'`)).resolves.toBe(
+      'Shared code "Base" threw an error: oops'
+    );
+    await expect(failing(`Object.create(null)`)).resolves.toBe(
+      'Shared code "Base" threw an error: Unknown error'
+    );
+    await expect(run(`Object.create(null)`)).resolves.toBe(
+      `This rule imports "a" from shared code "Mid", which doesn't export it`
+    );
+  });
+
   it('runs shared code whose stored valid flag is false', async () => {
     const compiled = compileSharedCode([
       {
