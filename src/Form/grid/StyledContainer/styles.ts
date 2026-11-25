@@ -596,7 +596,15 @@ export const getInnerContainerStyles = (
     (heightUnit: any, overflow: any) => {
       const s: any = {};
 
-      if (!node.uuid && overflow && heightUnit === 'px') {
+      // A document editor fills its container with height: 100% and scrolls
+      // inside itself, so its inner container must keep the pixel height.
+      // Growing to content collapses the editor to its own minimum height.
+      if (
+        !node.uuid &&
+        overflow &&
+        heightUnit === 'px' &&
+        !node.properties?.document_editor
+      ) {
         s.minHeight = 'fit-content';
         s.height = 'max-content';
       }
