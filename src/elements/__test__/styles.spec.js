@@ -322,6 +322,25 @@ describe('responsiveStyles', () => {
         rs.getRichFontStyles({ font_family: 'Uploaded Font' }).fontFamily
       ).toEqual("'Uploaded Font', monospace");
     });
+
+    it('emits only set attributes for inheriting runs', () => {
+      const rs = stylesFor({ label_font_fallback: 'serif' });
+      expect(rs.getRichFontStyles({}, { inherit: true })).toEqual({});
+      expect(
+        rs.getRichFontStyles(
+          {
+            font_family: 'Uploaded Font',
+            font_italic: false,
+            font_underline: false
+          },
+          { inherit: true, fallbackKey: 'label_font_fallback' }
+        )
+      ).toEqual({
+        fontFamily: "'Uploaded Font', serif",
+        fontStyle: 'normal',
+        textDecoration: 'none'
+      });
+    });
   });
 });
 
