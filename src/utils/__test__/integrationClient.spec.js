@@ -903,6 +903,54 @@ describe('IntegrationClient', () => {
       ]);
     });
 
+    it('asks the review generate to restore attachments only when the action allows them', async () => {
+      const integrationClient = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ documents: [], expires_at: 'x' })
+      });
+      const action = {
+        documents: ['doc1'],
+        envelope_action: 'open_in_editor'
+      };
+
+      await integrationClient.generateEnvelopes({
+        ...action,
+        editor_allow_attachments: true
+      });
+      await integrationClient.generateEnvelopes(action);
+      // A container editor never offers attachments, whatever the flag says.
+      await integrationClient.generateEnvelopes({
+        ...action,
+        editor_mode: 'container-1',
+        editor_allow_attachments: true
+      });
+
+      expect(requestBody(0).editor_allow_attachments).toBe(true);
+      expect(requestBody(1)).not.toHaveProperty('editor_allow_attachments');
+      expect(requestBody(2)).not.toHaveProperty('editor_allow_attachments');
+    });
+
+    it('marks a builder preview so the backend reads the unpublished gate', async () => {
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ documents: [], expires_at: 'x' })
+      });
+      const action = {
+        documents: ['doc1'],
+        envelope_action: 'open_in_editor',
+        editor_allow_attachments: true
+      };
+
+      await new IntegrationClient('k', undefined, true).generateEnvelopes(
+        action
+      );
+      await new IntegrationClient('k').generateEnvelopes(action);
+
+      expect(requestBody(0).form_draft).toBe(true);
+      expect(requestBody(1)).not.toHaveProperty('form_draft');
+    });
+
     it('surfaces an error response from the review generate endpoint', async () => {
       const formKey = 'test_form_key';
       const integrationClient = new IntegrationClient(formKey);
@@ -1458,6 +1506,83 @@ describe('IntegrationClient', () => {
 
   describe('finalizeEnvelopeReview', () => {
     const baseAction = { form_key: 'test_form_key' };
+
+    const errorBody = [{ message: 'No', code: 'default-error' }];
+    const verdict = (value) => ({
+      get: (name) =>
+        name.toLowerCase() === 'x-finalize-verdict' ? value : null
+    });
+
+    it.each([
+      [400, 'refused', true],
+      [400, 'Refused', true],
+      [400, null, false],
+      [429, null, false],
+      [408, null, false],
+      [500, null, false]
+    ])(
+      'flags a %s finalize response with verdict %s as refused: %s',
+      async (status, header, rejected) => {
+        global.fetch.mockResolvedValue({
+          ok: false,
+          status,
+          headers: verdict(header),
+          json: jest.fn().mockResolvedValue(errorBody)
+        });
+
+        const result = await new IntegrationClient(
+          'test_form_key'
+        ).finalizeEnvelopeReview(baseAction, {
+          envelopes: [{ envelopeId: 'env-1' }],
+          envelopeAction: 'sign'
+        });
+
+        expect(result.status).toBe('error');
+        expect(result.message).toBe('No');
+        expect(!!result.rejected).toBe(rejected);
+      }
+    );
+
+    it.each([
+      // The cached refusal, re-raised by the poll view with its verdict.
+      [400, 'refused', true],
+      // Poll-level failures and maybe-sent errors carry no verdict.
+      [400, null, false],
+      [429, null, false],
+      [404, null, false]
+    ])(
+      'flags an async finalize whose poll returns %s with verdict %s as refused: %s',
+      async (status, header, rejected) => {
+        const integrationClient = new IntegrationClient('test_form_key');
+        integrationClient.FINALIZE_CHECK_INTERVAL = 1;
+        integrationClient.FINALIZE_MAX_TIME = 20;
+        global.fetch
+          .mockResolvedValueOnce({
+            ok: true,
+            status: 201,
+            json: jest.fn().mockResolvedValue({})
+          })
+          .mockResolvedValueOnce({
+            ok: false,
+            status,
+            headers: verdict(header),
+            json: jest
+              .fn()
+              .mockResolvedValue([
+                { message: 'An attachment was removed.', code: 'default-error' }
+              ])
+          });
+
+        const result = await integrationClient.finalizeEnvelopeReview(
+          { ...baseAction, run_async: true },
+          { envelopes: [{ envelopeId: 'env-1' }], envelopeAction: 'sign' }
+        );
+
+        expect(result.status).toBe('error');
+        expect(result.message).toBe('An attachment was removed.');
+        expect(!!result.rejected).toBe(rejected);
+      }
+    );
 
     it('sends the reviewed envelopes to the finalize endpoint and returns files for download', async () => {
       const formKey = 'test_form_key';
@@ -2093,6 +2218,111 @@ describe('IntegrationClient', () => {
       );
       expect(requestBody().voided_reason).toBeUndefined();
       expect(result).toEqual({ status: 'discarded' });
+    });
+  });
+  describe('uploadReviewAttachment', () => {
+    const uploadedForm = () => global.fetch.mock.calls[0][1].body;
+    const upload = (draft) => {
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 201,
+        json: jest.fn().mockResolvedValue({ envelope_id: 'att-1' })
+      });
+      return new IntegrationClient(
+        'test_form_key',
+        undefined,
+        draft
+      ).uploadReviewAttachment(new File(['x'], 'a.pdf'));
+    };
+
+    it('marks an upload from a builder preview', async () => {
+      await upload(true);
+      expect(uploadedForm().get('form_draft')).toBe('true');
+    });
+
+    it('leaves a live upload unmarked', async () => {
+      await upload(false);
+      expect(uploadedForm().has('form_draft')).toBe(false);
+    });
+
+    it('rejects a response that names no envelope', async () => {
+      global.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: jest.fn().mockResolvedValue({})
+      });
+
+      await expect(
+        new IntegrationClient('test_form_key').uploadReviewAttachment(
+          new File(['x'], 'a.pdf')
+        )
+      ).rejects.toThrow('Upload failed');
+    });
+
+    it('asks the filler to check their connection when the upload cannot reach the server', async () => {
+      global.fetch.mockRejectedValue(new TypeError('Failed to fetch'));
+
+      await expect(
+        new IntegrationClient('test_form_key').uploadReviewAttachment(
+          new File(['x'], 'a.pdf')
+        )
+      ).rejects.toThrow(
+        'The upload failed. Check your connection and try again.'
+      );
+    });
+  });
+  describe('removeReviewAttachment', () => {
+    const removeWith = (response) => {
+      global.fetch.mockResolvedValue(response);
+      return new IntegrationClient('test_form_key').removeReviewAttachment(
+        'att-1'
+      );
+    };
+
+    it('posts the attachment to the remove endpoint', async () => {
+      await removeWith({ ok: true, status: 204 });
+
+      expect(requestUrl()).toBe(`${API_URL}document/form/attachment/remove/`);
+      expect(requestBody()).toEqual({
+        form_key: 'test_form_key',
+        fuser_key: 'test_user_id',
+        envelope_id: 'att-1'
+      });
+    });
+
+    it('resolves when the backend reports the attachment already removed', async () => {
+      await expect(
+        removeWith({ ok: true, status: 204 })
+      ).resolves.toBeUndefined();
+    });
+
+    it('rejects a 404, which means the wrong form or user', async () => {
+      await expect(
+        removeWith({
+          ok: false,
+          status: 404,
+          json: jest
+            .fn()
+            .mockResolvedValue([{ message: 'Not found.', code: 'not_found' }])
+        })
+      ).rejects.toThrow(/^Not found\.$/);
+    });
+
+    it.each([
+      [
+        'attachment_sent',
+        "This attachment was already sent and can't be removed."
+      ],
+      ['attachment_busy', 'This packet is being sent. Try again in a moment.']
+    ])('rejects a 409 with its %s code', async (code, message) => {
+      const error = await removeWith({
+        ok: false,
+        status: 409,
+        json: jest.fn().mockResolvedValue([{ message, code }])
+      }).catch((e) => e);
+
+      expect(error.message).toBe(message);
+      expect(error.code).toBe(code);
     });
   });
 });

@@ -36,6 +36,21 @@ describe('printFinalizedFiles', () => {
     expect(printer).toHaveBeenCalledWith(['a.pdf']);
   });
 
+  it('leaves out unprintable files, however their URLs were signed', async () => {
+    const printer = jest.fn().mockResolvedValue(undefined);
+    await printFinalizedFiles(
+      printer,
+      ['http://s3/a.pdf?sig=2', 'http://s3/b.zip?sig=2'],
+      ['http://s3/b.zip?sig=1']
+    );
+    expect(printer).toHaveBeenCalledWith(['http://s3/a.pdf?sig=2']);
+
+    await expect(
+      printFinalizedFiles(printer, ['http://s3/b.zip'], ['http://s3/b.zip'])
+    ).resolves.toBe(PRINT_NO_FILES_ERROR);
+    expect(printer).toHaveBeenCalledTimes(1);
+  });
+
   it.each([undefined, []])(
     'reports that there is nothing to print for files %p',
     async (files) => {

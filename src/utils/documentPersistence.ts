@@ -11,7 +11,9 @@ export class DocumentPersistenceError extends Error {
       | 'blocked'
       | 'cancelled',
     public readonly status?: number,
-    public readonly retryAfterMs?: number
+    public readonly retryAfterMs?: number,
+    // The backend's error code, when it sent one.
+    public readonly code?: string
   ) {
     super(message);
     // The es5 build otherwise returns a plain Error, so instanceof is false
@@ -39,13 +41,24 @@ export function canRetryDocumentError(error: unknown): boolean {
 
 export const DOCUMENT_REQUEST_TIMEOUT_MS = 45_000;
 
-/** Bounds the entire request, including reading its body. Abort is best-effort;
- * Promise.race also releases callers when a host ignores the signal. */
+/** Bounds the entire request, including reading its body, and ends it early
+ * when `cancel` aborts. Abort is best-effort; Promise.race also releases
+ * callers when a host ignores the signal. */
 export async function withDocumentDeadline<T>(
   request: (signal: AbortSignal) => Promise<T>,
-  timeoutMs = DOCUMENT_REQUEST_TIMEOUT_MS
+  timeoutMs = DOCUMENT_REQUEST_TIMEOUT_MS,
+  cancel?: AbortSignal
 ): Promise<T> {
   const controller = new AbortController();
+  let onCancel = () => {};
+  const cancelled = new Promise<never>((resolve, reject) => {
+    onCancel = () => {
+      reject(new DocumentPersistenceError('Cancelled', 'cancelled'));
+      controller.abort();
+    };
+  });
+  if (cancel?.aborted) onCancel();
+  else cancel?.addEventListener('abort', onCancel);
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((resolve, reject) => {
     timer = setTimeout(() => {
@@ -59,9 +72,10 @@ export async function withDocumentDeadline<T>(
     }, timeoutMs);
   });
   try {
-    return await Promise.race([request(controller.signal), timeout]);
+    return await Promise.race([request(controller.signal), timeout, cancelled]);
   } finally {
     clearTimeout(timer);
+    cancel?.removeEventListener('abort', onCancel);
   }
 }
 
@@ -69,6 +83,9 @@ export function documentErrorMessage(payload: unknown): string {
   if (typeof payload === 'string') return payload;
   if (Array.isArray(payload))
     return payload.map(documentErrorMessage).join('; ');
+  // DRF's error shape is {message, code}: the code isn't for people.
+  if (payload && typeof (payload as any).message === 'string')
+    return (payload as any).message;
   if (payload && typeof payload === 'object')
     return Object.values(payload)
       .map(documentErrorMessage)

@@ -40,6 +40,7 @@ import { handleFormAuthenticationError, handleFormConflict } from './utils';
 import {
   DocumentPersistenceError,
   documentErrorMessage,
+  isDocumentPersistenceError,
   withDocumentDeadline
 } from '../documentPersistence';
 import {
@@ -48,11 +49,15 @@ import {
   parseVersionList
 } from '../../elements/components/DocxEditor/history/validation';
 import {
+  allowsReviewAttachments,
   editorContainerId,
   isDocusignSignAction,
   signsViaDocusign
 } from '../document';
 import { withLinkRequestHeaders } from '../accessLinkRequest';
+
+// Long enough for a 20MB attachment on a slow connection.
+const UPLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 
 // A configured Generate Documents entry in the ordered `documents` array: a
 // template UUID string, an explicit template, one Quik source, or a file
@@ -126,6 +131,15 @@ const envelopeErrorMessage = (payload: any) => {
     : payload?.message || payload?.error;
   return (!ownMessage && firstErrorMessage(payload)) || parseAPIError(payload);
 };
+
+// DRF errors come back as [{message, code}], a few as one {message, code}.
+const errorCode = (payload: any) =>
+  Array.isArray(payload) ? payload[0]?.code : payload?.code;
+
+// Only the backend's own verdict says nothing went out; any other failure
+// (expired poll, throttle, timeout, a DocuSign error) may have sent.
+const finalizeRefused = (response: Response) =>
+  response.headers?.get?.('X-Finalize-Verdict')?.toLowerCase() === 'refused';
 
 const QUIK_DYNAMIC_ATTACHMENTS_OPTION = '__quik_dynamic_attachments__';
 // Backend 400s meaning another tab closed, superseded or finalized the session.
@@ -902,6 +916,7 @@ export default class IntegrationClient {
         mergeDocs: action.merge_docs ?? false,
         openInEditor,
         editorMode: openInEditor ? action.editor_mode : undefined,
+        allowAttachments: allowsReviewAttachments(action),
         envelopeAction,
         signMethod: action.sign_method,
         draft: action.draft,
@@ -1006,7 +1021,8 @@ export default class IntegrationClient {
         message,
         kind,
         status,
-        Number.isFinite(retryAfterMs) ? retryAfterMs : undefined
+        Number.isFinite(retryAfterMs) ? retryAfterMs : undefined,
+        errorCode(payload) || undefined
       );
     });
   }
@@ -1215,6 +1231,7 @@ export default class IntegrationClient {
     mergeDocs,
     openInEditor,
     editorMode,
+    allowAttachments,
     envelopeAction,
     signMethod,
     draft,
@@ -1237,6 +1254,8 @@ export default class IntegrationClient {
     // client-utils can't forward sign_method.
     openInEditor: boolean;
     editorMode?: string;
+    // Reopen the review with the attachments the filler added before.
+    allowAttachments?: boolean;
     envelopeAction: 'sign' | 'fill';
     signMethod?: string;
     draft?: boolean;
@@ -1289,6 +1308,9 @@ export default class IntegrationClient {
       // are baked in; the pressed action is sent to finalize separately.
       payload.editor_toolbar_actions = toolbarActions;
       if (editorMode) payload.editor_mode = editorMode;
+      if (allowAttachments) payload.editor_allow_attachments = true;
+      // A builder preview: lets the backend honor the unpublished draft's gate.
+      if (allowAttachments && this.draft) payload.form_draft = true;
     }
     if (draft !== undefined) payload.draft = draft;
     if (signMethod) payload.sign_method = signMethod;
@@ -1327,6 +1349,69 @@ export default class IntegrationClient {
       this.ENVELOPE_CHECK_INTERVAL,
       this.ENVELOPE_MAX_TIME,
       'Document generation'
+    );
+  }
+
+  // Upload a file the filler attaches in the review viewer. Resolves to the
+  // viewer document entry; finalize then takes its envelope id like any other.
+  // Aborting `cancel` rejects with a 'cancelled' DocumentPersistenceError.
+  async uploadReviewAttachment(file: File, cancel?: AbortSignal) {
+    const { userId } = initInfo();
+    const formData = new FormData();
+    formData.append('form_key', this.formKey);
+    // Omitted when unset: the backend rejects a blank key.
+    if (userId) formData.append('fuser_key', userId);
+    // Any builder preview: the backend then also checks the unpublished draft.
+    if (this.draft) formData.append('form_draft', 'true');
+    formData.append('file', file, file.name);
+    const url = `${getApiUrl()}document/form/attachment/`;
+    try {
+      return await withDocumentDeadline(
+        async (signal) => {
+          const response = await this._fetch(
+            url,
+            { method: 'POST', body: formData, keepalive: false, signal },
+            false
+          );
+          // Undefined on a network failure, which _fetch swallows here.
+          if (!response)
+            throw new Error(
+              'The upload failed. Check your connection and try again.'
+            );
+          // A proxy rejecting the upload (e.g. a 413) answers with HTML, not JSON.
+          const data = await response.json().catch(() => null);
+          if (!response.ok) {
+            throw new Error(data ? parseAPIError(data) : 'Upload failed');
+          }
+          // Appended to the packet as is, so it must name its envelope.
+          if (!data?.envelope_id) throw new Error('Upload failed');
+          return data;
+        },
+        UPLOAD_TIMEOUT_MS,
+        cancel
+      );
+    } catch (e) {
+      if (isDocumentPersistenceError(e) && e.kind === 'timeout')
+        throw new Error('The upload timed out. Try again.');
+      throw e;
+    }
+  }
+
+  // Remove an attachment so neither the submission nor a later review shows it.
+  // The backend answers 204 for one already removed, so a retry is safe.
+  async removeReviewAttachment(envelopeId: string) {
+    const { userId } = initInfo();
+    await this.documentRequest(
+      `${getApiUrl()}document/form/attachment/remove/`,
+      {
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        body: JSON.stringify({
+          form_key: this.formKey,
+          ...(userId ? { fuser_key: userId } : {}),
+          envelope_id: envelopeId
+        })
+      }
     );
   }
 
@@ -1401,7 +1486,11 @@ export default class IntegrationClient {
     if (!response) return;
     const data = await response.json();
     if (!response.ok)
-      return { status: 'error', message: envelopeErrorMessage(data) };
+      return {
+        status: 'error',
+        message: envelopeErrorMessage(data),
+        ...(finalizeRefused(response) ? { rejected: true } : {})
+      };
     // The sync response is already the final `{ files: [...] }` payload.
     // The async response is always `{}` immediately, regardless of the
     // requested envelope_action (sign/fill/download/save) — completion is
@@ -1483,7 +1572,12 @@ export default class IntegrationClient {
           if (data.status === 'complete') return resolve(data);
           return retryOrTimeout();
         }
-        return resolve({ status: 'error', message: parseAPIError(data) });
+        return resolve({
+          status: 'error',
+          message: parseAPIError(data),
+          // Only finalize's poll ever sends the verdict header.
+          ...(finalizeRefused(response) ? { rejected: true } : {})
+        });
       };
 
       setTimeout(checkCompletion, checkInterval);
