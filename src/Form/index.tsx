@@ -281,8 +281,8 @@ import { createSchwabContact } from '../integrations/schwab';
 import { getLoginStep } from '../auth/utils';
 import usePollFuserData from '../hooks/usePollFuserData';
 import { SharedCodeInfo } from './definitions';
+import { compileSharedCode } from './sharedCode';
 import {
-  extractExportedCodeInfoArray,
   handleRuleError,
   runClientSideLogic,
   runServerSideLogic
@@ -886,15 +886,10 @@ function Form({
   const hasRedirected = useRef<boolean>(false);
   const elementClicks = useRef<any>({}).current;
 
-  const extractedSharedCodeInfo = useMemo(() => {
-    if (sharedCodes.length < 1) {
-      return [];
-    }
-
-    return extractExportedCodeInfoArray(
-      Object.values(sharedCodes) as SharedCodeInfo[]
-    );
-  }, [sharedCodes]);
+  const sharedCodeModules = useMemo(
+    () => compileSharedCode(Object.values(sharedCodes) as SharedCodeInfo[]),
+    [sharedCodes]
+  );
 
   // All mount and unmount logic should live here
   useEffect(() => {
@@ -1444,7 +1439,7 @@ function Form({
               await runClientSideLogic(
                 logicRule,
                 client,
-                extractedSharedCodeInfo,
+                sharedCodeModules,
                 internalState[_internalId],
                 connectorFields,
                 props
@@ -2047,6 +2042,7 @@ function Form({
     internalState[_internalId].setInlineErrors = setInlineErrors;
     internalState[_internalId].inlineErrors = inlineErrors;
     internalState[_internalId].logicRules = logicRules;
+    internalState[_internalId].sharedCodeModules = sharedCodeModules;
     if (visiblePositions) {
       internalState[_internalId].visiblePositions = visiblePositions;
     }
