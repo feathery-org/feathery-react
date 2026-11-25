@@ -169,6 +169,8 @@ import internalState, {
   CreateEgnyteFolderParams,
   FormToolsCallbacks,
   GetDocusignEnvelopeParams,
+  GetEgnyteFileParams,
+  ListEgnyteFolderParams,
   UploadFileToEgnyteParams,
   RunComputerAgentOptions,
   SendDocusignParams,
@@ -1822,10 +1824,34 @@ function Form({
           client.getDocusignEnvelope(params),
         updateDocusignEnvelope: (params: UpdateDocusignEnvelopeParams) =>
           client.updateDocusignEnvelope(params),
-        uploadFileToEgnyte: (params: UploadFileToEgnyteParams) =>
-          client.uploadFileToEgnyte(params),
-        createEgnyteFolder: (params: CreateEgnyteFolderParams) =>
-          client.createEgnyteFolder(params),
+        uploadFileToEgnyte: async (params: UploadFileToEgnyteParams) => {
+          await Promise.all([
+            client.flushCustomFields(),
+            defaultClient.flushCustomFields()
+          ]);
+          return client.uploadFileToEgnyte(params);
+        },
+        createEgnyteFolder: async (params: CreateEgnyteFolderParams) => {
+          await Promise.all([
+            client.flushCustomFields(),
+            defaultClient.flushCustomFields()
+          ]);
+          return client.createEgnyteFolder(params);
+        },
+        listEgnyteFolder: async (params: ListEgnyteFolderParams = {}) => {
+          await Promise.all([
+            client.flushCustomFields(),
+            defaultClient.flushCustomFields()
+          ]);
+          return client.listEgnyteFolder(params);
+        },
+        getEgnyteFile: async (params: GetEgnyteFileParams) => {
+          await Promise.all([
+            client.flushCustomFields(),
+            defaultClient.flushCustomFields()
+          ]);
+          return client.getEgnyteFile(params);
+        },
         getDocusignBrands: async () => {
           await Promise.all([
             client.flushCustomFields(),
