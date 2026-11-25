@@ -5,22 +5,10 @@ Parameters
 Licensor:             Feathery, Inc.
 Licensed Work:        Feathery React SDK (@feathery/react)
                       The Licensed Work is (c) 2021-2026 Feathery, Inc.
-Additional Use Grant: You may make use of the Licensed Work, provided that you do
-                      not use the Licensed Work for a Competing Service.
-
-                      A "Competing Service" is a commercial or non-commercial
-                      offering that allows third parties (other than your
-                      employees and contractors) to access the functionality of
-                      the Licensed Work so that such third parties directly
-                      benefit from any of its features, including without
-                      limitation: designing, building, rendering, or storing
-                      forms, surveys, or workflows; collecting, validating, or
-                      processing submitted data; viewing, editing, generating,
-                      or signing documents (including PDF, DOCX, and PPTX
-                      files); displaying or managing structured data;
-                      conditional logic, automation, and third-party
-                      integrations; authentication; and AI assistants or
-                      AI-powered data extraction.
+Additional Use Grant: You may make production use of the Licensed Work,
+                      provided that such use is solely in connection with
+                      services provided by Feathery, Inc. under an active
+                      agreement or account with Feathery, Inc.
 
 Change Date:          2030-11-25
 
