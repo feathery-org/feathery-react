@@ -900,11 +900,13 @@ function tableGroup(
   );
   const rowHeights =
     fittedHeights ??
-    rows.map(
-      (row) =>
-        Number(getAttr(row, 'h')) ||
-        (shape.xfrm?.cy || 0) / Math.max(rows.length, 1)
-    );
+    rows.map((row) => {
+      // A row stored as 0 high is as tall as its text, as PowerPoint draws it
+      const stored = getAttr(row, 'h');
+      return stored !== undefined
+        ? Number(stored)
+        : (shape.xfrm?.cy || 0) / Math.max(rows.length, 1);
+    });
   const columnOffsets = columnWidths.map((_, index) =>
     columnWidths.slice(0, index).reduce((sum, width) => sum + width, 0)
   );
