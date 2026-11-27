@@ -16,6 +16,7 @@ import { secondaryButtonCss } from './buttonStyles';
 import { AlertIcon } from './icons';
 import { featheryWindow } from '../../../utils/browser';
 import { scopeReviewAnnotations } from './fieldIsolation';
+import { fitAutoSizedTextFields } from './autoSizeTextFields';
 import { SigningRecipient, SigningTag, SigningTagLayer } from './SigningTags';
 
 const PAGE_GAP = 24;
@@ -376,6 +377,7 @@ function PdfPage({
   useEffect(() => {
     let cancelled = false;
     let renderTask: any = null;
+    let stopAutoSize: (() => void) | undefined;
 
     (async () => {
       const pdfjs = await loadPdfjs();
@@ -501,6 +503,8 @@ function PdfPage({
             downloadManager: null,
             enableScripting: false
           });
+          if (cancelled) return;
+          stopAutoSize = fitAutoSizedTextFields(annotationDiv, annotations);
         } catch {
           // A widget-layer failure degrades the page to read-only; it must
           // never block the rendered document itself.
@@ -515,6 +519,7 @@ function PdfPage({
 
     return () => {
       cancelled = true;
+      stopAutoSize?.();
       if (renderTask) renderTask.cancel();
     };
   }, [pdfProxy, pageNumber, pageWidth, readOnly]);
