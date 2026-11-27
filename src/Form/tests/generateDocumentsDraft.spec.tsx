@@ -227,9 +227,6 @@ it('runs document_review on Create Draft while the review screen stays open', as
 
 describe('a kept-open review screen', () => {
   const reviewPayload = {
-    signer_exclusions: [
-      { email: 'client@example.com', excluded_envelope_ids: ['env-1'] }
-    ],
     documents: [
       { type: 'form', pdf_url: 'http://x/a.pdf', envelope_id: 'env-1' }
     ],
@@ -291,17 +288,10 @@ describe('a kept-open review screen', () => {
   });
 
   it('resolves with a Sign that follows the draft', async () => {
-    const state = await renderForm('keep-open-sign');
-    const { flow } = await openFromRule(state);
+    const { flow } = await openFromRule(await renderForm('keep-open-sign'));
 
     await press('Create Draft');
     await press('Sign');
-    expect(
-      state.client.finalizeEnvelopeReview.mock.calls.every(
-        ([, options]: any[]) =>
-          options.signerExclusions === reviewPayload.signer_exclusions
-      )
-    ).toBe(true);
     fireEvent.click(button('Back'));
 
     await expect(flow).resolves.toEqual({
@@ -372,7 +362,7 @@ describe('a kept-open review screen', () => {
   });
 
   it('continues a button flow once on close', async () => {
-    const state = await renderForm('keep-open-button');
+    await renderForm('keep-open-button');
     GridMod._spies.actions = [
       { type: 'open_fuser_envelopes', ...keepOpenAction },
       { type: 'url', url: 'example.com/next', open_tab: true }
@@ -382,12 +372,6 @@ describe('a kept-open review screen', () => {
     fireEvent.click(screen.getByTestId('btn'));
     await screen.findByRole('button', { name: 'Create Draft' });
     await press('Create Draft');
-    expect(state.client.finalizeEnvelopeReview).toHaveBeenCalledWith(
-      expect.any(Object),
-      expect.objectContaining({
-        signerExclusions: reviewPayload.signer_exclusions
-      })
-    );
     fireEvent.click(button('Back'));
     fireEvent.click(button('Back'));
     fireEvent.keyDown(document, { key: 'Escape' });

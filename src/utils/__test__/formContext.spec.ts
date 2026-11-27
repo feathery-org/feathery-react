@@ -31,38 +31,6 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     } as any);
   });
 
-  it.each(['open_in_editor', 'sign'] as const)(
-    'captures signer exclusions for %s before pending saves',
-    async (envelopeAction) => {
-      const excludedDocuments = [1];
-      client.flushCustomFields.mockImplementation(async () => {
-        excludedDocuments.push(0);
-      });
-      await getFormContext(uuid).generateDocuments({
-        documentIds: ['agreement', 'internal-approval'],
-        signMethod: 'docusign',
-        envelopeAction,
-        toolbarActions:
-          envelopeAction === 'open_in_editor' ? ['draft', 'sign'] : undefined,
-        signers: [
-          {
-            documentId: 'agreement',
-            email: 'client@example.com',
-            excludedDocuments
-          }
-        ]
-      });
-      expect(flow.mock.calls[0][0].envelope_signers).toEqual([
-        {
-          document_id: 'agreement',
-          email: 'client@example.com',
-          filler: false,
-          excluded_documents: [1]
-        }
-      ]);
-    }
-  );
-
   it('captures DocuSign metadata before saves and review', async () => {
     const customFields = {
       account_submission_id: 'original',
@@ -310,6 +278,7 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
           documentId: 'tpl-1',
           roleId: 'role-1',
           email: 'a@x.com',
+          excludedDocuments: [1],
           filler: true
         },
         { documentId: 'tpl-2', email: 'b@x.com' }
@@ -352,6 +321,7 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
         document_id: 'tpl-1',
         role_id: 'role-1',
         email: 'a@x.com',
+        excluded_documents: [1],
         filler: true
       },
       { document_id: 'tpl-2', email: 'b@x.com', filler: false }

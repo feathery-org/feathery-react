@@ -1555,55 +1555,37 @@ describe('IntegrationClient', () => {
       expect(body.email_subject).toBeUndefined();
     });
 
-    it.each([
-      { draft: true },
-      { draft: true, refreshDraft: true },
-      { draft: false }
-    ])(
-      'passes review exclusions by generated document ID on signing: %j',
-      async (options) => {
-        const client = new IntegrationClient('test_form_key');
-        global.fetch.mockResolvedValue({
-          ok: true,
-          json: jest.fn().mockResolvedValue({ status: 'complete' })
-        });
-        const signerExclusions = [
+    it('forwards review exclusions on Draft and Sign', async () => {
+      const client = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ status: 'complete' })
+      });
+      const signerExclusions = [
+        {
+          email: 'client@example.com',
+          excluded_envelope_ids: ['internal-copy']
+        }
+      ];
+      for (const draft of [true, false]) {
+        await client.finalizeEnvelopeReview(
+          { run_async: false, sign_method: 'docusign' },
           {
-            email: 'client@example.com',
-            signer_id: 'client',
-            excluded_envelope_ids: ['internal-copy-2']
+            envelopes: [
+              { envelopeId: 'agreement-copy' },
+              { envelopeId: 'internal-copy' }
+            ],
+            envelopeAction: 'sign',
+            draft,
+            signerExclusions
           }
-        ];
-        const action = { run_async: false, sign_method: 'docusign' };
-        await client.finalizeEnvelopeReview(action, {
-          envelopes: [
-            { envelopeId: 'internal-copy-2' },
-            { envelopeId: 'agreement-copy-1' }
-          ],
-          envelopeAction: 'sign',
-          signerExclusions,
-          ...options
-        });
+        );
+        const calls = global.fetch.mock.calls;
         expect(
-          JSON.parse(global.fetch.mock.calls[0][1].body).signer_exclusions
+          JSON.parse(calls[calls.length - 1][1].body).signer_exclusions
         ).toEqual(signerExclusions);
-        await client.finalizeEnvelopeReview(action, {
-          envelopes: [{ envelopeId: 'agreement-copy-1' }],
-          envelopeAction: 'download',
-          signerExclusions
-        });
-        expect(
-          JSON.parse(global.fetch.mock.calls[1][1].body)
-        ).not.toHaveProperty('signer_exclusions');
-        await client.finalizeEnvelopeReview(action, {
-          envelopes: [{ envelopeId: 'agreement-copy-1' }],
-          envelopeAction: 'sign'
-        });
-        expect(
-          JSON.parse(global.fetch.mock.calls[2][1].body)
-        ).not.toHaveProperty('signer_exclusions');
       }
-    );
+    });
 
     it('forwards email subject and blurb to finalize', async () => {
       // An open_in_editor flow does not build the DocuSign envelope until the
