@@ -1641,6 +1641,7 @@ function Form({
                   draft,
                   print,
                   refreshDraft,
+                  signerExclusions,
                   completes
                 }: any) => {
                   const printer = print ? await loadReviewPrinter() : null;
@@ -1650,7 +1651,7 @@ function Form({
                     envelopeAction,
                     draft,
                     refreshDraft,
-                    signerExclusions: data.signer_exclusions
+                    signerExclusions
                   });
                   if (!result) {
                     return { status: 'error', message: 'Finalize failed' };
@@ -3875,13 +3876,15 @@ function Form({
                 envelopeAction,
                 draft,
                 print,
-                refreshDraft
+                refreshDraft,
+                signerExclusions
               }: {
                 envelopes: { envelopeId: string }[];
                 envelopeAction: 'sign' | 'fill' | 'download' | 'save';
                 draft: boolean;
                 print: boolean;
                 refreshDraft: boolean;
+                signerExclusions?: import('../utils/featheryClient/integrationClient').ReviewSignerExclusion[];
               }) => {
                 const printer = print ? await loadReviewPrinter() : null;
                 if (print && !printer) return PRINT_LOAD_ERROR;
@@ -3890,7 +3893,7 @@ function Form({
                   envelopeAction,
                   draft,
                   refreshDraft,
-                  signerExclusions: data.signer_exclusions
+                  signerExclusions
                 });
                 // A missing result is a failure, not a success: _fetch
                 // resolves undefined on a network blip / 403 / 409, and

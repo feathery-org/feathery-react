@@ -270,9 +270,65 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     ).rejects.toThrow('smsAuthentication requires');
   });
 
+  it('rejects invalid signer exclusions before saving fields and ignores empty lists', async () => {
+    const generate = getFormContext(uuid).generateDocuments;
+    const signer = { documentId: 'tpl-1', email: 'client@example.com' };
+    for (const excludedDocuments of [
+      null,
+      '12',
+      1,
+      [-1],
+      [1.5],
+      [true],
+      ['']
+    ]) {
+      await expect(
+        generate({
+          documentIds: ['tpl-1'],
+          signMethod: 'docusign',
+          // @ts-expect-error exercise untyped logic-rule input
+          signers: [{ ...signer, excludedDocuments }]
+        })
+      ).rejects.toThrow('generateDocuments: excludedDocuments');
+    }
+    for (const options of [
+      { signMethod: 'feathery' },
+      { merge: true },
+      { envelopeAction: 'download' },
+      { envelopeAction: 'open_in_editor', toolbarActions: ['download'] }
+    ]) {
+      // @ts-expect-error exercise untyped logic-rule input
+      await expect(
+        generate({
+          documentIds: ['tpl-1'],
+          signMethod: 'docusign',
+          signers: [{ ...signer, excludedDocuments: [1] }],
+          ...options
+        })
+      ).rejects.toThrow('generateDocuments: signer exclusions require');
+    }
+    await expect(
+      generate({
+        documentIds: ['tpl-1'],
+        signMethod: 'docusign',
+        signers: [{ ...signer, email: '', excludedDocuments: [1] }]
+      })
+    ).rejects.toThrow('nonempty email');
+    expect(client.flushCustomFields).not.toHaveBeenCalled();
+    expect(flow).not.toHaveBeenCalled();
+    await generate({
+      documentIds: ['tpl-1'],
+      signers: [{ ...signer, excludedDocuments: [] }]
+    });
+    expect(flow.mock.calls[0][0].envelope_signers[0]).not.toHaveProperty(
+      'excluded_documents'
+    );
+  });
+
   it('routes the editor + signer options through the form flow with a built action', async () => {
     await getFormContext(uuid).generateDocuments({
       documentIds: ['tpl-1'],
+      signMethod: 'docusign',
       signers: [
         {
           documentId: 'tpl-1',
