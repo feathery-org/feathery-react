@@ -883,7 +883,9 @@ function Form({
   // Tracks element to focus
   const focusRef = useRef<any>(undefined);
   // Tracks the execution of user-provided callback functions
-  const callbackRef = useRef<any>(new CallbackQueue(null, setLoaders));
+  const callbackRef = useRef<any>(
+    new CallbackQueue(null, setLoaders, () => Boolean(isButtonActionRunning()))
+  );
   // Tracks if the form has redirected
   const hasRedirected = useRef<boolean>(false);
   const elementClicks = useRef<any>({}).current;
@@ -1989,7 +1991,9 @@ function Form({
 
     trackEvent(integrations, 'FeatheryStepLoad', newKey, formName);
 
-    callbackRef.current = new CallbackQueue(newStep, setLoaders);
+    callbackRef.current = new CallbackQueue(newStep, setLoaders, () =>
+      Boolean(isButtonActionRunning())
+    );
     focusRef.current = null;
     // Hydrate field descriptions
     newStep.servar_fields.forEach((field: any) => {

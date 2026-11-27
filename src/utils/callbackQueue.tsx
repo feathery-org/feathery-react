@@ -7,11 +7,17 @@ export default class CallbackQueue {
   queue: any;
   setLoaders: any;
   step: any;
-  constructor(step: any, setLoaders: any) {
+  isButtonActionRunning: () => boolean;
+  constructor(
+    step: any,
+    setLoaders: any,
+    isButtonActionRunning: () => boolean = () => false
+  ) {
     this.queue = [];
     this.awaiting = false;
     this.step = step;
     this.setLoaders = setLoaders;
+    this.isButtonActionRunning = isButtonActionRunning;
   }
 
   addCallback(promise: any) {
@@ -70,7 +76,8 @@ export default class CallbackQueue {
       .catch(() => undefined)
       .then(() => {
         if (this.queue.length > 0) return this._clearQueueLoader();
-        this.setLoaders({});
+        // A field/view callback can finish before the button action that started it.
+        if (!this.isButtonActionRunning()) this.setLoaders({});
       });
   }
 
