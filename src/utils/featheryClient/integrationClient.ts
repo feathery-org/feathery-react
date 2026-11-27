@@ -830,7 +830,10 @@ export default class IntegrationClient {
           // Omitted rather than blanked, so an empty phone never stands in for
           // the signer's mapped one.
           ...(entry.phone ? { phone: entry.phone.toString() } : {}),
-          filler: entry.filler ?? isFiller(email)
+          filler: entry.filler ?? isFiller(email),
+          ...(entry.excluded_documents !== undefined
+            ? { excluded_documents: [...entry.excluded_documents] }
+            : {})
         };
       })
       .filter((entry: any) => entry.email);

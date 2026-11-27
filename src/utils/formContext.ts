@@ -469,6 +469,9 @@ export const getFormContext = (formUuid: string) => {
         name?: string;
         phone?: string;
         filler?: boolean;
+        // DocuSign only: zero-based positions in the generated packet.
+        // Documents stay in the envelope but are hidden from this signer.
+        excludedDocuments?: number[];
       }[];
       envelopeAction?: 'sign' | 'fill' | 'download' | 'save' | 'open_in_editor';
       signMethod?: 'feathery' | 'docusign';
@@ -562,7 +565,12 @@ export const getFormContext = (formUuid: string) => {
                   : { ...value, listItems: [...value.listItems] }
               ])
             );
-      signers = signers?.map((signer) => ({ ...signer }));
+      signers = signers?.map((signer) => ({
+        ...signer,
+        ...(signer.excludedDocuments !== undefined
+          ? { excludedDocuments: [...signer.excludedDocuments] }
+          : {})
+      }));
       if (
         signMethod !== 'docusign' &&
         (signers?.some((signer) => signer.signerId?.trim()) ||
@@ -723,7 +731,8 @@ export const getFormContext = (formUuid: string) => {
                 email,
                 name,
                 phone,
-                filler
+                filler,
+                excludedDocuments
               }) => ({
                 document_id: documentId,
                 ...(roleId ? { role_id: roleId } : {}),
@@ -734,7 +743,10 @@ export const getFormContext = (formUuid: string) => {
                 ...(signerId?.trim() ? { signer_id: signerId.trim() } : {}),
                 ...(name ? { name } : {}),
                 ...(phone ? { phone } : {}),
-                filler: !!filler
+                filler: !!filler,
+                ...(excludedDocuments !== undefined
+                  ? { excluded_documents: excludedDocuments }
+                  : {})
               })
             ),
             editor_toolbar_actions: toolbarActions,

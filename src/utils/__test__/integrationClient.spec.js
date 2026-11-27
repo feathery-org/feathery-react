@@ -554,7 +554,7 @@ describe('IntegrationClient', () => {
       expect(result).toEqual(response);
     });
 
-    it('forwards signer names, copy-specific signers, SMS and all-copy defaults to the API', async () => {
+    it('forwards signer exclusions, names, copy-specific signers, SMS and all-copy defaults to the API', async () => {
       const client = new IntegrationClient('test_form_key');
       const signers = [
         {
@@ -563,6 +563,7 @@ describe('IntegrationClient', () => {
           repeat_index: 0,
           email: 'shared@example.com',
           name: 'John',
+          excluded_documents: [1],
           signer_id: 'client-john',
           phone: '+15551234567',
           filler: false
@@ -573,6 +574,7 @@ describe('IntegrationClient', () => {
           repeat_index: 1,
           email: 'shared@example.com',
           name: 'Mary',
+          excluded_documents: [],
           signer_id: 'client-mary',
           filler: false
         },
