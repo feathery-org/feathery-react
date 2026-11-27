@@ -56,6 +56,13 @@ import {
 } from '../document';
 import { withLinkRequestHeaders } from '../accessLinkRequest';
 
+export type ReviewSignerExclusion = {
+  email: string;
+  signer_id?: string;
+  name?: string;
+  excluded_envelope_ids: string[];
+};
+
 // A configured Generate Documents entry in the ordered `documents` array: a
 // template UUID string, an explicit template, one Quik source, or a file
 // upload field (a logic rule's `field_key` is resolved to its `field_id`).
@@ -830,7 +837,10 @@ export default class IntegrationClient {
           // Omitted rather than blanked, so an empty phone never stands in for
           // the signer's mapped one.
           ...(entry.phone ? { phone: entry.phone.toString() } : {}),
-          filler: entry.filler ?? isFiller(email)
+          filler: entry.filler ?? isFiller(email),
+          ...(entry.excluded_documents?.length
+            ? { excluded_documents: entry.excluded_documents }
+            : {})
         };
       })
       .filter((entry: any) => entry.email);
@@ -1262,6 +1272,10 @@ export default class IntegrationClient {
     hubAssociation?: HubAssociation;
   }) {
     const { userId } = initInfo();
+    const hasExclusions = signers.some(
+      (entry) => entry.excluded_documents?.length
+    );
+    const reviewBeforeSend = hasExclusions && !openInEditor;
     const payload: Record<string, any> = {
       form_key: this.formKey,
       fuser_key: userId,
@@ -1279,20 +1293,23 @@ export default class IntegrationClient {
           : document
       ),
       run_async: runAsync,
-      envelope_action: openInEditor ? 'open_in_editor' : envelopeAction,
+      envelope_action:
+        openInEditor || reviewBeforeSend ? 'open_in_editor' : envelopeAction,
       // Forwarded even though neither path merges at generate time: it lets the
       // backend reject an unsupported merge combination (merge_docs with a
       // DocuSign send) now, instead of after the filler has reviewed every
       // document and pressed a button that finalize would then refuse.
       merge_docs: mergeDocs
     };
-    if (openInEditor) {
+    if (openInEditor || reviewBeforeSend) {
       // Generate reads the toolbar only to decide whether default field values
       // are baked in; the pressed action is sent to finalize separately.
-      payload.editor_toolbar_actions = toolbarActions;
+      payload.editor_toolbar_actions = reviewBeforeSend
+        ? ['sign']
+        : toolbarActions;
       if (editorMode) payload.editor_mode = editorMode;
     }
-    if (draft !== undefined) payload.draft = draft;
+    if (draft !== undefined && !reviewBeforeSend) payload.draft = draft;
     if (signMethod) payload.sign_method = signMethod;
     if (emailSubject) payload.email_subject = emailSubject;
     if (emailBlurb) payload.email_blurb = emailBlurb;
@@ -1318,17 +1335,47 @@ export default class IntegrationClient {
     const data = await response.json();
     if (!response.ok)
       return { status: 'error', message: envelopeErrorMessage(data) };
-    if (!runAsync || data.documents) return data;
+    const finish = async (result: any) => {
+      if (
+        hasExclusions &&
+        result?.status !== 'error' &&
+        (!Array.isArray(result?.signer_exclusions) ||
+          !result.signer_exclusions.length)
+      ) {
+        return {
+          status: 'error',
+          message:
+            'Document exclusions are not supported by this server. Nothing was sent.'
+        };
+      }
+      if (!reviewBeforeSend || result?.status === 'error') return result;
+      return this.finalizeEnvelopeReview(
+        { ...payload, run_async: runAsync },
+        {
+          envelopes: result.documents.map(
+            (document: { envelope_id: string }) => ({
+              envelopeId: document.envelope_id
+            })
+          ),
+          envelopeAction: 'sign',
+          draft,
+          signerExclusions: result.signer_exclusions
+        }
+      );
+    };
+    if (!runAsync || data.documents) return finish(data);
 
     // Interpolating the raw array would stringify an object entry to
     // "[object Object]" and never match the backend's cache keys.
     const dids = documentIds.map(documentRefCacheKey).join(',');
     const pollUrl = `${getApiUrl()}document/form/generate/poll/?fid=${userId}&dids=${dids}`;
-    return await this.pollUntilComplete(
-      pollUrl,
-      this.ENVELOPE_CHECK_INTERVAL,
-      this.ENVELOPE_MAX_TIME,
-      'Document generation'
+    return finish(
+      await this.pollUntilComplete(
+        pollUrl,
+        this.ENVELOPE_CHECK_INTERVAL,
+        this.ENVELOPE_MAX_TIME,
+        'Document generation'
+      )
     );
   }
 
@@ -1341,7 +1388,8 @@ export default class IntegrationClient {
       envelopes,
       envelopeAction,
       draft = false,
-      refreshDraft = false
+      refreshDraft = false,
+      signerExclusions
     }: {
       // signerId: the filler's own signing token for that envelope, as handed
       // back by generate. Keeps finalize from emailing them an invite to a
@@ -1353,6 +1401,8 @@ export default class IntegrationClient {
       // Replace the documents on a DocuSign draft created earlier in the same
       // review, so it carries the filler's later edits.
       refreshDraft?: boolean;
+      // Generated document IDs keep exclusions stable if review order changes.
+      signerExclusions?: ReviewSignerExclusion[];
     }
   ) {
     if (!envelopes.length) {
@@ -1379,6 +1429,8 @@ export default class IntegrationClient {
     if (action.sign_method) payload.sign_method = action.sign_method;
     // Omitted unless set, so a backend without the flag sees the old body.
     if (refreshDraft) payload.refresh_draft = true;
+    if (envelopeAction === 'sign' && signerExclusions !== undefined)
+      payload.signer_exclusions = signerExclusions;
     // Carried to finalize too: an open_in_editor flow does not build the
     // DocuSign envelope until the filler presses Sign.
     if (action.email_subject) payload.email_subject = action.email_subject;

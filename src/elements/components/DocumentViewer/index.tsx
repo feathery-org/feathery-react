@@ -1,3 +1,4 @@
+import type { ReviewSignerExclusion } from '../../../utils/featheryClient/integrationClient';
 import React, {
   useCallback,
   useEffect,
@@ -209,6 +210,7 @@ export const isToolbarActionDisabled = (
 
 export interface DocumentViewerPayload {
   documents: ViewerDocument[];
+  signer_exclusions?: ReviewSignerExclusion[];
   // The packet's DocuSign recipients, named by position in `signing_tags`.
   signers?: SigningRecipient[];
   expires_at: string;
@@ -235,6 +237,7 @@ interface DocumentViewerProps {
     // Replace the documents on the DocuSign draft this session already
     // created, because the filler edited them since.
     refreshDraft: boolean;
+    signerExclusions?: ReviewSignerExclusion[];
     // Whether this press is the one a completion would report, now or on a
     // later close, so the caller can tell its outcome from a Download's.
     completes: boolean;
@@ -563,6 +566,9 @@ export default function DocumentViewer({
         draft: toolbarAction === 'draft',
         print: toolbarAction === 'print',
         refreshDraft,
+        ...(payload.signer_exclusions !== undefined
+          ? { signerExclusions: payload.signer_exclusions }
+          : {}),
         completes: outcome !== 'stay'
       });
       if (result?.status === 'error') {

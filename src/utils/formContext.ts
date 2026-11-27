@@ -460,7 +460,8 @@ export const getFormContext = (formUuid: string) => {
       // It requires roleId. Omit it to apply that role to every copy; a
       // copy-specific entry overrides the default for the same role.
       signers?: {
-        documentId: string;
+        // Omit only for an exclusion-only entry, e.g. a Quik recipient.
+        documentId?: string;
         roleId?: string;
         repeatIndex?: number;
         // DocuSign-only identity across documents; omit for email grouping.
@@ -469,6 +470,11 @@ export const getFormContext = (formUuid: string) => {
         name?: string;
         phone?: string;
         filler?: boolean;
+        // DocuSign visibility only; the filler still sees every PDF in review.
+        // Use template IDs (all copies) or per-copy document references for
+        // mixed/repeated packets. Numeric positions require one PDF per source.
+        // Nonempty lists must agree on every row for the same person.
+        excludedDocuments?: (number | string)[];
       }[];
       envelopeAction?: 'sign' | 'fill' | 'download' | 'save' | 'open_in_editor';
       signMethod?: 'feathery' | 'docusign';
@@ -550,6 +556,55 @@ export const getFormContext = (formUuid: string) => {
           )
         );
       }
+      for (const signer of signers ?? []) {
+        const excluded = signer.excludedDocuments;
+        if (excluded === undefined) continue;
+        if (
+          !Array.isArray(excluded) ||
+          !excluded.every(
+            (value) =>
+              (typeof value === 'number' &&
+                Number.isInteger(value) &&
+                value >= 0) ||
+              (typeof value === 'string' &&
+                value.trim().length > 0 &&
+                value.length <= 255)
+          )
+        ) {
+          return Promise.reject(
+            new Error(
+              'generateDocuments: excludedDocuments must be an array of nonnegative integer positions or document IDs/references'
+            )
+          );
+        }
+        if (!excluded.length) continue;
+        if (typeof signer.email !== 'string' || !signer.email.trim()) {
+          return Promise.reject(
+            new Error(
+              'generateDocuments: signer exclusions require a nonempty email'
+            )
+          );
+        }
+        if (
+          signMethod !== 'docusign' ||
+          merge ||
+          download ||
+          (envelopeAction &&
+            envelopeAction !== 'sign' &&
+            !(
+              envelopeAction === 'open_in_editor' &&
+              toolbarActions?.some(
+                (action) => action === 'sign' || action === 'draft'
+              )
+            ))
+        ) {
+          return Promise.reject(
+            new Error(
+              'generateDocuments: signer exclusions require separate-document DocuSign signing or a review with Draft/Sign'
+            )
+          );
+        }
+      }
       // Capture before pending field saves or document review can yield.
       customFields =
         customFields === undefined
@@ -562,7 +617,12 @@ export const getFormContext = (formUuid: string) => {
                   : { ...value, listItems: [...value.listItems] }
               ])
             );
-      signers = signers?.map((signer) => ({ ...signer }));
+      signers = signers?.map((signer) => ({
+        ...signer,
+        ...(signer.excludedDocuments?.length
+          ? { excludedDocuments: [...signer.excludedDocuments] }
+          : {})
+      }));
       if (
         signMethod !== 'docusign' &&
         (signers?.some((signer) => signer.signerId?.trim()) ||
@@ -723,7 +783,8 @@ export const getFormContext = (formUuid: string) => {
                 email,
                 name,
                 phone,
-                filler
+                filler,
+                excludedDocuments
               }) => ({
                 document_id: documentId,
                 ...(roleId ? { role_id: roleId } : {}),
@@ -734,7 +795,10 @@ export const getFormContext = (formUuid: string) => {
                 ...(signerId?.trim() ? { signer_id: signerId.trim() } : {}),
                 ...(name ? { name } : {}),
                 ...(phone ? { phone } : {}),
-                filler: !!filler
+                filler: !!filler,
+                ...(excludedDocuments?.length
+                  ? { excluded_documents: excludedDocuments }
+                  : {})
               })
             ),
             editor_toolbar_actions: toolbarActions,

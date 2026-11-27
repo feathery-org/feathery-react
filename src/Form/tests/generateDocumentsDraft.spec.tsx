@@ -166,6 +166,9 @@ it('runs document_review on Create Draft while the review screen stays open', as
     documents: [
       { type: 'form', pdf_url: 'http://x/a.pdf', envelope_id: 'env-1' }
     ],
+    signer_exclusions: [
+      { email: 'client@example.com', excluded_envelope_ids: ['env-1'] }
+    ],
     expires_at: '2999-01-01T00:00:00Z'
   });
   const draftResult = { docusign_envelope_id: 'ds-1', status: 'complete' };
@@ -204,7 +207,13 @@ it('runs document_review on Create Draft while the review screen stays open', as
   expect(screen.getByRole('button', { name: 'Create Draft' })).toBeDisabled();
   expect(state.client.finalizeEnvelopeReview).toHaveBeenCalledWith(
     expect.any(Object),
-    expect.objectContaining({ draft: true, refreshDraft: false })
+    expect.objectContaining({
+      draft: true,
+      refreshDraft: false,
+      signerExclusions: [
+        { email: 'client@example.com', excluded_envelope_ids: ['env-1'] }
+      ]
+    })
   );
   expect(settled).not.toHaveBeenCalled();
 

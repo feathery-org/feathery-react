@@ -554,7 +554,7 @@ describe('IntegrationClient', () => {
       expect(result).toEqual(response);
     });
 
-    it('forwards signer names, copy-specific signers, SMS and all-copy defaults to the API', async () => {
+    it('forwards signer exclusions, names, copy-specific signers, SMS and all-copy defaults to the API', async () => {
       const client = new IntegrationClient('test_form_key');
       const signers = [
         {
@@ -563,6 +563,7 @@ describe('IntegrationClient', () => {
           repeat_index: 0,
           email: 'shared@example.com',
           name: 'John',
+          excluded_documents: ['internal'],
           signer_id: 'client-john',
           phone: '+15551234567',
           filler: false
@@ -573,6 +574,7 @@ describe('IntegrationClient', () => {
           repeat_index: 1,
           email: 'shared@example.com',
           name: 'Mary',
+          excluded_documents: [],
           signer_id: 'client-mary',
           filler: false
         },
@@ -589,7 +591,19 @@ describe('IntegrationClient', () => {
           envelopeAction === 'sign' ? 'mary@example.com' : 'shared@example.com';
         global.fetch.mockResolvedValue({
           ok: true,
-          json: jest.fn().mockResolvedValue({ files: [] })
+          json: jest.fn().mockResolvedValue({
+            documents: [
+              { envelope_id: 'agreement-copy' },
+              { envelope_id: 'internal-copy' }
+            ],
+            signer_exclusions: [
+              {
+                email: 'shared@example.com',
+                signer_id: 'client-john',
+                excluded_envelope_ids: ['internal-copy']
+              }
+            ]
+          })
         });
         await client.generateEnvelopes({
           documents: [
@@ -602,6 +616,7 @@ describe('IntegrationClient', () => {
             'aaf'
           ],
           repeatable: true,
+          draft: envelopeAction === 'sign',
           sign_method: 'docusign',
           envelope_action: envelopeAction,
           editor_toolbar_actions: ['draft'],
@@ -609,9 +624,34 @@ describe('IntegrationClient', () => {
           run_async: false
         });
         const calls = global.fetch.mock.calls;
-        const body = JSON.parse(calls[calls.length - 1][1].body);
-        expect(body.signers).toEqual(signers);
+        const body = JSON.parse(
+          calls.findLast(([url]) => url.includes('/generate/'))[1].body
+        );
+        expect(body.signers).toEqual(
+          signers.map(
+            ({ excluded_documents: excludedDocuments, ...entry }) => ({
+              ...entry,
+              ...(excludedDocuments?.length
+                ? { excluded_documents: excludedDocuments }
+                : {})
+            })
+          )
+        );
+        if (envelopeAction === 'sign')
+          expect(
+            JSON.parse(calls[calls.length - 1][1].body).signer_exclusions
+          ).toEqual([
+            {
+              email: 'shared@example.com',
+              signer_id: 'client-john',
+              excluded_envelope_ids: ['internal-copy']
+            }
+          ]);
         expect(body.repeatable).toBe(true);
+        if (envelopeAction === 'sign') {
+          expect(body).not.toHaveProperty('draft');
+          expect(JSON.parse(calls[calls.length - 1][1].body).draft).toBe(true);
+        }
         expect(body.sign_method).toBe('docusign');
         expect(body.documents).toEqual([
           {
@@ -1551,6 +1591,98 @@ describe('IntegrationClient', () => {
       expect(body.signer_email).toBeUndefined();
       expect(body.envelope_action).toBe('sign');
       expect(body.email_subject).toBeUndefined();
+    });
+
+    it('forwards review exclusions on Draft and Sign', async () => {
+      const client = new IntegrationClient('test_form_key');
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ status: 'complete' })
+      });
+      const signerExclusions = [
+        {
+          email: 'client@example.com',
+          excluded_envelope_ids: ['internal-copy']
+        }
+      ];
+      for (const options of [
+        { draft: true },
+        { draft: true, refreshDraft: true },
+        { draft: false }
+      ]) {
+        await client.finalizeEnvelopeReview(
+          { run_async: false, sign_method: 'docusign' },
+          {
+            envelopes: [
+              { envelopeId: 'agreement-copy' },
+              { envelopeId: 'internal-copy' }
+            ],
+            envelopeAction: 'sign',
+            ...options,
+            signerExclusions
+          }
+        );
+        const calls = global.fetch.mock.calls;
+        expect(
+          JSON.parse(calls[calls.length - 1][1].body).signer_exclusions
+        ).toEqual(signerExclusions);
+      }
+    });
+
+    it('omits exclusions on Download and refuses review or direct send against an old backend', async () => {
+      const client = new IntegrationClient('test_form_key');
+      const signerExclusions = [
+        {
+          email: 'client@example.com',
+          excluded_envelope_ids: ['internal-copy']
+        }
+      ];
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest
+          .fn()
+          .mockResolvedValue({ documents: [{ envelope_id: 'agreement-copy' }] })
+      });
+      await client.finalizeEnvelopeReview(
+        { run_async: false, sign_method: 'docusign' },
+        {
+          envelopes: [{ envelopeId: 'agreement-copy' }],
+          envelopeAction: 'download',
+          signerExclusions
+        }
+      );
+      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).not.toHaveProperty(
+        'signer_exclusions'
+      );
+      global.fetch.mockClear();
+      const options = {
+        documentIds: ['tpl-1'],
+        signers: [
+          { email: 'client@example.com', excluded_documents: ['internal-copy'] }
+        ],
+        runAsync: false,
+        repeatable: false,
+        toolbarActions: ['sign'],
+        mergeDocs: false,
+        envelopeAction: 'sign',
+        signMethod: 'docusign'
+      };
+      for (const openInEditor of [true, false]) {
+        await expect(
+          client.generateEnvelopesForEditor({ ...options, openInEditor })
+        ).resolves.toMatchObject({
+          status: 'error',
+          message: expect.stringContaining('not supported')
+        });
+      }
+      expect(global.fetch.mock.calls).toHaveLength(2);
+      expect(
+        global.fetch.mock.calls.every(
+          ([url, request]) =>
+            url.includes('/generate/') &&
+            JSON.parse(request.body).envelope_action === 'open_in_editor'
+        )
+      ).toBe(true);
     });
 
     it('forwards email subject and blurb to finalize', async () => {
