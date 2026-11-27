@@ -1639,7 +1639,8 @@ export default class IntegrationClient {
   updateDocusignEnvelope({
     envelopeId,
     status,
-    voidedReason
+    voidedReason,
+    notification
   }: UpdateDocusignEnvelopeParams) {
     const { userId } = initInfo();
     const url = `${API_URL}docusign/envelope/`;
@@ -1651,7 +1652,8 @@ export default class IntegrationClient {
         form_key: this.formKey,
         docusign_envelope_id: envelopeId,
         status,
-        voided_reason: voidedReason
+        voided_reason: voidedReason,
+        ...(notification && { notification })
       })
     };
     return this._fetch(url, options, false).then(async (response) => {
