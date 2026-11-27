@@ -56,6 +56,13 @@ import {
 } from '../document';
 import { withLinkRequestHeaders } from '../accessLinkRequest';
 
+type ReviewSignerExclusion = {
+  email: string;
+  signer_id?: string;
+  name?: string;
+  excluded_envelope_ids: string[];
+};
+
 // A configured Generate Documents entry in the ordered `documents` array: a
 // template UUID string, an explicit template, one Quik source, or a file
 // upload field (a logic rule's `field_key` is resolved to its `field_id`).
@@ -1344,7 +1351,8 @@ export default class IntegrationClient {
       envelopes,
       envelopeAction,
       draft = false,
-      refreshDraft = false
+      refreshDraft = false,
+      signerExclusions
     }: {
       // signerId: the filler's own signing token for that envelope, as handed
       // back by generate. Keeps finalize from emailing them an invite to a
@@ -1356,6 +1364,8 @@ export default class IntegrationClient {
       // Replace the documents on a DocuSign draft created earlier in the same
       // review, so it carries the filler's later edits.
       refreshDraft?: boolean;
+      // Generated document IDs keep exclusions stable if review order changes.
+      signerExclusions?: ReviewSignerExclusion[];
     }
   ) {
     if (!envelopes.length) {
@@ -1382,6 +1392,8 @@ export default class IntegrationClient {
     if (action.sign_method) payload.sign_method = action.sign_method;
     // Omitted unless set, so a backend without the flag sees the old body.
     if (refreshDraft) payload.refresh_draft = true;
+    if (envelopeAction === 'sign' && signerExclusions !== undefined)
+      payload.signer_exclusions = signerExclusions;
     // Carried to finalize too: an open_in_editor flow does not build the
     // DocuSign envelope until the filler presses Sign.
     if (action.email_subject) payload.email_subject = action.email_subject;

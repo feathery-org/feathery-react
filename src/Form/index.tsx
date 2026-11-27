@@ -1649,7 +1649,8 @@ function Form({
                     envelopes,
                     envelopeAction,
                     draft,
-                    refreshDraft
+                    refreshDraft,
+                    signerExclusions: data.signer_exclusions
                   });
                   if (!result) {
                     return { status: 'error', message: 'Finalize failed' };
@@ -3888,7 +3889,8 @@ function Form({
                   envelopes,
                   envelopeAction,
                   draft,
-                  refreshDraft
+                  refreshDraft,
+                  signerExclusions: data.signer_exclusions
                 });
                 // A missing result is a failure, not a success: _fetch
                 // resolves undefined on a network blip / 403 / 409, and
